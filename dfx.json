@@ -1,0 +1,66 @@
+{
+  "canisters": {
+    "Pair1": {
+      "main": "./ICDexPair.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
+    "Pair2": {
+      "main": "./ICDexPair.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
+    "Pair3": {
+      "main": "./ICDexPair.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
+    "Pair4": {
+      "main": "./ICDexPair.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
+    "Pair5": {
+      "main": "./ICDexPair.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
+    "Pair6": {
+      "main": "./ICDexPair.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
+    "Router": {
+      "main": "./ICDexRouter.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc",
+      "optimize": "size"
+    },
+    "RouterTest": {
+      "main": "./ICDexRouterTest.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc",
+      "optimize": "size"
+    },
+    "ICDexMaker": {
+      "main": "./ICDexMaker.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    }
+  },
+  "defaults": {
+    "build": {
+      "packtool": "vessel sources"
+    }
+  },
+  "networks": {
+    "ic": {
+      "providers": ["https://ic0.app"],
+      "type": "persistent"
+    },
+    "local": {
+      "bind": "0.0.0.0:8000",
+      "type": "ephemeral"
+    }
+  }
+}

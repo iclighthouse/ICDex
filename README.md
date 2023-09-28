@@ -6,7 +6,7 @@ ICDex: A fully on-chain orderbook Dex, with decentralised features and a great u
 
 The matching engine makes a difference between incoming orders and book orders. Strictly speaking, an incoming order is an order that is in the process of being entered, and a book order is an order that is in the order book already.
 
-![Matching engine](deswap-2.jpg)
+![Matching engine](img/icdex-2.jpg)
 
 To get a general idea of a matching engine, you can consider it as a function that takes an order (1) and an “order book” (2) as input parameters, and gives back a list of trades (3) plus all the remaining orders (4). The remaining orders will become the “order book” for the next order received by the matching engine.
 
@@ -104,25 +104,6 @@ These orders add volume to the order book, help to make the market, and are ther
 * Takers  
 When you place an order that trades immediately before going on the order book, you are a taker. This is regardless of whether you partially or fully fulfill the order.
 Trades from MKT orders are always takers, as market orders never go on the order book. These trades are "taking" volume off the order book, and therefore are taker trades. FAK and FOK orders are also always takers orders.
-
-
-**Example:**
-
-```
-import OrderBook "./lib/OrderBook";
-
-actor class{
-    private stable var deswap_orderBook: OrderBook.OrderBook = OrderBook.create();
-    
-    public func trade(){
-        // ....
-        // returns {ob: OrderBook; filled: [OrderFilled]; remaining: OrderPrice; isPending: Bool; fillPrice: ?OrderPrice}
-        let res = OrderBook.trade(deswap_orderBook, _txid, _order, _orderType, _UNIT_SIZE);
-        deswap_orderBook := res.ob; 
-        // ....
-    };
-};
-```
 
 ## Implementations
 
