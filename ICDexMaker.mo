@@ -56,7 +56,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted;
     type TrieList<K, V> = T.TrieList<K, V>;
 
-    private let version_: Text = "0.1";
+    private let version_: Text = "0.3.5";
     private let ns_: Nat = 1000000000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name;
@@ -226,7 +226,11 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
         }else{
             try{
-                let sagaRes = await saga.run(_toid);
+                if (_forced){
+                    let sagaRes = await saga.runSync(_toid);
+                }else{
+                    let sagaRes = await saga.run(_toid);
+                };
             }catch(e){
                 throw Error.reject("430: ICTC error: "# Error.message(e)); 
             };
@@ -660,9 +664,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let localBalance0 = poolLocalBalance.balance0; // await* _getBaseBalance(makerSubaccount);
             let localBalance1 = poolLocalBalance.balance1; // await* _getQuoteBalance(makerSubaccount);
             let balance0 = localBalance0 + dexBalance.balance.token0.locked + dexBalance.balance.token0.available;
-            available0 := dexBalance.balance.token0.available;
+            available0 := localBalance0 + dexBalance.balance.token0.available;
             let balance1 = localBalance1 + dexBalance.balance.token1.locked + dexBalance.balance.token1.available;
-            available1 := dexBalance.balance.token1.available;
+            available1 := localBalance1 + dexBalance.balance.token1.available;
             _updatePoolBalance(?#set(balance0), ?#set(balance1));
             if (not(initialized) and  balance0 > 0 and balance1 > 0){
                 let unitValue0 = pairUnitSize;
@@ -753,7 +757,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         });
         fallbacking_accounts := List.push((_account, Time.now()), fallbacking_accounts);
     };
-    private func _inFallbacking(_account: AccountId): Bool{
+    private func _isFallbacking(_account: AccountId): Bool{
         return Option.isSome(List.find(fallbacking_accounts, func (t: (AccountId, Time.Time)): Bool{
             t.0 == _account and Time.now() < t.1 + 300 * ns_
         }));
@@ -764,7 +768,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         var value0: Nat = 0;
         var value1: Nat = 0;
         var toids: [Nat] = [];
-        if (instantly or not(_inFallbacking(sa_account))){
+        if (instantly or not(_isFallbacking(sa_account))){
             _putFallbacking(sa_account);
             try{
                 value0 := await* _getBaseBalance(sa_account);
@@ -777,7 +781,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 toids := Tools.arrayAppend(toids, [toid]);
                 ignore _sendToken0(toid, sa_account, [], [icrc1Account], [value0], ?sa_account, null);
                 saga.close(toid);
-                await* _ictcSagaRun(toid, false);
+                await* _ictcSagaRun(toid, true);
             };
             
             try{
@@ -790,7 +794,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 toids := Tools.arrayAppend(toids, [toid]);
                 ignore _sendToken1(toid, sa_account, [], [icrc1Account], [value1], ?sa_account, null);
                 saga.close(toid);
-                await* _ictcSagaRun(toid, false);
+                await* _ictcSagaRun(toid, true);
             };
         };
         return (value0, value1, toids);
@@ -813,6 +817,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (_token0 > token0Fee){
             _updatePoolLocalBalance(?#sub(_token0), null);
             if (token0Std == #drc20){ // #approve : (DRC20.Spender, DRC20.Amount, ?DRC20.Nonce, ?DRC20.Sa, ?DRC20.Data);
+                _updatePoolLocalBalance(?#sub(token0Fee), null);
                 let task0 = _buildTask(?_accountId, token0Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token0, 10**Nat8.toNat(token0Decimals + 10)), null, null, null)), []);
                 let ttid0 = saga.push(toid, task0, null, null);
             }else{
@@ -825,6 +830,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (_token1 > token1Fee){
             _updatePoolLocalBalance(null, ?#sub(_token1));
             if (token1Std == #drc20){
+                _updatePoolLocalBalance(null, ?#sub(token1Fee));
                 let task0 = _buildTask(?_accountId, token1Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token1, 10**Nat8.toNat(token1Decimals + 10)), null, null, null)), []);
                 let ttid0 = saga.push(toid, task0, null, null);
             }else{
@@ -979,7 +985,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         let _icrc1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa)};
         assert(visibility == #Public or _onlyCreator(_account));
         assert(initialized or _onlyCreator(_account));
-        let isInitAdd: Bool = not(initialized);
+        let isInitAdd: Bool = not(initialized) or poolShares == 0;
         var isException: Bool = false;
         var exceptMessage: Text = "";
         if (not(initialized)){
@@ -999,12 +1005,15 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
         };
         // check amount
-        if (_token0 <= token0Fee * 100 or _token1 <= token1Fee * 100){
-            throw Error.reject("411: Unavailable amount.");
+        if (isInitAdd and (_token0 < token0Fee * 100000 or _token1 < token1Fee * 100000)){
+            throw Error.reject("411: Unavailable amount. The token0 minimum amount is: "# Nat.toText(token0Fee * 100000) #", the token1 minimum amount is: "# Nat.toText(token1Fee * 100000) #".");
+        }else if (_token0 < token0Fee * 100 or _token1 < token1Fee * 100){
+            throw Error.reject("411: Unavailable amount. The token0 minimum amount is: "# Nat.toText(token0Fee * 100) #", the token1 minimum amount is: "# Nat.toText(token1Fee * 100) #".");
         };
         // deposit
         var depositedToken0: Amount = 0;
         var depositedToken1: Amount = 0;
+        _putFallbacking(_account); // Prevents calling fallback() during execution.
         try{
             depositedToken0 := await* _deposit(#token0, _icrc1Account, _token0);
             ignore _putEvent(#deposit({account=_icrc1Account; token0=_token0; token1=0}), ?_account);
@@ -1131,12 +1140,12 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         };
         let saga = _getSaga();
         // get unit net value
-        var available0InDex: Amount = 0;
-        var available1InDex: Amount = 0;
+        var available0InPool: Amount = 0;
+        var available1InPool: Amount = 0;
         try{
             let (v0, v1) = await* _fetchPoolBalance();
-            available0InDex := v0;
-            available1InDex := v1;
+            available0InPool := v0;
+            available1InPool := v1;
         }catch(e){
             sysTransactionLock := false;
             throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
@@ -1144,15 +1153,32 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (sysTransactionLock){
             throw Error.reject("400: The system transaction is locked, please try again later."); 
         };
+        var values = _sharesToAmount(_shares);
+        if (values.value0 > available0InPool or values.value1 > available1InPool){
+            let toid = saga.create("stop_gridOrder", #Forward, null, null); 
+            let ttid = _ictcUpdateGridOrder(toid, #Stopped);
+            await* _ictcSagaRun(toid, true);
+            try{
+                let (v0, v1) = await* _fetchPoolBalance();
+                available0InPool := v0;
+                available1InPool := v1;
+            }catch(e){
+                sysTransactionLock := false;
+                throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+            };
+            if (values.value0 > available0InPool or values.value1 > available1InPool){
+                throw Error.reject("414: The number of shares entered is not available."); 
+            };
+        };
         // shares to amounts (Fee: 10 * tokenFee + 0.01% * Value)
-        let values = _sharesToAmount(_shares);
+        values := _sharesToAmount(_shares);
         if (values.value0 > 10 * token0Fee + values.value0 * withdrawalFee / 1000000){
             resValue0 := Nat.sub(values.value0, 10 * token0Fee + values.value0 * withdrawalFee / 1000000);
         };
         if (values.value1 > 10 * token1Fee + values.value1 * withdrawalFee / 1000000){
             resValue1 := Nat.sub(values.value1, 10 * token1Fee + values.value1 * withdrawalFee / 1000000);
         };
-        if ((resValue0 == 0 and resValue1 == 0) or values.value0 >= available0InDex or values.value1 >= available1InDex){
+        if (resValue0 == 0 and resValue1 == 0){
             throw Error.reject("414: The number of shares entered is not available."); 
         };
         // withdraw from Dex
@@ -1160,13 +1186,13 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             sysTransactionLock := true;
             let pair: ICDex.Self = actor(Principal.toText(pairPrincipal));
             try{
-                let value0 = if (resValue0 > 0){ ?Nat.max(resValue0 + token0Fee*2, poolBalance.balance0 * 5 / 100) }else{ null };
-                let value1 = if (resValue1 > 0){ ?Nat.max(resValue1 + token1Fee*2, poolBalance.balance1 * 5 / 100) }else{ null };
+                let value0 = if (resValue0 > 0){ ?Nat.max(Nat.min(resValue0 + token0Fee*2, Nat.sub(poolBalance.balance0, poolLocalBalance.balance0)), poolBalance.balance0 * 5 / 100) }else{ null };
+                let value1 = if (resValue1 > 0){ ?Nat.max(Nat.min(resValue1 + token1Fee*2, Nat.sub(poolBalance.balance1, poolLocalBalance.balance1)), poolBalance.balance1 * 5 / 100) }else{ null };
                 let (v0, v1) = await pair.withdraw(value0, value1, null);
                 sysTransactionLock := false;
                 _updatePoolLocalBalance(?#add(v0), ?#add(v1));
                 ignore _putEvent(#dexWithdraw({token0 = v0; token1 = v1: Nat; toid=null}), null);
-                if (v0 < resValue0 or v1 < resValue1){
+                if (poolLocalBalance.balance0 < resValue0 or poolLocalBalance.balance1 < resValue1){
                     throw Error.reject("Failed withdrawal");
                 };
             }catch(e){
@@ -1180,7 +1206,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             _updateAccountShares(_account, #sub(_shares));
             _updatePoolShares(#sub(_shares));
             // ictc: transfer
-            _updatePoolLocalBalance(?#sub(resValue0), ?#sub(resValue1));
+            _updatePoolLocalBalance(?#sub(resValue0 + token0Fee), ?#sub(resValue1 + token1Fee));
             let toid = saga.create("remove_liquidity", #Forward, null, null); 
             if (resValue0 > 0){
                 let ttids = _sendToken0(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [resValue0 + token0Fee], ?_account, null);
@@ -1196,7 +1222,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
             saga.close(toid);
             ignore _putEvent(#remove(#ok({account = _icrc1Account; shares = _shares; token0 = resValue0; token1 = resValue1; toid=?toid})), ?_account);
-            await* _ictcSagaRun(toid, false);
+            await* _ictcSagaRun(toid, true);
         }else if (resValue0 > 0 or resValue1 > 0){
             ignore _putEvent(#remove(#err({account = _icrc1Account; addPoolToken0 = resValue0; addPoolToken1 = resValue1; toid=null})), ?_account);
             resValue0 := 0;
@@ -1305,8 +1331,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         let localBalance1 = poolLocalBalance.balance1; // await* _getQuoteBalance(Blob.fromArray(sa_zero));
         let balance0 = localBalance0 + dexBalance.balance.token0.locked + dexBalance.balance.token0.available;
         let balance1 = localBalance1 + dexBalance.balance.token1.locked + dexBalance.balance.token1.available;
-        let unitNetValue0 = shareUnitSize * balance0 / poolShares;
-        let unitNetValue1 = shareUnitSize * balance1 / poolShares;
+        let unitNetValue0 = shareUnitSize * balance0 / Nat.max(poolShares, 1);
+        let unitNetValue1 = shareUnitSize * balance1 / Nat.max(poolShares, 1);
         return {
             holders = Trie.size(accountShares);
             poolBalance = { balance0 = balance0; balance1 = balance1; ts = _now(); };
@@ -1350,7 +1376,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         ignore _putEvent(#config({setting = _config}), ?Tools.principalToAccountBlob(msg.caller, null));
         let toid = _updateGridOrder(Tools.principalToAccountBlob(msg.caller, null), 0, 0, #instantly);
         ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?Tools.principalToAccountBlob(msg.caller, null));
-        await* _ictcSagaRun(toid, false);
+        await* _ictcSagaRun(toid, true);
         return true;
     };
     public shared(msg) func transactionLock(_act: {#lock; #unlock}) : async Bool{
@@ -1407,6 +1433,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (_token0 > token0Fee){
             _updatePoolLocalBalance(?#sub(_token0), null);
             if (token0Std == #drc20){ 
+                _updatePoolLocalBalance(?#sub(token0Fee), null);
                 let task0 = _buildTask(null, token0Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token0, 10**Nat8.toNat(token0Decimals + 10)), null, null, null)), []);
                 let ttid0 = saga.push(toid, task0, null, null);
             }else{
@@ -1420,6 +1447,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (_token1 > token1Fee){
             _updatePoolLocalBalance(null, ?#sub(_token1));
             if (token1Std == #drc20){
+                _updatePoolLocalBalance(null, ?#sub(token1Fee));
                 let task0 = _buildTask(null, token1Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token1, 10**Nat8.toNat(token1Decimals + 10)), null, null, null)), []);
                 let ttid0 = saga.push(toid, task0, null, null);
             }else{
@@ -1435,7 +1463,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             ignore saga.doneEmpty(toid);
         };
         ignore _putEvent(#dexDeposit({token0 = token0; token1 = token1: Nat; toid=?toid}), null);
-        await* _ictcSagaRun(toid, false);
+        await* _ictcSagaRun(toid, true);
         return (token0, token1);
     };
     public shared(msg) func deleteGridOrder() : async (){
@@ -1446,7 +1474,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let ttid1 = _ictcUpdateGridOrder(toid, #Deleted);
             saga.close(toid);
             ignore _putEvent(#deleteGridOrder({soid=gridSoid; toid=?toid}), null);
-            await* _ictcSagaRun(toid, false);
+            await* _ictcSagaRun(toid, true);
             gridOrderDeleted := true;
         };
     };
@@ -1460,7 +1488,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         let ttid1 = _ictcCreateGridOrder(toid);
         saga.close(toid);
         ignore _putEvent(#createGridOrder({toid=?toid}), null);
-        await* _ictcSagaRun(toid, false);
+        await* _ictcSagaRun(toid, true);
         gridOrderDeleted := false;
     };
     public shared(msg) func cancelAllOrders() : async (){
@@ -1776,7 +1804,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
             case(_){};
         };
-        timerId := Timer.recurringTimer(#seconds(60), timerLoop);
+        timerId := Timer.recurringTimer(#seconds(90), timerLoop);
     };
     
 

@@ -89,7 +89,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
 
     // Variables
     private var icdex_debug : Bool = false; /*config*/
-    private let version_: Text = "0.10.10";
+    private let version_: Text = "0.10.11";
     private let ns_: Nat = 1000000000;
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
@@ -410,13 +410,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     private func _getFee0() : Nat{
         switch(token0Gas){
             case(?(gas)){ return gas; };
-            case(_){ return 0; };  
+            case(_){ assert(false); return 0; };  
         };
     };
     private func _getFee1() : Nat{
         switch(token1Gas){
             case(?(gas)){ return gas; };
-            case(_){ return 0; };  
+            case(_){ assert(false); return 0; };  
         };
     };
     private func _natToFloat(_n: Nat) : Float{
@@ -1131,7 +1131,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         });
         fallbacking_txids := List.push((_txid, Time.now()), fallbacking_txids);
     };
-    private func _inFallbacking(_txid: Txid): Bool{
+    private func _isFallbacking(_txid: Txid): Bool{
         return Option.isSome(List.find(fallbacking_txids, func (t: (Txid, Time.Time)): Bool{
             t.0 == _txid and Time.now() < t.1 + 300 * ns_
         }));
@@ -1152,7 +1152,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
             case(_){ side := 0; };
         };
         // important!
-        if (Option.isNull(Trie.get(icdex_orders, keyb(txid), Blob.equal)) and not(_inFallbacking(txid))){ //  or side != 0
+        if (Option.isNull(Trie.get(icdex_orders, keyb(txid), Blob.equal)) and not(_isFallbacking(txid))){ //  or side != 0
             _putFallbacking(txid);
             var txTokenBalance : Nat = 0;
             try{
@@ -2036,6 +2036,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
             case(?err){ return err; };
             case(_){};
         };
+        if (_isFallbacking(txid)){ // fixed an atomicity issue.
+            return #err({code=#NonceError; message="417: This txid is fallbacking.";});
+        };
         // put order
         var logToids : [Nat] = [];
         var expiration = Time.now() + expirationDuration;
@@ -2157,7 +2160,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         //         icrc1Account := {owner = Principal.fromActor(this); subaccount = _toOptSub(_getCompAccountSa(account))};
         // };
         if (toid > 0){
-            for (filled in Array.reverse(res.filled).vals() ){ // {counterparty: Txid; token0Value: BalanceChange; token1Value: BalanceChange;}
+            for (filled in res.filled.vals() ){ // Array.reverse {counterparty: Txid; token0Value: BalanceChange; token1Value: BalanceChange;}
                 //let makerAccountPrincipal = _orderPrincipal(filled.counterparty);
                 // ___txid1 := txid;
                 // ___txid2 := filled.counterparty;
@@ -3209,7 +3212,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         let icrc1Account = {owner = _owner; subaccount = _toSaBlob(_sa)};
         var value0: Nat = 0;
         var value1: Nat = 0;
-        if (not(_inFallbacking(sa_account))){
+        if (not(_isFallbacking(sa_account))){
             _putFallbacking(sa_account);
             try{
                 countAsyncMessage += 1;
@@ -3575,14 +3578,20 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                             // pre-order
                             let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
                             let balances = _getAccountBalance(account);
-                            let balance0 = balances.token0.locked + balances.token0.available;
-                            let balance1 = balances.token1.locked + balances.token1.available;
-                            var pendingValue0: Nat = 0;
-                            var pendingValue1: Nat = 0;
+                            let balance0 = balances.token0.available; // balances.token0.locked + balances.token0.available;
+                            let balance1 = balances.token1.available; // balances.token1.locked + balances.token1.available;
+                            // var pendingValue0: Nat = 0;
+                            // var pendingValue1: Nat = 0;
                             var toBeLockedValue0: Nat = 0;
                             var toBeLockedValue1: Nat = 0;
                             for(gridPrice in prices.sell.vals()){
-                                let orderQuantity = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, Nat.sub(balance0, pendingValue0), Nat.sub(balance1, pendingValue1), #Sell, setting.UNIT_SIZE*10);
+                                let orderQuantity_sell = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, balance0, balance1, #Sell, setting.UNIT_SIZE*10);
+                                let orderQuantity_buy = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, balance0, balance1, #Buy, setting.UNIT_SIZE*10);
+                                var orderQuantity = orderQuantity_sell;
+                                switch(orderQuantity_sell, orderQuantity_buy){
+                                    case(#Sell(q1), #Buy(q2,a2)){ orderQuantity := #Sell(Nat.min(q1, q2)) };
+                                    case(_){};
+                                };
                                 let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
                                 let quantity = OrderBook.quantity(orderPrice);
                                 if (toBeLockedValue0 + quantity > balances.token0.available){
@@ -3594,12 +3603,18 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                                     icdex_stOrderRecords := STO.putPendingOrder(icdex_stOrderRecords, _soid, #Sell, (null, gridPrice, quantity));
                                     toBeLockedValue0 += quantity;
                                 };
-                                if (pendingValue0 + quantity <= balance0){
-                                    pendingValue0 += quantity;
-                                };
+                                // if (pendingValue0 + quantity <= balance0){
+                                //     pendingValue0 += quantity;
+                                // };
                             };
                             for(gridPrice in prices.buy.vals()){
-                                let orderQuantity = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, Nat.sub(balance0, pendingValue0), Nat.sub(balance1, pendingValue1), #Buy, setting.UNIT_SIZE*10);
+                                let orderQuantity_sell = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, balance0, balance1, #Sell, setting.UNIT_SIZE*10);
+                                let orderQuantity_buy = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, balance0, balance1, #Buy, setting.UNIT_SIZE*10);
+                                var orderQuantity = orderQuantity_buy;
+                                switch(orderQuantity_sell, orderQuantity_buy){
+                                    case(#Sell(q1), #Buy(q2,a2)){ orderQuantity := #Buy(Nat.min(q1, q2), Nat.min(q1, q2) * gridPrice / setting.UNIT_SIZE) };
+                                    case(_){};
+                                };
                                 let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
                                 let quantity = OrderBook.quantity(orderPrice);
                                 let amount = OrderBook.amount(orderPrice);
@@ -3612,9 +3627,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                                     icdex_stOrderRecords := STO.putPendingOrder(icdex_stOrderRecords, _soid, #Buy, (null, gridPrice, quantity));
                                     toBeLockedValue1 += amount;
                                 };
-                                if (pendingValue1 + amount <= balance1){
-                                    pendingValue1 += amount;
-                                };
+                                // if (pendingValue1 + amount <= balance1){
+                                //     pendingValue1 += amount;
+                                // };
                             };
                             // update data
                             if (res.size() > 0){
@@ -3678,6 +3693,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                     gridOpenOrders := Tools.arrayAppend(gridOpenOrders, poToOpenOrders);
                     if (status == #Running){
                         pendingList := List.push(soid, pendingList);
+                    }else{
+                        icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, soid, status);
                     };
                 }else{
                     pendingList := List.push(soid, pendingList);
