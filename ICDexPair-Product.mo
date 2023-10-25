@@ -89,7 +89,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
 
     // Variables
     private var icdex_debug : Bool = false; /*config*/
-    private let version_: Text = "0.10.11";
+    private let version_: Text = "0.10.12";
     private let ns_: Nat = 1000000000;
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
@@ -4945,22 +4945,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     /// returns latest events
     public query func drc205_events(_account: ?DRC205.Address) : async [DRC205.TxnRecord]{
         switch(_account){
-            case(?(account)){ return drc205.getEvents(?_getAccountId(account)); };
-            case(_){return drc205.getEvents(null);}
+            case(?(account)){ return drc205.getEvents(?_getAccountId(account), null, null).0; };
+            case(_){return drc205.getEvents(null, null, null).0;}
         };
     };
-    public query func drc205_events2(_account: ?DRC205.Address, _startTime: ?Time.Time) : async [DRC205.TxnRecord]{
-        var data : [DRC205.TxnRecord] = [];
+    /// returns events filtered by time
+    public query func drc205_events_filter(_account: ?DRC205.Address, _startTime: ?Time.Time, _endTime: ?Time.Time) : async (data: [DRC205.TxnRecord], mayHaveArchived: Bool){
         switch(_account){
-            case(?(account)){ data := drc205.getEvents(?_getAccountId(account)); };
-            case(_){ data := drc205.getEvents(null);}
-        };
-        if (Option.isSome(_startTime)){
-            return Array.filter(data, func (t: DRC205.TxnRecord): Bool{
-                t.time >= Option.get(_startTime, 0)
-            });
-        }else{
-            return data;
+            case(?(account)){ return drc205.getEvents(?_getAccountId(account), _startTime, _endTime); };
+            case(_){return drc205.getEvents(null, _startTime, _endTime);}
         };
     };
     /// returns txn record. This is a query method that looks for record from this canister cache.

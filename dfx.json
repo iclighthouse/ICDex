@@ -1,5 +1,10 @@
 {
   "canisters": {
+    "PairProduct": {
+      "main": "./ICDexPair-Product.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
     "Pair1": {
       "main": "./ICDexPair.mo",
       "type": "motoko",
@@ -47,6 +52,7 @@
       "type": "motoko",
       "args" : "--compacting-gc"
     }
+    
   },
   "defaults": {
     "build": {

@@ -880,26 +880,13 @@ type ICDexPair =
    accountSetting : (Address) -> (AccountSetting) query;
    cancel: (Nonce, opt Sa) -> ();
    cancelByTxid: (Txid, opt Sa) -> ();
-   comp_fallback: (opt Sa) -> (Amount, Amount);
-   comp_getDepositAccount: (Address) ->
-    (record {
-       balance: record {
-                  Account;
-                  Address;
-                };
-       depositing: record {
-                     Account;
-                     Address;
-                   };
-     }) query;
-   comp_withdraw: (opt Sa) -> (Amount, Amount);
    count: (opt Address) -> (nat) query;
    deposit : (variant { token0; token1 }, Amount, opt Sa) -> ();
    depositFallback : (opt Sa) -> (Amount, Amount);
    drc205_canisterId: () -> (principal) query;
    drc205_dexInfo: () -> (DexInfo) query;
    drc205_events: (opt Address) -> (vec TxnRecord) query;
-   drc205_events2 : (opt Address, opt Time) -> (vec TxnRecord) query;
+   drc205_events_filter: (opt Address, opt Time, opt Time) -> (record{ vec TxnRecord; bool }) query;
    drc205_getConfig: () -> (Setting) query;
    drc205_pool: () -> (vec record {
                              Txid;
@@ -927,6 +914,9 @@ type ICDexPair =
    getQuotes: (KInterval) -> (vec KBar) query;
    getDepositAccount : (Address) -> (Account, Address) query;
    getTxAccount: (Address) -> (Account, TxAccount, Nonce, Txid) query;
+   getRole : (Address) -> (
+      record { broker : bool; proTrader : bool; vipMaker : bool },
+    ) query;
    ictc_TM: () -> (text) query;
    ictc_getAdmins: () -> (vec principal) query;
    ictc_runTT: () -> (bool);
