@@ -65,7 +65,7 @@ shared(installMsg) actor class ICDexRouter() = this {
     type Timestamp = Nat;
 
     private var icdex_debug : Bool = false; /*config*/
-    private let version_: Text = "0.10.9";
+    private let version_: Text = "0.10.12";
     private var ICP_FEE: Nat64 = 10000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private let blackhole: Principal = Principal.fromText("7hdtw-jqaaa-aaaak-aaccq-cai");
@@ -74,6 +74,9 @@ shared(installMsg) actor class ICDexRouter() = this {
     if (icdex_debug){
         icRouter := "pwokq-miaaa-aaaak-act6a-cai";
     };
+    private stable var sysToken: Principal = Principal.fromText("7jf3t-siaaa-aaaak-aezna-cai"); // Test: 7jf3t-siaaa-aaaak-aezna-cai
+    private stable var sysTokenFee: Nat = 10000000000000;
+    private stable var creatingPairFee: Nat = 1000000000000000000; 
     private stable var pause: Bool = false; 
     private stable var owner: Principal = installMsg.caller;
     private stable var pairs: Trie.Trie<PairCanister, SwapPair> = Trie.empty(); 
@@ -221,11 +224,11 @@ shared(installMsg) actor class ICDexRouter() = this {
             return {token0 = _pair.token1; token1 = _pair.token0; dexName = _pair.dexName; canisterId = _pair.canisterId; feeRate = _pair.feeRate; };
         };
     };
-    private func _inPairs(_pair: SwapPair) : Bool{
-        return Option.isSome(Trie.find(pairs, keyp(_pair.canisterId), Principal.equal));
+    private func _isExisted(_pair: Principal) : Bool{
+        return Option.isSome(Trie.find(pairs, keyp(_pair), Principal.equal));
     };
-    private func _inPairsByToken(_token0: Principal) : Bool{
-        let temp = Trie.filter(pairs, func (k: PairCanister, v: SwapPair): Bool{ v.token0.0 == _token0 });
+    private func _isExistedByToken(_token0: Principal, _token1: Principal) : Bool{
+        let temp = Trie.filter(pairs, func (k: PairCanister, v: SwapPair): Bool{ v.token0.0 == _token0 and v.token1.0 == _token1 });
         return Trie.size(temp) > 0;
     };
     private func _getPairsByToken(_token0: Principal, _token1: ?Principal) : [(PairCanister, SwapPair)]{
@@ -304,7 +307,92 @@ shared(installMsg) actor class ICDexRouter() = this {
             };
         };
     };
-    private func _update(_pair: Principal, _wasm: [Nat8], _mode: InstallMode) : async (canister: ?PairCanister){
+    private func _create(_token0: Principal, _token1: Principal, _unitSize: ?Nat64, _initCycles: ?Nat): async* (canister: PairCanister){
+        assert(wasm.size() > 0);
+        var token0Principal = _token0;
+        var token0Std: ICDexTypes.TokenStd = #drc20;
+        var token0Symbol: Text = "";
+        var token0Decimals: Nat8 = 0;
+        var token1Principal = _token1;
+        var token1Std: ICDexTypes.TokenStd = #icp;
+        var token1Symbol: Text = "ICP";
+        var token1Decimals: Nat8 = 0;
+        var swapName: Text = "";
+        if (token0Principal == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")){
+            token0Symbol := "ICP";
+            token0Decimals := 8;
+            token0Std := #icp;
+        }else{
+            let tokenInfo = await _testToken(token0Principal); //{symbol: Text; decimals: Nat8; std: ICDexTypes.TokenStd}
+            token0Symbol := tokenInfo.symbol;
+            token0Decimals := tokenInfo.decimals;
+            token0Std := tokenInfo.std;
+            assert(token0Std == #drc20 or token0Std == #icrc1);
+        };
+        if (token1Principal == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")){
+            token1Symbol := "ICP";
+            token1Decimals := 8;
+            token1Std := #icp;
+        }else{
+            let tokenInfo = await _testToken(token1Principal); //{symbol: Text; decimals: Nat8; std: ICDexTypes.TokenStd}
+            token1Symbol := tokenInfo.symbol;
+            token1Decimals := tokenInfo.decimals;
+            token1Std := tokenInfo.std;
+            assert(token1Std == #drc20 or token1Std == #icrc1);
+        };
+        swapName := "icdex:" # token0Symbol # "/" # token1Symbol;
+
+        // create
+        let addCycles : Nat = Option.get(_initCycles, canisterCyclesInit);
+        Cycles.add(addCycles);
+        let canister = await ic.create_canister({ settings = null });
+        let pairCanister = canister.canister_id;
+        var unitSize = Nat64.fromNat(10 ** Nat.min(Nat.sub(Nat.max(Nat8.toNat(token0Decimals), 1), 1), 12)); // max 1000000000000
+        switch (_unitSize){
+            case(?(value)){ if (value > 0) { unitSize := value } };
+            case(_){};
+        };
+        let args: [Nat8] = _generateArg(token0Principal, token1Principal, unitSize, swapName);
+        await ic.install_code({
+            arg : [Nat8] = args;
+            wasm_module = wasm;
+            mode = #install; // #reinstall; #upgrade; #install
+            canister_id = pairCanister;
+        });
+        let pairActor: ICDexPrivate.Self = actor(Principal.toText(pairCanister));
+        ignore await pairActor.setPause(true, null);
+        let pair: SwapPair = {
+            token0: TokenInfo = (token0Principal, token0Symbol, token0Std); 
+            token1: TokenInfo = (token1Principal, token1Symbol, token1Std); 
+            dexName: DexName = "icdex"; 
+            canisterId: PairCanister = pairCanister;
+            feeRate: Float = 0.005; //  0.5%
+        };
+        pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pair).0;
+        var controllers: [Principal] = [pairCanister, blackhole, Principal.fromActor(this)];
+        if (icdex_debug){
+            controllers := [pairCanister, blackhole, Principal.fromActor(this), owner];
+        };
+        let settings = await ic.update_settings({
+            canister_id = pairCanister; 
+            settings={ 
+                compute_allocation = null;
+                controllers = ?controllers; 
+                freezing_threshold = null;
+                memory_allocation = null;
+            };
+        });
+        await pairActor.init();
+        await pairActor.timerStart(900);
+        let router: Router.Self = actor(icRouter);
+        await router.putByDex(
+            (token0Principal, token0Symbol, token0Std), 
+            (token1Principal, token1Symbol, token1Std), 
+            pairCanister);
+        cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, pairCanister);
+        return pairCanister;
+    };
+    private func _update(_pair: Principal, _wasm: [Nat8], _mode: InstallMode) : async* (canister: ?PairCanister){
         switch(Trie.get(pairs, keyp(_pair), Principal.equal)){
             case(?(pair)){
                 let pairActor: ICDexPrivate.Self = actor(Principal.toText(_pair));
@@ -390,72 +478,41 @@ shared(installMsg) actor class ICDexRouter() = this {
         };
     };
 
-    // public shared(msg) func create(_token: ?Principal): async (canister: PairCanister){
-    //     // create icdex from token
-    //     assert(wasm.size() > 0);
-    //     var tokenPrincipal = msg.caller;
-    //     switch(_token){
-    //         case(?(token)){
-    //             assert(_onlyOwner(msg.caller) or token == msg.caller);
-    //             tokenPrincipal := token;
-    //         };
-    //         case(_){};
-    //     };
-    //     assert(not(_inPairsByToken(tokenPrincipal)));
-    //     var token0Std: ICDexTypes.TokenStd = #drc20;
-    //     var token0Symbol: Text = "";
-    //     var token0Decimals: Nat8 = 0;
-    //     var token1Symbol: Text = "ICP";
-    //     var swapName: Text = "";
-    //     let tokenInfo = await _testToken(tokenPrincipal); //{symbol: Text; decimals: Nat8; std: ICDexTypes.TokenStd}
-    //     token0Symbol := tokenInfo.symbol;
-    //     token0Decimals := tokenInfo.decimals;
-    //     token0Std := tokenInfo.std;
-    //     swapName := "icdex:" # token0Symbol # "/" # token1Symbol;
-
-    //     // create
-    //     Cycles.add(canisterCyclesInit);
-    //     let canister = await ic.create_canister({ settings = null });
-    //     let pairCanister = canister.canister_id;
-    //     var unitSize = Nat64.fromNat(10 ** Nat.min(Nat.sub(Nat.max(Nat8.toNat(token0Decimals), 1), 1), 12)); // max 1000000000000
-    //     let args: [Nat8] = _generateArg(tokenPrincipal, Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"), unitSize, swapName);
-    //     await ic.install_code({
-    //         arg : [Nat8] = args;
-    //         wasm_module = wasm;
-    //         mode = #install; // #reinstall; #upgrade; #install
-    //         canister_id = pairCanister;
-    //     });
-    //     let pairActor: ICDexPrivate.Self = actor(Principal.toText(pairCanister));
-    //     ignore await pairActor.setPause(true, null);
-    //     let pair: SwapPair = {
-    //         token0: TokenInfo = (tokenPrincipal, token0Symbol, token0Std); 
-    //         token1: TokenInfo = (Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"), token1Symbol, #icp); 
-    //         dexName: DexName = "icdex"; 
-    //         canisterId: PairCanister = pairCanister;
-    //         feeRate: Float = 0.005; //  0.5%
-    //     };
-    //     pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pair).0;
-    //     let settings = await ic.update_settings({
-    //         canister_id = pairCanister; 
-    //         settings={ 
-    //             compute_allocation = null;
-    //             controllers = ?[pairCanister, blackhole, Principal.fromActor(this), owner]; 
-    //             freezing_threshold = null;
-    //             memory_allocation = null;
-    //         };
-    //     });
-    //     await pairActor.init();
-    //     await pairActor.timerStart(900);
-    //     let router: Router.Self = actor(icRouter);
-    //     await router.putByDex(
-    //         (tokenPrincipal, token0Symbol, token0Std), 
-    //         (Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"), token1Symbol, #icp), 
-    //         pairCanister);
-    //     // monitor
-    //     let f = _monitor();
-        
-    //     return pairCanister;
-    // };
+    public shared(msg) func pubCreate(_token0: Principal, _token1: Principal): async (canister: PairCanister){
+        assert(not(_isExistedByToken(_token0, _token1)));
+        let token: ICRC1.Self = actor(Principal.toText(sysToken));
+        let result = await token.icrc2_transfer_from({
+            spender_subaccount = null; // *
+            from = {owner = msg.caller; subaccount = null};
+            to = {owner = Principal.fromActor(this); subaccount = null};
+            amount = creatingPairFee;
+            fee = null;
+            memo = null;
+            created_at_time = null;
+        });
+        switch(result){
+            case(#Ok(blockNumber)){
+                try{
+                    return await* _create(_token0, _token1, null, null);
+                }catch(e){
+                    if (creatingPairFee > sysTokenFee){
+                        let r = await token.icrc1_transfer({
+                            from_subaccount = null;
+                            to = {owner = msg.caller; subaccount = null};
+                            amount = Nat.sub(creatingPairFee, sysTokenFee);
+                            fee = null;
+                            memo = null;
+                            created_at_time = null;
+                        });
+                    };
+                    throw Error.reject("Error: Creation Failed. "# Error.message(e)); 
+                };
+            };
+            case(#Err(e)){
+                throw Error.reject("Error: Error when paying the fee for creating a trading pair."); 
+            };
+        };
+    };
 
     /* =======================
       Managing Wasm
@@ -487,88 +544,7 @@ shared(installMsg) actor class ICDexRouter() = this {
     // create '(principal "", principal "ryjl3-tyaaa-aaaaa-aaaba-cai", null, null)'
     public shared(msg) func create(_token0: Principal, _token1: Principal, _unitSize: ?Nat64, _initCycles: ?Nat): async (canister: PairCanister){
         assert(_onlyOwner(msg.caller));
-        // create icdex from token
-        assert(wasm.size() > 0);
-        var token0Principal = _token0;
-        var token0Std: ICDexTypes.TokenStd = #drc20;
-        var token0Symbol: Text = "";
-        var token0Decimals: Nat8 = 0;
-        var token1Principal = _token1;
-        var token1Std: ICDexTypes.TokenStd = #icp;
-        var token1Symbol: Text = "ICP";
-        var token1Decimals: Nat8 = 0;
-        var swapName: Text = "";
-        if (token0Principal == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")){
-            token0Symbol := "ICP";
-            token0Decimals := 8;
-            token0Std := #icp;
-        }else{
-            let tokenInfo = await _testToken(token0Principal); //{symbol: Text; decimals: Nat8; std: ICDexTypes.TokenStd}
-            token0Symbol := tokenInfo.symbol;
-            token0Decimals := tokenInfo.decimals;
-            token0Std := tokenInfo.std;
-        };
-        if (token1Principal == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")){
-            token1Symbol := "ICP";
-            token1Decimals := 8;
-            token1Std := #icp;
-        }else{
-            let tokenInfo = await _testToken(token1Principal); //{symbol: Text; decimals: Nat8; std: ICDexTypes.TokenStd}
-            token1Symbol := tokenInfo.symbol;
-            token1Decimals := tokenInfo.decimals;
-            token1Std := tokenInfo.std;
-        };
-        swapName := "icdex:" # token0Symbol # "/" # token1Symbol;
-
-        // create
-        let addCycles : Nat = Option.get(_initCycles, canisterCyclesInit);
-        Cycles.add(addCycles);
-        let canister = await ic.create_canister({ settings = null });
-        let pairCanister = canister.canister_id;
-        var unitSize = Nat64.fromNat(10 ** Nat.min(Nat.sub(Nat.max(Nat8.toNat(token0Decimals), 1), 1), 12)); // max 1000000000000
-        switch (_unitSize){
-            case(?(value)){ if (value > 0) { unitSize := value } };
-            case(_){};
-        };
-        let args: [Nat8] = _generateArg(token0Principal, token1Principal, unitSize, swapName);
-        await ic.install_code({
-            arg : [Nat8] = args;
-            wasm_module = wasm;
-            mode = #install; // #reinstall; #upgrade; #install
-            canister_id = pairCanister;
-        });
-        let pairActor: ICDexPrivate.Self = actor(Principal.toText(pairCanister));
-        ignore await pairActor.setPause(true, null);
-        let pair: SwapPair = {
-            token0: TokenInfo = (token0Principal, token0Symbol, token0Std); 
-            token1: TokenInfo = (token1Principal, token1Symbol, token1Std); 
-            dexName: DexName = "icdex"; 
-            canisterId: PairCanister = pairCanister;
-            feeRate: Float = 0.005; //  0.5%
-        };
-        pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pair).0;
-        var controllers: [Principal] = [pairCanister, blackhole, Principal.fromActor(this)];
-        if (icdex_debug){
-            controllers := [pairCanister, blackhole, Principal.fromActor(this), owner];
-        };
-        let settings = await ic.update_settings({
-            canister_id = pairCanister; 
-            settings={ 
-                compute_allocation = null;
-                controllers = ?controllers; 
-                freezing_threshold = null;
-                memory_allocation = null;
-            };
-        });
-        await pairActor.init();
-        await pairActor.timerStart(900);
-        let router: Router.Self = actor(icRouter);
-        await router.putByDex(
-            (token0Principal, token0Symbol, token0Std), 
-            (token1Principal, token1Symbol, token1Std), 
-            pairCanister);
-        cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, pairCanister);
-        return pairCanister;
+        return await* _create(_token0, _token1, _unitSize, _initCycles);
     };
     
     /// Upgrade pair canister
@@ -576,7 +552,7 @@ shared(installMsg) actor class ICDexRouter() = this {
         assert(_onlyOwner(msg.caller));
         assert(wasm.size() > 0);
         assert(_version == wasmVersion);
-        return await _update(_pair, wasm, #upgrade);
+        return await* _update(_pair, wasm, #upgrade);
     };
     /// Rollback to previous version (the last version that was saved)
     public shared(msg) func rollback(_pair: Principal): async (canister: ?PairCanister){
@@ -585,7 +561,7 @@ shared(installMsg) actor class ICDexRouter() = this {
         let pair : ICDexPrivate.Self = actor(Principal.toText(_pair));
         let info = await pair.info();
         assert(info.paused);
-       return await _update(_pair, wasm_preVersion, #upgrade);
+       return await* _update(_pair, wasm_preVersion, #upgrade);
     };
     /// Modifying the controllers of the pair
     public shared(msg) func setControllers(_pair: Principal, _controllers: [Principal]): async Bool{
@@ -615,7 +591,7 @@ shared(installMsg) actor class ICDexRouter() = this {
         };
 
         let pair : ICDexPrivate.Self = actor(Principal.toText(_pair));
-        let res =  await _update(_pair, wasm, #reinstall);
+        let res =  await* _update(_pair, wasm, #reinstall);
 
         await _recovery(_pair, data);
 
@@ -1097,13 +1073,6 @@ shared(installMsg) actor class ICDexRouter() = this {
             let res = await token.transfer(args);
         }
     };
-    public shared(msg) func sys_burn(_value: Nat) : async (){
-        assert(_onlyOwner(msg.caller));
-        let account = Tools.principalToAccountBlob(Principal.fromActor(this), null);
-        let address = Tools.principalToAccountHex(Principal.fromActor(this), null);
-        let icl2: ICTokens.Self = actor("5573k-xaaaa-aaaak-aacnq-cai");
-        let f = await icl2.ictokens_burn(_value, null,null,null);
-    };
     public shared(msg) func sys_order(_token: Principal, _tokenStd: TokenStd, _value: Nat, _pair: Principal, _order: ICDexTypes.OrderPrice) : async ICDexTypes.TradingResult{
         assert(_onlyOwner(msg.caller));
         let account = Tools.principalToAccountBlob(Principal.fromActor(this), null);
@@ -1162,6 +1131,16 @@ shared(installMsg) actor class ICDexRouter() = this {
                 };
             };
         };
+    };
+    public shared(msg) func sys_config(_args: {
+        sysToken: ?Principal;
+        sysTokenFee: ?Nat;
+        creatingPairFee: ?Nat;
+    }) : async (){
+        assert(_onlyOwner(msg.caller));
+        sysToken := Option.get(_args.sysToken, sysToken);
+        sysTokenFee := Option.get(_args.sysTokenFee, sysTokenFee);
+        creatingPairFee := Option.get(_args.creatingPairFee, creatingPairFee);
     };
 
     /* =======================
