@@ -977,6 +977,11 @@ shared(installMsg) actor class ICDexRouter() = this {
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.ictc_redoTT(_toid, _ttid);
     };
+    public shared(msg) func pair_ictcCompleteTO(_app: Principal, _toid: Nat, _status: SagaTM.OrderStatus) : async Bool{ 
+        assert(_onlyOwner(msg.caller));
+        let pair: actor{ ictc_completeTO: shared (_toid: Nat, _status: SagaTM.OrderStatus) -> async Bool } = actor(Principal.toText(_app));
+        await pair.ictc_completeTO(_toid, _status);
+    };
     public shared(msg) func pair_ictcDoneTT(_app: Principal, _toid: Nat, _ttid: Nat, _toCallback: Bool) : async (?Nat){ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));

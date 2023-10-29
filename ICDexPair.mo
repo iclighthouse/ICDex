@@ -3589,7 +3589,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                                 let orderQuantity_buy = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, balance0, balance1, #Buy, setting.UNIT_SIZE*10);
                                 var orderQuantity = orderQuantity_sell;
                                 switch(orderQuantity_sell, orderQuantity_buy){
-                                    case(#Sell(q1), #Buy(q2,a2)){ orderQuantity := #Sell(Nat.min(q1, q2)) };
+                                    case(#Sell(q1), #Buy(q2,a2)){ 
+                                        let q = OrderBook.adjust((q1 + q2)/2, setting.UNIT_SIZE);
+                                        orderQuantity := #Sell(q);
+                                    };
                                     case(_){};
                                 };
                                 let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
@@ -3612,7 +3615,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                                 let orderQuantity_buy = STO.getQuantityPerOrder(grid.setting, gridPrice, setting.UNIT_SIZE, balance0, balance1, #Buy, setting.UNIT_SIZE*10);
                                 var orderQuantity = orderQuantity_buy;
                                 switch(orderQuantity_sell, orderQuantity_buy){
-                                    case(#Sell(q1), #Buy(q2,a2)){ orderQuantity := #Buy(Nat.min(q1, q2), Nat.min(q1, q2) * gridPrice / setting.UNIT_SIZE) };
+                                    case(#Sell(q1), #Buy(q2,a2)){ 
+                                        let q = OrderBook.adjust((q1 + q2)/2, setting.UNIT_SIZE);
+                                        orderQuantity := #Buy(q, q * gridPrice / setting.UNIT_SIZE);
+                                    };
                                     case(_){};
                                 };
                                 let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };

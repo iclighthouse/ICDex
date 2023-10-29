@@ -1,5 +1,17 @@
-.vscode
-.idea
+.DS_Store
+dist-ssr
+*.local
 .dfx
 .vessel
-/Docs/*
+.config
+.tmp
+
+# Various IDEs and Editors
+.vscode/
+.idea/
+.history/
+**/*~
+
+# frontend code
+node_modules/
+dist/

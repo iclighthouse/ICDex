@@ -52,7 +52,6 @@
       "type": "motoko",
       "args" : "--compacting-gc"
     }
-    
   },
   "defaults": {
     "build": {
