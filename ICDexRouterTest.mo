@@ -80,7 +80,7 @@ shared(installMsg) actor class ICDexRouter() = this {
     private stable var pause: Bool = false; 
     private stable var owner: Principal = installMsg.caller;
     private stable var pairs: Trie.Trie<PairCanister, SwapPair> = Trie.empty(); 
-    private stable var topups: Trie.Trie<PairCanister, Nat> = Trie.empty(); 
+    // private stable var topups: Trie.Trie<PairCanister, Nat> = Trie.empty(); 
     private stable var wasm: [Nat8] = [];
     private stable var wasm_preVersion: [Nat8] = [];
     private stable var wasmVersion: Text = "";
@@ -94,7 +94,9 @@ shared(installMsg) actor class ICDexRouter() = this {
     // Monitor
     private stable var cyclesMonitor: CyclesMonitor.MonitoredCanisters = Trie.empty(); 
     private stable var lastMonitorTime: Nat = 0;
-    private let canisterCyclesInit : Nat = if (icdex_debug) {200_000_000_000} else {1_500_000_000_000}; /*config*/
+    private stable var hotPairs : List.List<Principal> = List.nil();
+    private let canisterCyclesInit : Nat = if (icdex_debug) {200_000_000_000} else {2_000_000_000_000}; /*config*/
+    private let pairMaxMemory: Nat = 2*1000*1000*1000; // 2G
 
     private func keyp(t: Principal) : Trie.Key<Principal> { return { key = t; hash = Principal.hash(t) }; };
     private func keyn(t: Nat) : Trie.Key<Nat> { return { key = t; hash = Tools.natHash(t) }; };
@@ -1786,7 +1788,7 @@ shared(installMsg) actor class ICDexRouter() = this {
     public shared(msg) func debug_monitor(): async (){
         assert(_onlyOwner(msg.caller));
         if (Trie.size(cyclesMonitor) == 0){
-            for ((canisterId, value) in Trie.iter(topups)){
+            for ((canisterId, value) in Trie.iter(cyclesMonitor)){
                 try{
                     cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, canisterId);
                 }catch(e){};
@@ -1826,11 +1828,45 @@ shared(installMsg) actor class ICDexRouter() = this {
       Timer
     ========================= */
     private func timerLoop() : async (){
-        if (_now() > lastMonitorTime + 4 * 3600){
+        if (_now() > lastMonitorTime + 6 * 3600){
             try{ 
                 cyclesMonitor := await* CyclesMonitor.monitor(Principal.fromActor(this), cyclesMonitor, canisterCyclesInit, canisterCyclesInit * 50, 0);
                 lastMonitorTime := _now();
-             }catch(e){};
+            }catch(e){};
+            for ((canisterId, totalCycles) in Trie.iter(cyclesMonitor)){
+                if (totalCycles >= canisterCyclesInit * 10 and Option.isNull(List.find(hotPairs, func(t: Principal): Bool{ t == canisterId }))){
+                    try{ 
+                        let canisterStatus = await* CyclesMonitor.get_canister_status(canisterId);
+                        if (canisterStatus.memory_size > pairMaxMemory){
+                            let pair: ICDexPrivate.Self = actor(Principal.toText(canisterId));
+                            ignore await pair.config({
+                                UNIT_SIZE = null;
+                                ICP_FEE = null;
+                                TRADING_FEE = null;
+                                MAKER_BONUS_RATE = null;
+                                MAX_TPS = null; 
+                                MAX_PENDINGS = null;
+                                STORAGE_INTERVAL = null; // seconds
+                                ICTC_RUN_INTERVAL = null; // seconds
+                                ORDER_EXPIRATION_DURATION = ?(2 * 30 * 24 * 3600) // seconds
+                            });
+                            ignore await pair.drc205_config({
+                                EN_DEBUG = null;
+                                MAX_CACHE_TIME = ?(2 * 30 * 24 * 3600 * 1000000000);
+                                MAX_CACHE_NUMBER_PER = ?600;
+                                MAX_STORAGE_TRIES = null;
+                            });
+                            hotPairs := List.push(canisterId, hotPairs);
+                        };
+                    }catch(e){};
+                };
+            };
+            for (canisterId in List.toArray(hotPairs).vals()){
+                try{ 
+                    let pair: ICDexPrivate.Self = actor(Principal.toText(canisterId));
+                    await pair.ictc_clearLog(?(2 * 30 * 24 * 3600 * 1000000000), false);
+                }catch(e){};
+            };
         };
     };
     private var timerId: Nat = 0;
