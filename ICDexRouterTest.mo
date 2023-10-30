@@ -65,18 +65,18 @@ shared(installMsg) actor class ICDexRouter() = this {
     type Timestamp = Nat;
 
     private var icdex_debug : Bool = true; /*config*/
-    private let version_: Text = "0.10.12";
+    private let version_: Text = "0.11.0";
     private var ICP_FEE: Nat64 = 10000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private let blackhole: Principal = Principal.fromText("7hdtw-jqaaa-aaaak-aaccq-cai");
     private var cfAccountId: AccountId = Blob.fromArray([]);
-    private var icRouter: Text = "j4d4d-pqaaa-aaaak-aanxq-cai"; // pwokq-miaaa-aaaak-act6a-cai
+    private stable var icRouter: Text = "i2ied-uqaaa-aaaar-qaaza-cai"; // pwokq-miaaa-aaaak-act6a-cai
     if (icdex_debug){
         icRouter := "pwokq-miaaa-aaaak-act6a-cai";
     };
-    private stable var sysToken: Principal = Principal.fromText("7jf3t-siaaa-aaaak-aezna-cai"); // Test: 7jf3t-siaaa-aaaak-aezna-cai
-    private stable var sysTokenFee: Nat = 10000000000000;
-    private stable var creatingPairFee: Nat = 1000000000000000000; 
+    private stable var sysToken: Principal = Principal.fromText("5573k-xaaaa-aaaak-aacnq-cai"); // Test: 7jf3t-siaaa-aaaak-aezna-cai
+    private stable var sysTokenFee: Nat = 1000000; // 0.01 ICL
+    private stable var creatingPairFee: Nat = 500000000000; // 5000 ICL
     private stable var pause: Bool = false; 
     private stable var owner: Principal = installMsg.caller;
     private stable var pairs: Trie.Trie<PairCanister, SwapPair> = Trie.empty(); 
@@ -1135,11 +1135,13 @@ shared(installMsg) actor class ICDexRouter() = this {
         };
     };
     public shared(msg) func sys_config(_args: {
+        icRouter: ?Principal;
         sysToken: ?Principal;
         sysTokenFee: ?Nat;
         creatingPairFee: ?Nat;
     }) : async (){
         assert(_onlyOwner(msg.caller));
+        icRouter := Principal.toText(Option.get(_args.icRouter, Principal.fromText(icRouter)));
         sysToken := Option.get(_args.sysToken, sysToken);
         sysTokenFee := Option.get(_args.sysTokenFee, sysTokenFee);
         creatingPairFee := Option.get(_args.creatingPairFee, creatingPairFee);

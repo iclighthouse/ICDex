@@ -89,7 +89,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
 
     // Variables
     private var icdex_debug : Bool = true; /*config*/
-    private let version_: Text = "0.10.12";
+    private let version_: Text = "0.11.0";
     private let ns_: Nat = 1000000000;
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
@@ -98,7 +98,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     private stable var mode: SysMode = #GeneralTrading;
     private stable var pairOpeningTime: Time.Time = 0;
     private stable var owner: Principal = Option.get(initArgs.owner, installMsg.caller);
-    private stable var icdex_: Principal = Principal.fromText("ltyfs-qiaaa-aaaak-aan3a-cai"); // icdex_router (to be upgraded)
+    private stable var icdex_: Principal = installMsg.caller; // icdex_router (to be upgraded)
     // private stable var icrouter_: Principal = Principal.fromText("j4d4d-pqaaa-aaaak-aanxq-cai"); // dex_rooter (to be upgraded)
     if (icdex_debug){
         icdex_ := Principal.fromText("pymhy-xyaaa-aaaak-act7a-cai");
