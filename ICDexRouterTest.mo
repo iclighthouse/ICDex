@@ -77,6 +77,7 @@ shared(installMsg) actor class ICDexRouter() = this {
     private stable var sysToken: Principal = Principal.fromText("5573k-xaaaa-aaaak-aacnq-cai"); // Test: 7jf3t-siaaa-aaaak-aezna-cai
     private stable var sysTokenFee: Nat = 1000000; // 0.01 ICL
     private stable var creatingPairFee: Nat = 500000000000; // 5000 ICL
+    private stable var creatingMakerFee: Nat = 5000000000; // 50 ICL
     private stable var pause: Bool = false; 
     private stable var owner: Principal = installMsg.caller;
     private stable var pairs: Trie.Trie<PairCanister, SwapPair> = Trie.empty(); 
@@ -1139,12 +1140,14 @@ shared(installMsg) actor class ICDexRouter() = this {
         sysToken: ?Principal;
         sysTokenFee: ?Nat;
         creatingPairFee: ?Nat;
+        creatingMakerFee: ?Nat;
     }) : async (){
         assert(_onlyOwner(msg.caller));
         icRouter := Principal.toText(Option.get(_args.icRouter, Principal.fromText(icRouter)));
         sysToken := Option.get(_args.sysToken, sysToken);
         sysTokenFee := Option.get(_args.sysTokenFee, sysTokenFee);
         creatingPairFee := Option.get(_args.creatingPairFee, creatingPairFee);
+        creatingMakerFee := Option.get(_args.creatingMakerFee, creatingMakerFee);
     };
 
     /* =======================
@@ -1633,52 +1636,83 @@ shared(installMsg) actor class ICDexRouter() = this {
         let pairSetting = await pairActor.getConfig();
         let unitSize = pairSetting.UNIT_SIZE;
         let info = await pairActor.info();
-        // create
-        Cycles.add(canisterCyclesInit);
-        let canister = await ic.create_canister({ settings = null });
-        let makerCanister = canister.canister_id;
-        let args: [Nat8] = Blob.toArray(to_candid({
-            creator = accountId;
-            allow = _arg.allow;
-            pair = _arg.pair;
-            unitSize = unitSize;
-            name = _arg.name;
-            token0 = info.token0.0;
-            token0Std = info.token0.2;
-            token1 = info.token1.0;
-            token1Std = info.token1.2;
-            lowerLimit = _arg.lowerLimit; //Price
-            upperLimit = _arg.upperLimit; //Price
-            spreadRate = _arg.spreadRate; // ppm  x/1000000
-            threshold = _arg.threshold;
-            volFactor = _arg.volFactor; // multi 
-        }: Maker.InitArgs));
-        await ic.install_code({
-            arg : [Nat8] = args;
-            wasm_module = maker_wasm;
-            mode = #install; // #reinstall; #upgrade; #install
-            canister_id = makerCanister;
+        // charge fee
+        let token: ICRC1.Self = actor(Principal.toText(sysToken));
+        let result = await token.icrc2_transfer_from({
+            spender_subaccount = null; // *
+            from = {owner = msg.caller; subaccount = null};
+            to = {owner = Principal.fromActor(this); subaccount = null};
+            amount = creatingMakerFee;
+            fee = null;
+            memo = null;
+            created_at_time = null;
         });
-        var controllers: [Principal] = [makerCanister, blackhole, Principal.fromActor(this)]; 
-        if (_arg.allow == #Private){
-            controllers := Tools.arrayAppend(controllers, [msg.caller]);
-        };
-        let settings = await ic.update_settings({
-            canister_id = makerCanister; 
-            settings={ 
-                compute_allocation = null;
-                controllers = ?controllers;
-                freezing_threshold = null;
-                memory_allocation = null;
+        switch(result){
+            case(#Ok(blockNumber)){};
+            case(#Err(e)){
+                throw Error.reject("Error: Error when paying the fee for creating a trading pair."); 
             };
-        });
-        if (_arg.allow == #Public){
-            _putPublicMaker(_arg.pair, makerCanister, accountId);
-        }else{
-            _putPrivateMaker(_arg.pair, makerCanister, accountId);
         };
-        cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
-        return makerCanister;
+        // create
+        try{
+            Cycles.add(canisterCyclesInit);
+            let canister = await ic.create_canister({ settings = null });
+            let makerCanister = canister.canister_id;
+            let args: [Nat8] = Blob.toArray(to_candid({
+                creator = accountId;
+                allow = _arg.allow;
+                pair = _arg.pair;
+                unitSize = unitSize;
+                name = _arg.name;
+                token0 = info.token0.0;
+                token0Std = info.token0.2;
+                token1 = info.token1.0;
+                token1Std = info.token1.2;
+                lowerLimit = _arg.lowerLimit; //Price
+                upperLimit = _arg.upperLimit; //Price
+                spreadRate = _arg.spreadRate; // ppm  x/1000000
+                threshold = _arg.threshold;
+                volFactor = _arg.volFactor; // multi 
+            }: Maker.InitArgs));
+            await ic.install_code({
+                arg : [Nat8] = args;
+                wasm_module = maker_wasm;
+                mode = #install; // #reinstall; #upgrade; #install
+                canister_id = makerCanister;
+            });
+            var controllers: [Principal] = [makerCanister, blackhole, Principal.fromActor(this)]; 
+            if (_arg.allow == #Private){
+                controllers := Tools.arrayAppend(controllers, [msg.caller]);
+            };
+            let settings = await ic.update_settings({
+                canister_id = makerCanister; 
+                settings={ 
+                    compute_allocation = null;
+                    controllers = ?controllers;
+                    freezing_threshold = null;
+                    memory_allocation = null;
+                };
+            });
+            if (_arg.allow == #Public){
+                _putPublicMaker(_arg.pair, makerCanister, accountId);
+            }else{
+                _putPrivateMaker(_arg.pair, makerCanister, accountId);
+            };
+            cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
+            return makerCanister;
+        }catch(e){
+            if (creatingMakerFee > sysTokenFee){
+                let r = await token.icrc1_transfer({
+                    from_subaccount = null;
+                    to = {owner = msg.caller; subaccount = null};
+                    amount = Nat.sub(creatingMakerFee, sysTokenFee);
+                    fee = null;
+                    memo = null;
+                    created_at_time = null;
+                });
+            };
+            throw Error.reject(Error.message(e));
+        };
     };
     // permissions: Dao, Private Maker Creator
     public shared(msg) func maker_update(_pair: Principal, _maker: Principal, _name:?Text, _version: Text): async (canister: ?Principal){
