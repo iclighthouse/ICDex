@@ -496,7 +496,10 @@ shared(installMsg) actor class ICDexRouter() = this {
         switch(result){
             case(#Ok(blockNumber)){
                 try{
-                    return await* _create(_token0, _token1, null, null);
+                    let canisterId = await* _create(_token0, _token1, null, null);
+                    let pairActor: ICDexPrivate.Self = actor(Principal.toText(canisterId));
+                    ignore await pairActor.setPause(false, null);
+                    return canisterId;
                 }catch(e){
                     if (creatingPairFee > sysTokenFee){
                         let r = await token.icrc1_transfer({
