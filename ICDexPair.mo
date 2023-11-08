@@ -89,7 +89,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
 
     // Variables
     private var icdex_debug : Bool = true; /*config*/
-    private let version_: Text = "0.11.0";
+    private let version_: Text = "0.11.1";
     private let ns_: Nat = 1000000000;
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
@@ -2483,7 +2483,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         };
         try{
             countAsyncMessage += 1;
-            let res = await* _trade(msg.caller, _order, _orderType, null, _nonce, _sa, _data, null, false);
+            let res = await* _trade(msg.caller, _order, _orderType, null, _nonce, _sa, _data, null, true);
             countAsyncMessage -= Nat.min(1, countAsyncMessage);
             return res;
         }catch(e){
@@ -2520,7 +2520,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         };
         try{
             countAsyncMessage += 1;
-            let res = await* _trade(msg.caller, _order, _orderType, null, _nonce, _sa, _data, _brokerage, false);
+            let res = await* _trade(msg.caller, _order, _orderType, null, _nonce, _sa, _data, _brokerage, true);
             countAsyncMessage -= Nat.min(1, countAsyncMessage);
             return res;
         }catch(e){
@@ -3258,20 +3258,24 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         assert(value0 <= balances.token0.available and value1 <= balances.token1.available);
         let saga = _getSaga();
         var toid : Nat = 0;
+        var resValue0: Nat = 0;
+        var resValue1: Nat = 0;
         if (value0 > _getFee0() or value1 > _getFee1()){
             toid := saga.create("withdraw", #Forward, null, null);
             if (value0 > _getFee0()){
                 ignore _subAccountBalance(account, #token0, #available(value0));
                 ignore _sendToken0(false, toid, sa_pool, [], [icrc1Account], [value0], ?sa_pool, null);
+                resValue0 := Nat.sub(value0, _getFee0());
             };
             if (value1 > _getFee1()){
                 ignore _subAccountBalance(account, #token1, #available(value1));
                 ignore _sendToken1(false, toid, sa_pool, [], [icrc1Account], [value1], ?sa_pool, null);
+                resValue1 := Nat.sub(value1, _getFee1());
             };
             saga.close(toid);
             // await* _ictcSagaRun(toid, false);
         };
-        return (toid, Nat.sub(value0, _getFee0()), Nat.sub(value1, _getFee1()));
+        return (toid, resValue0, resValue1);
     };
     private func _autoWithdraw(_icrc1Account: ICRC1.Account, _threshold: ?Amount) : SagaTM.Toid{ // icdex_; brokers
         let token0_threshold = Option.get(_threshold, setting.UNIT_SIZE * 1000);
