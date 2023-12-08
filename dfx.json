@@ -6,25 +6,25 @@
       "args" : "--compacting-gc"
     },
     "Router": {
-      "main": "./ICDexRouter.mo",
+      "main": "src/ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"
     },
     "RouterMain": {
-      "main": "./ICDexRouter.mo",
+      "main": "src/ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"
     },
     "RouterTest": {
-      "main": "./ICDexRouter.mo",
+      "main": "src/ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"
     },
     "ICDexMaker": {
-      "main": "./ICDexMaker.mo",
+      "main": "src/ICDexMaker.mo",
       "type": "motoko",
       "args" : "--compacting-gc"
     }
