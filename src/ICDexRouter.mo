@@ -1,5 +1,5 @@
 /**
- * Module     : ICDexRouter.mo
+ * Module     : ICDexRouter
  * Author     : ICLighthouse Team
  * Stability  : Experimental
  * Github     : https://github.com/iclighthouse/
@@ -47,8 +47,10 @@ import Error "mo:base/Error";
 import CF "mo:icl/CF";
 import CyclesMonitor "mo:icl/CyclesMonitor";
 import Maker "mo:icl/ICDexMaker";
+import EventTypes "./lib/EventTypes";
+import ICEvents "mo:icl/ICEvents";
 
-shared(installMsg) actor class ICDexRouter() = this {
+shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
     type Txid = T.Txid;  //Blob
     type AccountId = T.AccountId;
     type Address = T.Address;
@@ -63,23 +65,35 @@ shared(installMsg) actor class ICDexRouter() = this {
     type TrieList<K, V> = T.TrieList<K, V>;
     type InstallMode = {#reinstall; #upgrade; #install};
     type Timestamp = Nat;
+    type BlockHeight = EventTypes.BlockHeight; //Nat
+    type Event = EventTypes.Event;
 
-    private var icdex_debug : Bool = true; /*config*/
-    private let version_: Text = "0.11.0";
+    private var icdex_debug : Bool = false; /*config*/
+    private let version_: Text = "0.12.9";
     private var ICP_FEE: Nat64 = 10000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
-    private let blackhole: Principal = Principal.fromText("7hdtw-jqaaa-aaaak-aaccq-cai");
     private var cfAccountId: AccountId = Blob.fromArray([]);
+    // Blackhole canister-id acts as a controller for a canister and is used to monitor its canister_status, can be reconfigured.
+    // blackhole canister: 7hdtw-jqaaa-aaaak-aaccq-cai
+    // ModuleHash(dfx: 0.8.4): 603692eda4a0c322caccaff93cf4a21dc44aebad6d71b40ecefebef89e55f3be
+    // Github: https://github.com/iclighthouse/ICMonitor/blob/main/Blackhole.mo
+    private var blackhole: Principal = Principal.fromText("7hdtw-jqaaa-aaaak-aaccq-cai");
+    // Governance canister-id
+    private stable var icDao: Principal = initDAO;
+    // icRouter: External trading pair catalog listings, which are not substantive dependencies of ICDex, can be reconfigured.
     private stable var icRouter: Text = "i2ied-uqaaa-aaaar-qaaza-cai"; // pwokq-miaaa-aaaak-act6a-cai
     if (icdex_debug){
         icRouter := "pwokq-miaaa-aaaak-act6a-cai";
     };
-    private stable var sysToken: Principal = Principal.fromText("5573k-xaaaa-aaaak-aacnq-cai"); // Test: 7jf3t-siaaa-aaaak-aezna-cai
-    private stable var sysTokenFee: Nat = 1000000; // 0.01 ICL
-    private stable var creatingPairFee: Nat = 500000000000; // 5000 ICL
-    private stable var creatingMakerFee: Nat = 5000000000; // 50 ICL
+    // ICLighthouse Planet NFT
+    private stable var nftPlanetCards: Principal = Principal.fromText("goncb-kqaaa-aaaap-aakpa-cai");
+    // ICDex's eco-incentive token that can be reconfigured.
+    private stable var sysToken: Principal = Principal.fromText("5573k-xaaaa-aaaak-aacnq-cai"); // will be configured as an SNS token
+    private stable var sysTokenFee: Nat = 1_000_000; // 0.01 ICL
+    private stable var creatingPairFee: Nat = 500_000_000_000; // 5000 ICL
+    private stable var creatingMakerFee: Nat = 5_000_000_000; // 50 ICL
     private stable var pause: Bool = false; 
-    private stable var owner: Principal = installMsg.caller;
+    // private stable var owner: Principal = installMsg.caller;
     private stable var pairs: Trie.Trie<PairCanister, SwapPair> = Trie.empty(); 
     // private stable var topups: Trie.Trie<PairCanister, Nat> = Trie.empty(); 
     private stable var wasm: [Nat8] = [];
@@ -92,6 +106,11 @@ shared(installMsg) actor class ICDexRouter() = this {
     private stable var maker_wasmVersion: Text = "";
     private stable var maker_publicCanisters: Trie.Trie<PairCanister, [(maker: Principal, creator: AccountId)]> = Trie.empty(); 
     private stable var maker_privateCanisters: Trie.Trie<PairCanister, [(maker: Principal, creator: AccountId)]> = Trie.empty(); 
+    // Events
+    private stable var eventBlockIndex : BlockHeight = 0;
+    private stable var firstBlockIndex : BlockHeight = 0;
+    private stable var icEvents : ICEvents.ICEvents<Event> = Trie.empty(); 
+    private stable var icAccountEvents : ICEvents.AccountEvents = Trie.empty(); 
     // Monitor
     private stable var cyclesMonitor: CyclesMonitor.MonitoredCanisters = Trie.empty(); 
     private stable var lastMonitorTime: Nat = 0;
@@ -104,36 +123,17 @@ shared(installMsg) actor class ICDexRouter() = this {
     private func keyb(t: Blob) : Trie.Key<Blob> { return { key = t; hash = Blob.hash(t) }; };
     private func keyt(t: Text) : Trie.Key<Text> { return { key = t; hash = Text.hash(t) }; };
     private func trieItems<K, V>(_trie: Trie.Trie<K,V>, _page: Nat, _size: Nat) : TrieList<K, V> {
-        let length = Trie.size(_trie);
-        if (_page < 1 or _size < 1){
-            return {data = []; totalPage = 0; total = length; };
-        };
-        let offset = Nat.sub(_page, 1) * _size;
-        var totalPage: Nat = length / _size;
-        if (totalPage * _size < length) { totalPage += 1; };
-        if (offset >= length){
-            return {data = []; totalPage = totalPage; total = length; };
-        };
-        let end: Nat = offset + Nat.sub(_size, 1);
-        var i: Nat = 0;
-        var res: [(K, V)] = [];
-        for ((k,v) in Trie.iter<K, V>(_trie)){
-            if (i >= offset and i <= end){
-                res := Tools.arrayAppend(res, [(k,v)]);
-            };
-            i += 1;
-        };
-        return {data = res; totalPage = totalPage; total = length; };
+        return Tools.trieItems(_trie, _page, _size);
     };
     
     /* 
     * Local Functions
     */
     private func _now() : Timestamp{
-        return Int.abs(Time.now() / 1000000000);
+        return Int.abs(Time.now() / 1_000_000_000);
     };
     private func _onlyOwner(_caller: Principal) : Bool { 
-        return _caller == owner;
+        return _caller == icDao or Principal.isController(_caller);
     };  // assert(_onlyOwner(msg.caller));
     private func _notPaused() : Bool { 
         return not(pause);
@@ -372,9 +372,9 @@ shared(installMsg) actor class ICDexRouter() = this {
             feeRate: Float = 0.005; //  0.5%
         };
         pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pair).0;
-        var controllers: [Principal] = [pairCanister, blackhole, Principal.fromActor(this)];
+        var controllers: [Principal] = [icDao, pairCanister, blackhole, Principal.fromActor(this)];
         if (icdex_debug){
-            controllers := [pairCanister, blackhole, Principal.fromActor(this), owner];
+            controllers := [icDao, pairCanister, blackhole, Principal.fromActor(this), installMsg.caller];
         };
         let settings = await ic.update_settings({
             canister_id = pairCanister; 
@@ -388,10 +388,12 @@ shared(installMsg) actor class ICDexRouter() = this {
         await pairActor.init();
         await pairActor.timerStart(900);
         let router: Router.Self = actor(icRouter);
-        await router.putByDex(
-            (token0Principal, token0Symbol, token0Std), 
-            (token1Principal, token1Symbol, token1Std), 
-            pairCanister);
+        try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
+            await router.putByDex(
+                (token0Principal, token0Symbol, token0Std), 
+                (token1Principal, token1Symbol, token1Std), 
+                pairCanister);
+        }catch(e){};
         cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, pairCanister);
         return pairCanister;
     };
@@ -468,11 +470,12 @@ shared(installMsg) actor class ICDexRouter() = this {
                 };
                 pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pairNew).0;
                 let router: Router.Self = actor(icRouter);
-                await router.putByDex(
-                    (token0Principal, token0Symbol, token0Std), 
-                    (token1Principal, token1Symbol, token1Std), 
-                    pairCanister);
-                
+                try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
+                    await router.putByDex(
+                        (token0Principal, token0Symbol, token0Std), 
+                        (token1Principal, token1Symbol, token1Std), 
+                        pairCanister);
+                }catch(e){};
                 return ?pairCanister;
             };
             case(_){
@@ -484,7 +487,7 @@ shared(installMsg) actor class ICDexRouter() = this {
     public shared(msg) func pubCreate(_token0: Principal, _token1: Principal): async (canister: PairCanister){
         assert(not(_isExistedByToken(_token0, _token1)));
         let token: ICRC1.Self = actor(Principal.toText(sysToken));
-        let result = await token.icrc2_transfer_from({
+        let arg: ICRC1.TransferFromArgs = {
             spender_subaccount = null; // *
             from = {owner = msg.caller; subaccount = null};
             to = {owner = Principal.fromActor(this); subaccount = null};
@@ -492,24 +495,30 @@ shared(installMsg) actor class ICDexRouter() = this {
             fee = null;
             memo = null;
             created_at_time = null;
-        });
+        };
+        let result = await token.icrc2_transfer_from(arg);
+        ignore _putEvent(#chargeFee({ token = sysToken; arg = arg; result = result; }), ?Tools.principalToAccountBlob(msg.caller, null));
         switch(result){
             case(#Ok(blockNumber)){
                 try{
                     let canisterId = await* _create(_token0, _token1, null, null);
                     let pairActor: ICDexPrivate.Self = actor(Principal.toText(canisterId));
                     ignore await pairActor.setPause(false, null);
+                    ignore _putEvent(#createPairByUser({ token0 = _token0; token1 = _token1; pairCanisterId = canisterId }), ?Tools.principalToAccountBlob(msg.caller, null));
+                    ignore _putEvent(#pairStart({ pair = canisterId; message = ?"Pair is launched." }), ?Tools.principalToAccountBlob(Principal.fromActor(this), null));
                     return canisterId;
                 }catch(e){
                     if (creatingPairFee > sysTokenFee){
-                        let r = await token.icrc1_transfer({
+                        let arg: ICRC1.TransferArgs = {
                             from_subaccount = null;
                             to = {owner = msg.caller; subaccount = null};
                             amount = Nat.sub(creatingPairFee, sysTokenFee);
                             fee = null;
                             memo = null;
                             created_at_time = null;
-                        });
+                        };
+                        let r = await token.icrc1_transfer(arg);
+                        ignore _putEvent(#refundFee({ token = sysToken; arg = arg; result = r; }), ?Tools.principalToAccountBlob(msg.caller, null));
                     };
                     throw Error.reject("Error: Creation Failed. "# Error.message(e)); 
                 };
@@ -535,6 +544,7 @@ shared(installMsg) actor class ICDexRouter() = this {
             assert(_version == wasmVersion);
             wasm := Tools.arrayAppend(wasm, Blob.toArray(_wasm));
         };
+        ignore _putEvent(#setICDexPairWasm({ version = _version; append = _append; backupPreVersion = _backup }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public query func getWasmVersion() : async (Text, Text, Nat){
         let offset = wasm.size() / 2;
@@ -550,7 +560,9 @@ shared(installMsg) actor class ICDexRouter() = this {
     // create '(principal "", principal "ryjl3-tyaaa-aaaaa-aaaba-cai", null, null)'
     public shared(msg) func create(_token0: Principal, _token1: Principal, _unitSize: ?Nat64, _initCycles: ?Nat): async (canister: PairCanister){
         assert(_onlyOwner(msg.caller));
-        return await* _create(_token0, _token1, _unitSize, _initCycles);
+        let canisterId = await* _create(_token0, _token1, _unitSize, _initCycles);
+        ignore _putEvent(#createPair({ token0 = _token0; token1 = _token1; unitSize = _unitSize; initCycles = _initCycles; pairCanisterId = canisterId }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return canisterId;
     };
     
     /// Upgrade pair canister
@@ -558,7 +570,9 @@ shared(installMsg) actor class ICDexRouter() = this {
         assert(_onlyOwner(msg.caller));
         assert(wasm.size() > 0);
         assert(_version == wasmVersion);
-        return await* _update(_pair, wasm, #upgrade);
+        let res = await* _update(_pair, wasm, #upgrade);
+        ignore _putEvent(#upgradePairWasm({ pair = _pair; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     /// Rollback to previous version (the last version that was saved)
     public shared(msg) func rollback(_pair: Principal): async (canister: ?PairCanister){
@@ -567,7 +581,9 @@ shared(installMsg) actor class ICDexRouter() = this {
         let pair : ICDexPrivate.Self = actor(Principal.toText(_pair));
         let info = await pair.info();
         assert(info.paused);
-       return await* _update(_pair, wasm_preVersion, #upgrade);
+       let res = await* _update(_pair, wasm_preVersion, #upgrade);
+       ignore _putEvent(#rollbackPairWasm({ pair = _pair; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+       return res;
     };
     /// Modifying the controllers of the pair
     public shared(msg) func setControllers(_pair: Principal, _controllers: [Principal]): async Bool{
@@ -582,6 +598,7 @@ shared(installMsg) actor class ICDexRouter() = this {
                 memory_allocation = null;
             };
         });
+        ignore _putEvent(#setPairControllers({ pair = _pair; controllers = _controllers }), ?Tools.principalToAccountBlob(msg.caller, null));
         return true;
     };
     /// Note: A reinstallation of a pair canister would not be usable as a production environment, as its nonce is contaminated by the previous version.
@@ -601,6 +618,7 @@ shared(installMsg) actor class ICDexRouter() = this {
 
         await _recovery(_pair, data);
 
+        ignore _putEvent(#reinstallPairWasm({ pair = _pair; version = _version; success = true; }), ?Tools.principalToAccountBlob(msg.caller, null));
         return res; //?Principal.fromText("");
     };
     public shared(msg) func sync() : async (){ // sync fee
@@ -613,20 +631,29 @@ shared(installMsg) actor class ICDexRouter() = this {
     /* =======================
       Data snapshots (backup & recovery)
     ========================= */
-    private stable var backupData : [Backup.BackupResponse] = []; // temporary cache for debug
+    private stable var backupData : [Backup.BackupResponse] = []; // temporary cache for reinstall
     private stable var snapshots : Trie.Trie<PairCanister, List.List<(ICDexTypes.Timestamp, [Backup.BackupResponse])>> = Trie.empty(); 
     private func _setSnapshot(_pair: Principal, _backupData: [Backup.BackupResponse]): ICDexTypes.Timestamp{
-        let now = Int.abs(Time.now()) / 1000000000;
+        let now = _now();
         switch(Trie.get(snapshots, keyp(_pair), Principal.equal)){
             case(?list){
-                let temp = List.filter(list, func(t: (Nat, [Backup.BackupResponse])): Bool{ now < t.0 + 60 * 24 * 3600 }); // 60days
-                snapshots := Trie.put(snapshots, keyp(_pair), Principal.equal, List.push((now, _backupData), temp)).0;
+                snapshots := Trie.put(snapshots, keyp(_pair), Principal.equal, List.push((now, _backupData), list)).0;
             };
             case(_){
                 snapshots := Trie.put(snapshots, keyp(_pair), Principal.equal, List.push((now, _backupData), null)).0;
             };
         };
         return now;
+    };
+    private func _removeSnapshot(_pair: Principal, _timeBefor: Timestamp): (){
+        switch(Trie.get(snapshots, keyp(_pair), Principal.equal)){
+            case(?list){
+                let temp = List.filter(list, func(t: (Nat, [Backup.BackupResponse])): Bool{ t.0 > _timeBefor });
+                snapshots := Trie.put(snapshots, keyp(_pair), Principal.equal, temp).0;
+                ignore _putEvent(#removePairDataSnapshot({ pair = _pair; timeBefor = _timeBefor; }), ?Tools.principalToAccountBlob(Principal.fromActor(this), null));
+            };
+            case(_){};
+        };
     };
     private func _getSnapshot(_pair: Principal, _ts: ?ICDexTypes.Timestamp): ?[Backup.BackupResponse]{
         switch(Trie.get(snapshots, keyp(_pair), Principal.equal), _ts){
@@ -739,6 +766,7 @@ shared(installMsg) actor class ICDexRouter() = this {
         backupData := Tools.arrayAppend(backupData, [icdex_stOrderTxids]);
 
         assert(backupData.size() == 30);
+        ignore _putEvent(#backupPairData({ pair = _pair; timestamp = _now(); }), ?Tools.principalToAccountBlob(Principal.fromActor(this), null));
         return backupData;
     };
     private func _recovery(_pair: Principal, _backupData: [Backup.BackupResponse]) : async (){
@@ -746,39 +774,17 @@ shared(installMsg) actor class ICDexRouter() = this {
         let info = await pair.info();
         assert(info.paused);
         assert(_backupData.size() == 30);
-        ignore await pair.recovery(_backupData[0]);
-        ignore await pair.recovery(_backupData[1]);
-        ignore await pair.recovery(_backupData[2]);
-        ignore await pair.recovery(_backupData[3]);
-        ignore await pair.recovery(_backupData[4]);
-        ignore await pair.recovery(_backupData[5]);
-        ignore await pair.recovery(_backupData[6]);
-        ignore await pair.recovery(_backupData[7]);
-        ignore await pair.recovery(_backupData[8]);
-        ignore await pair.recovery(_backupData[9]);
-        ignore await pair.recovery(_backupData[10]);
-        ignore await pair.recovery(_backupData[11]);
-        ignore await pair.recovery(_backupData[12]);
-        ignore await pair.recovery(_backupData[13]);
-        ignore await pair.recovery(_backupData[14]);
-        ignore await pair.recovery(_backupData[15]);
-        ignore await pair.recovery(_backupData[16]);
-        ignore await pair.recovery(_backupData[17]);
-        ignore await pair.recovery(_backupData[18]);
-        ignore await pair.recovery(_backupData[19]);
-        ignore await pair.recovery(_backupData[20]);
-        ignore await pair.recovery(_backupData[21]);
-        ignore await pair.recovery(_backupData[22]);
-        ignore await pair.recovery(_backupData[23]);
-        ignore await pair.recovery(_backupData[24]);
-        ignore await pair.recovery(_backupData[25]);
-        ignore await pair.recovery(_backupData[26]);
-        ignore await pair.recovery(_backupData[27]);
-        ignore await pair.recovery(_backupData[28]);
-        ignore await pair.recovery(_backupData[29]);
+        for (item in _backupData.vals()){
+            ignore await pair.recovery(item);
+        };
+        ignore _putEvent(#recoveryPairData({ pair = _pair; timestamp = _now(); }), ?Tools.principalToAccountBlob(Principal.fromActor(this), null));
     };
     public query func getSnapshots(_pair: Principal): async [ICDexTypes.Timestamp]{
         return _getSnapshotTs(_pair);
+    };
+    public shared(msg) func removeSnapshot(_pair: Principal, _timeBefor: Timestamp): async (){
+        assert(_onlyOwner(msg.caller));
+        _removeSnapshot(_pair, _timeBefor);
     };
     public shared(msg) func backup(_pair: Principal): async ICDexTypes.Timestamp{
         assert(_onlyOwner(msg.caller));
@@ -816,10 +822,13 @@ shared(installMsg) actor class ICDexRouter() = this {
         pairs := Trie.put(pairs, keyp(pair.canisterId), Principal.equal, pair).0;
         await _syncFee(pair);
         let router: Router.Self = actor(icRouter);
-        await router.putByDex(
-            _pair.token0, 
-            _pair.token1, 
-            _pair.canisterId);
+        try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
+            await router.putByDex(
+                _pair.token0, 
+                _pair.token1, 
+                _pair.canisterId);
+        }catch(e){};
+        ignore _putEvent(#addPairToList({ pair = pair.canisterId;}), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func remove(_pairCanister: Principal) : async (){
         assert(_onlyOwner(msg.caller));
@@ -827,10 +836,11 @@ shared(installMsg) actor class ICDexRouter() = this {
             _pairCanister != k;
         });
         let router: Router.Self = actor(icRouter);
-        try{
+        try{ // Manager external directory listings, if it fails it has no effect on ICDex.
             await router.removeByDex(_pairCanister);
-            cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _pairCanister);
         }catch(e){};
+        cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _pairCanister);
+        ignore _putEvent(#removePairFromList({ pair = _pairCanister;}), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public query func getTokens() : async [TokenInfo]{
         var trie = pairs;
@@ -865,7 +875,13 @@ shared(installMsg) actor class ICDexRouter() = this {
     public shared(msg) func pair_pause(_app: Principal, _pause: Bool, _openingTime: ?Time.Time) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        return await pair.setPause(_pause, _openingTime);
+        let res = await pair.setPause(_pause, _openingTime);
+        if (_pause){
+            ignore _putEvent(#pairSuspend({ pair = _app;  message = ?"Pair is suspended by DAO."}), ?Tools.principalToAccountBlob(msg.caller, null));
+        }else{
+            ignore _putEvent(#pairStart({ pair = _app; message = ?"Pair is opened by DAO."}), ?Tools.principalToAccountBlob(msg.caller, null));
+        };
+        return res;
     };
     public shared(msg) func pair_IDOSetFunder(_app: Principal, _funder: ?Principal, _requirement: ?ICDexPrivate.IDORequirement) : async (){ 
         assert(_onlyOwner(msg.caller));
@@ -874,15 +890,18 @@ shared(installMsg) actor class ICDexRouter() = this {
         if (Option.isSome(_funder)){
             IDOPairs := List.push(_app, IDOPairs);
         };
-        return await pair.IDO_setFunder(_funder, _requirement);
+        await pair.IDO_setFunder(_funder, _requirement);
+        ignore _putEvent(#pairEnableIDOAndSetFunder({ pair = _app; funder = _funder; _requirement = _requirement}), ?Tools.principalToAccountBlob(msg.caller, null));
     };
-    public shared(msg) func pair_changeOwner(_app: Principal, _newOwner: Principal) : async Bool{ 
-        assert(_onlyOwner(msg.caller));
-        let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        return await pair.changeOwner(_newOwner);
-    };
-    // pair_config '(principal "", opt record{UNIT_SIZE=opt 100000000:opt nat}, null)'
-    // pair_config '(principal "", null, opt record{MAX_CACHE_TIME= opt 5184000000000000})'
+    // public shared(msg) func pair_changeOwner(_app: Principal, _newOwner: Principal) : async Bool{ 
+    //     assert(_onlyOwner(msg.caller));
+    //     let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
+    //     let res = await pair.changeOwner(_newOwner);
+    //     ignore _putEvent(#pairChangeOwner({ pair = _app; newOwner = _newOwner}), ?Tools.principalToAccountBlob(msg.caller, null));
+    //     return res;
+    // };
+    // pair_config '(principal "", opt record{UNIT_SIZE=opt 100_000_000:opt nat}, null)'
+    // pair_config '(principal "", null, opt record{MAX_CACHE_TIME= opt 5_184_000_000_000_000})'
     public shared(msg) func pair_config(_app: Principal, _config: ?ICDexTypes.DexConfig, _drc205config: ?DRC205.Config) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
@@ -901,17 +920,28 @@ shared(installMsg) actor class ICDexRouter() = this {
             };
             case(_){};
         };
+        ignore _putEvent(#pairConfig({ pair = _app; setting = _config; drc205config = _drc205config}), ?Tools.principalToAccountBlob(msg.caller, null));
         return res;
     };
     public shared(msg) func pair_setUpgradeMode(_app: Principal, _mode: {#Base; #All}) : async (){
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        return await pair.setUpgradeMode(_mode);
+        let res = await pair.setUpgradeMode(_mode);
+        ignore _putEvent(#pairSetUpgradeMode({ pair = _app; mode = _mode}), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
-    public shared(msg) func pair_setOrderFail(_app: Principal, _txid: Text) : async Bool{
+    public shared(msg) func pair_setOrderFail(_app: Principal, _txid: Text, _refund0: Nat, _refund1: Nat) : async Bool{
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        return await pair.setOrderFail(_txid);
+        let res = await pair.setOrderFail(_txid, _refund0, _refund1);
+        ignore _putEvent(#pairSetOrderFail({ pair = _app; txidHex = _txid; refundToken0 = _refund0; refundToken1 = _refund1 }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
+    };
+    public shared(msg) func pair_enableStratOrder(_app: Principal, _arg: {#Enable; #Disable}) : async (){
+        assert(_onlyOwner(msg.caller));
+        let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
+        await pair.sto_enableStratOrder(_arg);
+        ignore _putEvent(#pairEnableStratOrder({ pair = _app; arg = _arg }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func pair_pendingAll(_app: Principal, _page: ?Nat, _size: ?Nat) : async ICDexTypes.TrieList<ICDexTypes.Txid, ICDexTypes.TradingOrder>{
         assert(_onlyOwner(msg.caller));
@@ -934,8 +964,10 @@ shared(installMsg) actor class ICDexRouter() = this {
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         if (_addOrRemove){
             await pair.ictc_addAdmin(_admin);
+            ignore _putEvent(#pairICTCSetAdmin({ app = _app; admin = _admin; act = #Add }), ?Tools.principalToAccountBlob(msg.caller, null));
         }else{
             await pair.ictc_removeAdmin(_admin);
+            ignore _putEvent(#pairICTCSetAdmin({ app = _app; admin = _admin; act = #Remove }), ?Tools.principalToAccountBlob(msg.caller, null));
         };
         return true;
     };
@@ -943,12 +975,14 @@ shared(installMsg) actor class ICDexRouter() = this {
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.ictc_clearLog(_expiration, _delForced);
+        ignore _putEvent(#pairICTCClearLog({ app = _app; expiration = _expiration; forced = _delForced }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
-    public shared(msg) func pair_ictcClearTTPool(_app: Principal) : async (){ 
-        assert(_onlyOwner(msg.caller));
-        let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        await pair.ictc_clearTTPool();
-    };
+    // public shared(msg) func pair_ictcClearTTPool(_app: Principal) : async (){ 
+    //     assert(_onlyOwner(msg.caller));
+    //     let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
+    //     await pair.ictc_clearTTPool();
+    //     // ignore _putEvent(#pairICTCClearTTPool({ pair = _app; }), ?Tools.principalToAccountBlob(msg.caller, null));
+    // };
     // public shared(msg) func pair_ictcManageOrder1(_app: Principal, _txid: Txid, _orderStatus: ICDexTypes.TradingStatus, _token0Fallback: Nat, _token1Fallback: Nat, _token0FromPair: Nat, _token1FromPair: Nat) : async Bool{
     //     assert(_onlyOwner(msg.caller));
     //     let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
@@ -957,66 +991,86 @@ shared(installMsg) actor class ICDexRouter() = this {
     public shared(msg) func pair_ictcRedoTT(_app: Principal, _toid: Nat, _ttid: Nat) : async (?Nat){ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        await pair.ictc_redoTT(_toid, _ttid);
+        let res = await pair.ictc_redoTT(_toid, _ttid);
+        ignore _putEvent(#pairICTCRedoTT({ app = _app; toid = _toid; ttid = _ttid; completed = Option.isSome(res)}), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func pair_ictcCompleteTO(_app: Principal, _toid: Nat, _status: SagaTM.OrderStatus) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let pair: actor{ ictc_completeTO: shared (_toid: Nat, _status: SagaTM.OrderStatus) -> async Bool } = actor(Principal.toText(_app));
-        await pair.ictc_completeTO(_toid, _status);
+        let res = await pair.ictc_completeTO(_toid, _status);
+        ignore _putEvent(#pairICTCCompleteTO({ app = _app; toid = _toid; status = _status; completed = res}), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func pair_ictcDoneTT(_app: Principal, _toid: Nat, _ttid: Nat, _toCallback: Bool) : async (?Nat){ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        await pair.ictc_doneTT(_toid, _ttid, _toCallback);
+        let res = await pair.ictc_doneTT(_toid, _ttid, _toCallback);
+        ignore _putEvent(#pairICTCDoneTT({ app = _app; toid = _toid; ttid = _ttid; callbacked = _toCallback; completed = Option.isSome(res)}), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func pair_ictcDoneTO(_app: Principal, _toid: Nat, _status: SagaTM.OrderStatus, _toCallback: Bool) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        await pair.ictc_doneTO(_toid, _status, _toCallback);
+        let res = await pair.ictc_doneTO(_toid, _status, _toCallback);
+        ignore _putEvent(#pairICTCDoneTO({ app = _app; toid = _toid; status = _status; callbacked = _toCallback; completed = res}), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func pair_ictcRunTO(_app: Principal, _toid: Nat) : async ?SagaTM.OrderStatus{ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        await pair.ictc_runTO(_toid);
+        let res = await pair.ictc_runTO(_toid);
+        ignore _putEvent(#pairICTCRunTO({ app = _app; toid = _toid; result = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func pair_ictcBlockTO(_app: Principal, _toid: Nat) : async (?Nat){ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        await pair.ictc_blockTO(_toid);
+        let res = await pair.ictc_blockTO(_toid);
+        ignore _putEvent(#pairICTCBlockTO({ app = _app; toid = _toid; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func pair_sync(_app: Principal) : async (){
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.sync();
+        ignore _putEvent(#pairSync({ pair = _app; }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func pair_setVipMaker(_app: Principal, _account: Address, _rate: Nat) : async (){
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.setVipMaker(_account, _rate);
+        ignore _putEvent(#pairSetVipMaker({ pair = _app; account = _account; rebateRate = _rate }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func pair_removeVipMaker(_app: Principal, _account: Address) : async (){
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.removeVipMaker(_account);
+        ignore _putEvent(#pairRemoveVipMaker({ pair = _app; account = _account }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func pair_fallbackByTxid(_app: Principal, _txid: Txid, _sa: ?ICDexPrivate.Sa) : async Bool{
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
-        await pair.fallbackByTxid(_txid, _sa);
+        let res = await pair.fallbackByTxid(_txid, _sa);
+        ignore _putEvent(#pairFallbackByTxid({ pair = _app; txid = _txid; result = res}), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func pair_cancelByTxid(_app: Principal,  _txid: Txid, _sa: ?ICDexPrivate.Sa) : async (){
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.cancelByTxid(_txid, _sa);
+        ignore _putEvent(#pairCancelByTxid({ pair = _app; txid = _txid }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func pair_taSetDescription(_app: Principal, _desc: Text) : async (){ 
         assert(_onlyOwner(msg.caller));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.ta_setDescription(_desc);
+        ignore _putEvent(#pairTASetDescription({ pair = _app; desc = _desc }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
     /* =======================
-      Trading Competitions
+      Trading Competitions 
+      (Registering to an external trading competition organizer has no effect on ICDex.)
     ========================= */
     //$call RouterTest pair_compNewRound '(principal "po4px-oiaaa-aaaak-acubq-cai", "CompTest2", "test2", 1665468703000000000, 1665540000000000000, variant{token1}, 100000, false)'
     // public shared(msg) func pair_compNewRound(_app: Principal, _name: Text, _content: Text, _start: Time.Time, _end: Time.Time, _quoteToken:{#token0; #token1}, _minCapital: Nat, _forced: Bool) : async Nat{ 
@@ -1027,34 +1081,42 @@ shared(installMsg) actor class ICDexRouter() = this {
     // dex competition
     // $call RouterTest dex_addCompetition '(null, "Test1", "", 1684208349000000000, 1684209600000000000, vec {record{dex="icdex"; canisterId=principal "ynbvm-hiaaa-aaaak-adbqa-cai";quoteToken=variant{token1};minCapital=1}; record{dex="icdex"; canisterId=principal "fpwot-xyaaa-aaaak-adp2a-cai";quoteToken=variant{token0};minCapital=1}})'
     public shared(msg) func dex_addCompetition(_id: ?Nat, _name: Text, _content: Text, _start: Time.Time, _end: Time.Time, 
-    pairs: [{dex: Text; canisterId: Principal; quoteToken:{#token0; #token1}; minCapital: Nat}]) : async Nat{ 
+    _addPairs: [{dex: Text; canisterId: Principal; quoteToken:{#token0; #token1}; minCapital: Nat}]) : async Nat{ 
         assert(_onlyOwner(msg.caller));
         var pairList : [(DexName, Principal, {#token0; #token1})] = [];
-        for (pair in pairs.vals()){
+        for (pair in _addPairs.vals()){
             pairList := Tools.arrayAppend(pairList, [(pair.dex, pair.canisterId, pair.quoteToken)]);
         };
         let router : Router.Self = actor(icRouter);
-        return await router.pushCompetitionByDex(_id, _name, _content, _start, _end, pairList);
+        let res = await router.pushCompetitionByDex(_id, _name, _content, _start, _end, pairList);
+        ignore _putEvent(#dexAddCompetition({ id = _id; name = _name; start = _start; end = _end; addPairs = _addPairs }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
 
     /* =======================
       System management
     ========================= */
-    public query func getOwner() : async Principal{  
-        return owner;
+    public query func getDAO() : async Principal{  
+        return icDao;
     };
-    public shared(msg) func changeOwner(_newOwner: Principal) : async Bool{ 
-        assert(_onlyOwner(msg.caller));
-        owner := _newOwner;
-        return true;
-    };
+    // public shared(msg) func changeOwner(_newOwner: Principal) : async Bool{ 
+    //     assert(_onlyOwner(msg.caller));
+    //     owner := _newOwner;
+    //     ignore _putEvent(#changeOwner({ newOwner = _newOwner }), ?Tools.principalToAccountBlob(msg.caller, null));
+    //     return true;
+    // };
     public shared(msg) func sys_withdraw(_token: Principal, _tokenStd: TokenStd, _to: Principal, _value: Nat) : async (){ 
         assert(_onlyOwner(msg.caller));
         let account = Tools.principalToAccountBlob(_to, null);
         let address = Tools.principalToAccountHex(_to, null);
+        var _txid : {#txid: Txid; #index: Nat} = #index(0);
         if (_tokenStd == #drc20){
             let token: DRC20.Self = actor(Principal.toText(_token));
             let res = await token.drc20_transfer(address, _value, null, null, null);
+            switch(res){
+                case(#ok(txid)){ _txid := #txid(txid) };
+                case(_){ throw Error.reject("Transfer error."); };
+            };
         }else if (_tokenStd == #icrc1){
             let token: ICRC1.Self = actor(Principal.toText(_token));
             let args : ICRC1.TransferArgs = {
@@ -1066,18 +1128,27 @@ shared(installMsg) actor class ICDexRouter() = this {
                 created_at_time = null;
             };
             let res = await token.icrc1_transfer(args);
+            switch(res){
+                case(#Ok(index)){ _txid := #index(index) };
+                case(_){ throw Error.reject("Transfer error."); };
+            };
         }else if (_tokenStd == #icp or _tokenStd == #ledger){
             let token: Ledger.Self = actor(Principal.toText(_token));
             let args : Ledger.TransferArgs = {
                 memo = 0;
                 amount = { e8s = Nat64.fromNat(_value) };
-                fee = { e8s = 10000 };
+                fee = { e8s = 10_000 };
                 from_subaccount = null;
                 to = account;
                 created_at_time = null;
             };
             let res = await token.transfer(args);
-        }
+            switch(res){
+                case(#Ok(index)){ _txid := #index(Nat64.toNat(index)) };
+                case(_){ throw Error.reject("Transfer error."); };
+            };
+        };
+        ignore _putEvent(#sysWithdraw({ token = _token; to = _to; value = _value; txid = _txid }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func sys_order(_token: Principal, _tokenStd: TokenStd, _value: Nat, _pair: Principal, _order: ICDexTypes.OrderPrice) : async ICDexTypes.TradingResult{
         assert(_onlyOwner(msg.caller));
@@ -1087,9 +1158,14 @@ shared(installMsg) actor class ICDexRouter() = this {
         //getTxAccount : shared query (_account: Address) -> async ({owner: Principal; subaccount: ?Blob}, Text, Nonce, Txid);
         //trade : shared (_order: OrderPrice, _orderType: OrderType, _expiration: ?Int, _nonce: ?Nat, _sa: ?Sa, _data: ?Data)
         let pair: ICDexTypes.Self = actor(Principal.toText(_pair));
+        var _txid : {#txid: Txid; #index: Nat} = #index(0);
         if (_tokenStd == #drc20){
             let token: DRC20.Self = actor(Principal.toText(_token));
-            let r = await token.drc20_approve(pairAddress, _value, null,null,null);
+            let res = await token.drc20_approve(pairAddress, _value, null,null,null);
+            switch(res){
+                case(#ok(txid)){ _txid := #txid(txid) };
+                case(_){ throw Error.reject("Transfer error."); };
+            };
         }else if (_tokenStd == #icrc1){
             let token: ICRC1.Self = actor(Principal.toText(_token));
             let fee = await token.icrc1_fee();
@@ -1104,9 +1180,13 @@ shared(installMsg) actor class ICDexRouter() = this {
                 created_at_time = null;
             };
             let res = await token.icrc1_transfer(args);
+            switch(res){
+                case(#Ok(index)){ _txid := #index(index) };
+                case(_){ throw Error.reject("Transfer error."); };
+            };
         }else if (_tokenStd == #icp or _tokenStd == #ledger){
             let token: Ledger.Self = actor(Principal.toText(_token));
-            let fee : Nat = 10000;
+            let fee : Nat = 10_000;
             let prepares = await pair.getTxAccount(address);
             let tx_icrc1Account = prepares.0;
             let args : Ledger.TransferArgs = {
@@ -1118,28 +1198,34 @@ shared(installMsg) actor class ICDexRouter() = this {
                 created_at_time = null;
             };
             let res = await token.transfer(args);
+            switch(res){
+                case(#Ok(index)){ _txid := #index(Nat64.toNat(index)) };
+                case(_){ throw Error.reject("Transfer error."); };
+            };
         };
-        return await pair.trade(_order, #LMT, null,null,?[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],null);
+        let res = await pair.trade(_order, #LMT, null,null,?[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],null);
+        ignore _putEvent(#sysTrade({ pair = _pair; tokenTxid = _txid; order = _order; orderType = #LMT; result = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func sys_cancelOrder(_pair: Principal, _txid: ?Txid) : async (){
         assert(_onlyOwner(msg.caller));
         let address = Tools.principalToAccountHex(Principal.fromActor(this), null);
         let pair: ICDexTypes.Self = actor(Principal.toText(_pair));
-        let prepares = await pair.getTxAccount(address);
-        let nonce = prepares.2;
         switch(_txid){
-            case(?(txid)){ //cancel2 : shared (_txid: Txid, _sa: ?Sa) -> async ();
-                let res = await pair.cancelByTxid(txid, null);
+            case(?(txid)){ //cancelByTxid : shared (_txid: Txid, _sa: ?Sa) -> async ();
+                await pair.cancelByTxid(txid, null);
             };
-            case(_){
-                if (nonce > 0){ //cancel : shared (_nonce: Nat, _sa: ?Sa) -> async ();
-                    let res = await pair.cancel(Nat.sub(nonce, 1), null);
-                };
+            case(_){ // cancelAll(_args: {#management: ?AccountId; #self_sa: ?Sa}, _side: ?OrderBook.OrderSide)
+                await pair.cancelAll(#self_sa(null), null);
             };
         };
+        ignore _putEvent(#sysCancelOrder({ pair = _pair; txid = _txid }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func sys_config(_args: {
         icRouter: ?Principal;
+        blackhole: ?Principal;
+        icDao: ?Principal;
+        nftPlanetCards: ?Principal;
         sysToken: ?Principal;
         sysTokenFee: ?Nat;
         creatingPairFee: ?Nat;
@@ -1147,10 +1233,14 @@ shared(installMsg) actor class ICDexRouter() = this {
     }) : async (){
         assert(_onlyOwner(msg.caller));
         icRouter := Principal.toText(Option.get(_args.icRouter, Principal.fromText(icRouter)));
+        blackhole := Option.get(_args.blackhole, blackhole);
+        icDao := Option.get(_args.icDao, icDao);
+        nftPlanetCards := Option.get(_args.nftPlanetCards, nftPlanetCards);
         sysToken := Option.get(_args.sysToken, sysToken);
         sysTokenFee := Option.get(_args.sysTokenFee, sysTokenFee);
         creatingPairFee := Option.get(_args.creatingPairFee, creatingPairFee);
         creatingMakerFee := Option.get(_args.creatingMakerFee, creatingMakerFee);
+        ignore _putEvent(#sysConfig({ icRouter = _args.icRouter; sysToken = _args.sysToken; sysTokenFee = _args.sysTokenFee; creatingPairFee = _args.creatingPairFee; creatingMakerFee = _args.creatingMakerFee;}), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
     /* =======================
@@ -1303,6 +1393,7 @@ shared(installMsg) actor class ICDexRouter() = this {
             };
             case(_){};
         };
+        ignore _putEvent(#nftTransferFrom({ collId = _collId; nftId = _nftId; args = args; result = res }), null);
         return res;
     };
     private func _NFTWithdraw(_caller: Principal, _nftId: ?ERC721.TokenIdentifier, _sa: ?[Nat8]) : async* (){
@@ -1312,17 +1403,20 @@ shared(installMsg) actor class ICDexRouter() = this {
         switch(Trie.get(nfts, keyb(accountId), Blob.equal)){
             case(?(item)){ 
                 for(nft in item.vals()){
-                    let nftActor: ERC721.Self = actor(Principal.toText(nft.4));
+                    let collId = nft.4;
+                    let nftId = nft.1;
+                    let nftActor: ERC721.Self = actor(Principal.toText(collId));
                     let args: ERC721.TransferRequest = {
                         from = #principal(Principal.fromActor(this));
                         to = nft.0;
-                        token = nft.1;
+                        token = nftId;
                         amount = nft.2;
                         memo = Blob.fromArray([]);
                         notify = false;
                         subaccount = null;
                     };
-                    switch(await nftActor.transfer(args)){
+                    let res = await nftActor.transfer(args);
+                    switch(res){
                         case(#ok(balance)){
                             _NFTRemove(accountId, nft.1);
                             // Hooks used to unbind all
@@ -1330,6 +1424,7 @@ shared(installMsg) actor class ICDexRouter() = this {
                         };
                         case(#err(e)){};
                     };
+                    ignore _putEvent(#nftWithdraw({ collId = collId; nftId = nftId; args = args; result = res }), null);
                 };
              };
             case(_){};
@@ -1346,6 +1441,7 @@ shared(installMsg) actor class ICDexRouter() = this {
         };
     };
     public shared(msg) func NFTDeposit(_collectionId: CollectionId, _nftId: ERC721.TokenIdentifier, _sa: ?[Nat8]) : async (){
+        assert(_collectionId == nftPlanetCards);
         let r = await* _NFTTransferFrom(msg.caller, _collectionId, _nftId, _sa);
     };
     public shared(msg) func NFTWithdraw(_nftId: ?ERC721.TokenIdentifier, _sa: ?[Nat8]) : async (){
@@ -1371,10 +1467,12 @@ shared(installMsg) actor class ICDexRouter() = this {
         assert(_OnlyNFTBindingMaker(_nftId, _pair, _a));
         let pair: ICDexPrivate.Self = actor(Principal.toText(_pair));
         await pair.setVipMaker(_accountIdToHex(_a), 90);
+        ignore _putEvent(#nftSetVipMaker({ pair = _pair; nftId = _nftId; vipMaker = _accountIdToHex(_a); rebateRate = 90 }), null);
     };
     private func _remote_removeVipMaker(_pair: Principal, _a: AccountId) : async* (){
         let pair: ICDexPrivate.Self = actor(Principal.toText(_pair));
         await pair.removeVipMaker(_accountIdToHex(_a));
+        ignore _putEvent(#nftRemoveVipMaker({ pair = _pair; vipMaker = _accountIdToHex(_a) }), null);
     };
     private func _NFTBindMaker(_nftId: ERC721.TokenIdentifier, _pair: Principal, _a: AccountId) : async* (){
         switch(Trie.get(nftBindingMakers, keyt(_nftId), Text.equal)){
@@ -1552,7 +1650,7 @@ shared(installMsg) actor class ICDexRouter() = this {
                             token1Std = makerInfo.pairInfo.token1.2;
                             lowerLimit = makerInfo.gridSetting.gridLowerLimit; //Price
                             upperLimit = makerInfo.gridSetting.gridUpperLimit; //Price
-                            spreadRate = makerInfo.gridSetting.gridSpread; // ppm  x/1000000
+                            spreadRate = makerInfo.gridSetting.gridSpread; // ppm  x/1_000_000
                             threshold = makerInfo.poolThreshold;
                             volFactor = makerInfo.volFactor; // multi 
                         }));
@@ -1583,6 +1681,7 @@ shared(installMsg) actor class ICDexRouter() = this {
             assert(_version == maker_wasmVersion);
             maker_wasm := Tools.arrayAppend(maker_wasm, Blob.toArray(_wasm));
         };
+        ignore _putEvent(#setMakerWasm({ version = _version; append = _append; backupPreVersion = _backupPreVersion }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public query func maker_getWasmVersion() : async (Text, Text, Nat){
         let offset = maker_wasm.size() / 2;
@@ -1623,8 +1722,8 @@ shared(installMsg) actor class ICDexRouter() = this {
             name: Text; // "AAA_BBB DeMM-1"
             lowerLimit: Nat; //Price
             upperLimit: Nat; //Price
-            spreadRate: Nat; // e.g. 10000, ppm  x/1000000
-            threshold: Nat; // e.g. 1000000000000 token1, After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
+            spreadRate: Nat; // e.g. 10_000, ppm  x/1_000_000
+            threshold: Nat; // e.g. 1_000_000_000_000 token1, After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
             volFactor: Nat; // e.g. 2
         }): async (canister: Principal){
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
@@ -1641,20 +1740,24 @@ shared(installMsg) actor class ICDexRouter() = this {
         let info = await pairActor.info();
         // charge fee
         let token: ICRC1.Self = actor(Principal.toText(sysToken));
-        let result = await token.icrc2_transfer_from({
-            spender_subaccount = null; // *
-            from = {owner = msg.caller; subaccount = null};
-            to = {owner = Principal.fromActor(this); subaccount = null};
-            amount = creatingMakerFee;
-            fee = null;
-            memo = null;
-            created_at_time = null;
-        });
-        switch(result){
-            case(#Ok(blockNumber)){};
-            case(#Err(e)){
-                throw Error.reject("Error: Error when paying the fee for creating a trading pair."); 
+        if (not(_onlyOwner(msg.caller))){
+            let arg: ICRC1.TransferFromArgs = {
+                spender_subaccount = null; // *
+                from = {owner = msg.caller; subaccount = null};
+                to = {owner = Principal.fromActor(this); subaccount = null};
+                amount = creatingMakerFee;
+                fee = null;
+                memo = null;
+                created_at_time = null;
             };
+            let result = await token.icrc2_transfer_from(arg);
+            switch(result){
+                case(#Ok(blockNumber)){};
+                case(#Err(e)){
+                    throw Error.reject("Error: Error when paying the fee for creating an ICDexMaker."); 
+                };
+            };
+            ignore _putEvent(#chargeFee({ token = sysToken; arg = arg; result = result; }), ?Tools.principalToAccountBlob(msg.caller, null));
         };
         // create
         try{
@@ -1673,7 +1776,7 @@ shared(installMsg) actor class ICDexRouter() = this {
                 token1Std = info.token1.2;
                 lowerLimit = _arg.lowerLimit; //Price
                 upperLimit = _arg.upperLimit; //Price
-                spreadRate = _arg.spreadRate; // ppm  x/1000000
+                spreadRate = _arg.spreadRate; // ppm  x/1_000_000
                 threshold = _arg.threshold;
                 volFactor = _arg.volFactor; // multi 
             }: Maker.InitArgs));
@@ -1702,17 +1805,20 @@ shared(installMsg) actor class ICDexRouter() = this {
                 _putPrivateMaker(_arg.pair, makerCanister, accountId);
             };
             cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
+            ignore _putEvent(#createMaker({ version = maker_wasmVersion; arg = _arg; makerCanisterId = makerCanister }), ?Tools.principalToAccountBlob(msg.caller, null));
             return makerCanister;
         }catch(e){
-            if (creatingMakerFee > sysTokenFee){
-                let r = await token.icrc1_transfer({
+            if (not(_onlyOwner(msg.caller)) and creatingMakerFee > sysTokenFee){
+                let arg: ICRC1.TransferArgs = {
                     from_subaccount = null;
                     to = {owner = msg.caller; subaccount = null};
                     amount = Nat.sub(creatingMakerFee, sysTokenFee);
                     fee = null;
                     memo = null;
                     created_at_time = null;
-                });
+                };
+                let r = await token.icrc1_transfer(arg);
+                ignore _putEvent(#refundFee({ token = sysToken; arg = arg; result = r; }), ?Tools.principalToAccountBlob(msg.caller, null));
             };
             throw Error.reject(Error.message(e));
         };
@@ -1722,13 +1828,17 @@ shared(installMsg) actor class ICDexRouter() = this {
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
         assert(_onlyOwner(msg.caller) or (not(_isPublicMaker(_pair, _maker)) and _OnlyMakerCreator(_pair, _maker, accountId))); 
         assert(_version == maker_wasmVersion);
-        return await* _maker_update(_pair, _maker, maker_wasm, #upgrade, { name = _name });
+        let res = await* _maker_update(_pair, _maker, maker_wasm, #upgrade, { name = _name });
+        ignore _putEvent(#upgradeMaker({ version = _version; pair = _pair; maker = _maker; name = _name; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     // permissions: Dao, Private Maker Creator
     public shared(msg) func maker_rollback(_pair: Principal, _maker: Principal): async (canister: ?Principal){
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
         assert(_onlyOwner(msg.caller) or (not(_isPublicMaker(_pair, _maker)) and _OnlyMakerCreator(_pair, _maker, accountId)));
-        return await* _maker_update(_pair, _maker, maker_wasm_preVersion, #upgrade, { name = null });
+        let res = await* _maker_update(_pair, _maker, maker_wasm_preVersion, #upgrade, { name = null });
+        ignore _putEvent(#rollbackMaker({ pair = _pair; maker = _maker; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     // permissions: Dao, Private Maker Creator
     public shared(msg) func maker_remove(_pair: Principal, _maker: Principal): async (){
@@ -1742,6 +1852,7 @@ shared(installMsg) actor class ICDexRouter() = this {
         _removePublicMaker(_pair, _maker);
         _removePrivateMaker(_pair, _maker);
         cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _maker);
+        ignore _putEvent(#removeMaker({ pair = _pair; maker = _maker; }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     // permissions: Dao
     public shared(msg) func maker_setControllers(_pair: Principal, _maker: Principal, _controllers: [Principal]): async Bool{
@@ -1757,53 +1868,106 @@ shared(installMsg) actor class ICDexRouter() = this {
                 memory_allocation = null;
             };
         });
+        ignore _putEvent(#makerSetControllers({ pair = _pair; maker = _maker; controllers = _controllers }), ?Tools.principalToAccountBlob(msg.caller, null));
         return true;
     };
     // permissions: Dao
     public shared(msg) func maker_config(_maker: Principal, _config: Maker.Config) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.config(_config);
+        let res = await makerActor.config(_config);
+        ignore _putEvent(#makerConfig({ maker = _maker; config = _config }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func maker_transactionLock(_maker: Principal, _act: {#lock; #unlock}) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.transactionLock(_act);
+        let res = await makerActor.transactionLock(_act);
+        ignore _putEvent(#makerTransactionLock({ maker = _maker; act = _act }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func maker_setPause(_maker: Principal, _pause: Bool) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.setPause(_pause);
+        let res = await makerActor.setPause(_pause);
+        if (_pause){
+            ignore _putEvent(#makerSuspend({ maker = _maker}), ?Tools.principalToAccountBlob(msg.caller, null));
+        }else{
+            ignore _putEvent(#makerStart({ maker = _maker}), ?Tools.principalToAccountBlob(msg.caller, null));
+        };
+        return res;
     };
     public shared(msg) func maker_resetLocalBalance(_maker: Principal) : async Maker.PoolBalance{ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.resetLocalBalance();
+        let res = await makerActor.resetLocalBalance();
+        ignore _putEvent(#makerResetLocalBalance({ maker = _maker; balance = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func maker_dexWithdraw(_maker: Principal, _token0: Nat, _token1: Nat) : async (token0: Nat, token1: Nat){ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.dexWithdraw(_token0, _token1);
+        let res = await makerActor.dexWithdraw(_token0, _token1);
+        ignore _putEvent(#makerDexWithdraw({ maker = _maker; token0 = _token0; token1 = _token1; result = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func maker_dexDeposit(_maker: Principal, _token0: Nat, _token1: Nat) : async (token0: Nat, token1: Nat){ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.dexDeposit(_token0, _token1);
+        let res = await makerActor.dexDeposit(_token0, _token1);
+        ignore _putEvent(#makerDexDeposit({ maker = _maker; token0 = _token0; token1 = _token1; result = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
     public shared(msg) func maker_deleteGridOrder(_maker: Principal) : async (){ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
         await makerActor.deleteGridOrder();
+        ignore _putEvent(#makerDeleteGridOrder({ maker = _maker; }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func maker_createGridOrder(_maker: Principal) : async (){ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
         await makerActor.createGridOrder();
+        ignore _putEvent(#makerCreateGridOrder({ maker = _maker; }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func maker_cancelAllOrders(_maker: Principal) : async (){ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
         await makerActor.cancelAllOrders();
+        ignore _putEvent(#makerCancelAllOrders({ maker = _maker; }), ?Tools.principalToAccountBlob(msg.caller, null));
+    };
+
+    /* ===========================
+      Events section
+    ============================== */
+    private func _putEvent(_event: Event, _a: ?AccountId) : BlockHeight{
+        icEvents := ICEvents.putEvent<Event>(icEvents, eventBlockIndex, _event);
+        switch(_a){
+            case(?(accountId)){ 
+                icAccountEvents := ICEvents.putAccountEvent(icAccountEvents, firstBlockIndex, accountId, eventBlockIndex);
+            };
+            case(_){};
+        };
+        eventBlockIndex += 1;
+        return Nat.sub(eventBlockIndex, 1);
+    };
+    ignore _putEvent(#initOrUpgrade({version = version_}), ?Tools.principalToAccountBlob(installMsg.caller, null));
+    public query func get_event(_blockIndex: BlockHeight) : async ?(Event, Timestamp){
+        return ICEvents.getEvent(icEvents, _blockIndex);
+    };
+    public query func get_event_first_index() : async BlockHeight{
+        return firstBlockIndex;
+    };
+    public query func get_events(_page: ?ICDexTypes.ListPage, _size: ?ICDexTypes.ListSize) : async TrieList<BlockHeight, (Event, Timestamp)>{
+        let page = Option.get(_page, 1);
+        let size = Option.get(_size, 100);
+        return ICEvents.trieItems2<(Event, Timestamp)>(icEvents, firstBlockIndex, eventBlockIndex, page, size);
+    };
+    public query func get_account_events(_accountId: AccountId) : async [(Event, Timestamp)]{ //latest 1000 records
+        return ICEvents.getAccountEvents<Event>(icEvents, icAccountEvents, _accountId);
+    };
+    public query func get_event_count() : async Nat{
+        return eventBlockIndex;
     };
 
     /* =======================
@@ -1833,7 +1997,10 @@ shared(installMsg) actor class ICDexRouter() = this {
                 }catch(e){};
             };
         };
-        cyclesMonitor := await* CyclesMonitor.monitor(Principal.fromActor(this), cyclesMonitor, canisterCyclesInit, canisterCyclesInit * 50, 500000000);
+        let monitor = await* CyclesMonitor.monitor(Principal.fromActor(this), cyclesMonitor, canisterCyclesInit, canisterCyclesInit * 50, 500_000_000);
+        if (Trie.size(cyclesMonitor) == Trie.size(monitor)){
+            cyclesMonitor := monitor;
+        };
     };
 
     /* =======================
@@ -1843,7 +2010,7 @@ shared(installMsg) actor class ICDexRouter() = this {
     public query func drc207() : async DRC207.DRC207Support{
         return {
             monitorable_by_self = false;
-            monitorable_by_blackhole = { allowed = true; canister_id = ?Principal.fromText("7hdtw-jqaaa-aaaak-aaccq-cai"); };
+            monitorable_by_blackhole = { allowed = true; canister_id = ?blackhole; };
             cycles_receivable = true;
             timer = { enable = false; interval_seconds = ?(4*3600); }; 
         };
@@ -1869,7 +2036,10 @@ shared(installMsg) actor class ICDexRouter() = this {
     private func timerLoop() : async (){
         if (_now() > lastMonitorTime + 6 * 3600){
             try{ 
-                cyclesMonitor := await* CyclesMonitor.monitor(Principal.fromActor(this), cyclesMonitor, canisterCyclesInit, canisterCyclesInit * 50, 0);
+                let monitor = await* CyclesMonitor.monitor(Principal.fromActor(this), cyclesMonitor, canisterCyclesInit, canisterCyclesInit * 50, 0);
+                if (Trie.size(cyclesMonitor) == Trie.size(monitor)){
+                    cyclesMonitor := monitor;
+                };
                 lastMonitorTime := _now();
             }catch(e){};
             for ((canisterId, totalCycles) in Trie.iter(cyclesMonitor)){
@@ -1891,7 +2061,7 @@ shared(installMsg) actor class ICDexRouter() = this {
                             });
                             ignore await pair.drc205_config({
                                 EN_DEBUG = null;
-                                MAX_CACHE_TIME = ?(2 * 30 * 24 * 3600 * 1000000000);
+                                MAX_CACHE_TIME = ?(2 * 30 * 24 * 3600 * 1_000_000_000);
                                 MAX_CACHE_NUMBER_PER = ?600;
                                 MAX_STORAGE_TRIES = null;
                             });
@@ -1903,7 +2073,7 @@ shared(installMsg) actor class ICDexRouter() = this {
             for (canisterId in List.toArray(hotPairs).vals()){
                 try{ 
                     let pair: ICDexPrivate.Self = actor(Principal.toText(canisterId));
-                    await pair.ictc_clearLog(?(2 * 30 * 24 * 3600 * 1000000000), false);
+                    await pair.ictc_clearLog(?(2 * 30 * 24 * 3600 * 1_000_000_000), false);
                 }catch(e){};
             };
         };
@@ -1913,10 +2083,12 @@ shared(installMsg) actor class ICDexRouter() = this {
         assert(_onlyOwner(msg.caller));
         Timer.cancelTimer(timerId);
         timerId := Timer.recurringTimer(#seconds(_intervalSeconds), timerLoop);
+        ignore _putEvent(#timerStart({ intervalSeconds = _intervalSeconds}), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func timerStop(): async (){
         assert(_onlyOwner(msg.caller));
         Timer.cancelTimer(timerId);
+        ignore _putEvent(#timerStop, ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
     /* =======================

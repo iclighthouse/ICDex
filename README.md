@@ -28,7 +28,7 @@ It is possible for a single order to get involved in multiple executions at diff
 
 * Matching principles
 
-When orders are entered into the central order book, they are sorted by price, time. There are different algorithms available for matching orders, and DeSwap Orderbook has chosen the First-In-First-Out (FIFO) algorithm.  
+When orders are entered into the central order book, they are sorted by price and time. There are different algorithms available for matching orders, and ICDex Orderbook has chosen the First-In-First-Out (FIFO) algorithm.  
 FIFO is also known as a price-time algorithm. According to the FIFO algorithm, buy orders take priority in the order of price and time. Then, buy orders with the same maximum price are prioritized based on the time of bid, and priority is given to the first buy order. It is automatically prioritized over the buy orders at lower prices.
 
 ## Concepts
@@ -64,7 +64,7 @@ The difference of the best bid and ask is called the **spread** or **slippage**:
 
 ### Order Types
 
-DeSwap Orderbook supports various order types like limit orders (LMT), market orders (MKT), Fill-And-Kill orders (FAK), Fill-Or-Kill orders (FOK).
+ICDex Orderbook supports various order types like limit orders (LMT), market orders (MKT), Fill-And-Kill orders (FAK), Fill-Or-Kill orders (FOK).
 
 * LMT  
 A Limit Order is a buy or sell order where you “set the limit” by specifying the price that you are willing to buy or sell an asset for. You may use limit orders to buy at a lower price or sell at a higher price than the current market price. 

@@ -48,8 +48,22 @@ module {
     public type STStats = STO.STStats;
     public type STStatus = STO.STStatus;
     public type STOrder = STO.STOrder;
+    public type StopLossOrder = STO.StopLossOrder;
+    public type Condition = STO.Condition;
+    public type TriggeredOrder = STO.TriggeredOrder;
     // GridOrder
+    public type GridOrderSetting = STO.GridOrderSetting;
     public type GridSetting = STO.GridSetting;
+    // IcebergOrder
+    public type IcebergOrderSetting = STO.IcebergOrderSetting;
+    public type IcebergOrder = STO.IcebergOrder;
+    // VWAP
+    public type VWAPSetting = STO.VWAPSetting;
+    public type VWAP = STO.VWAP;
+    // TWAP
+    public type TWAPSetting = STO.TWAPSetting;
+    public type TWAP = STO.TWAP;
+
     // public type GridProgress = {
     //     ppmFactor: ?{buy: Nat; sell: Nat}; //  1000000 * 1/n * (n ** (1/10))
     //     gridPrices: { buy: [Price]; sell: [Price] };  // ordered
@@ -102,6 +116,10 @@ module {
     public func getSTType(_strategy: STStrategy) : STType{
         switch(_strategy){
             case(#GridOrder(v)){ return #GridOrder };
+            case(#StopLossOrder(v)){ return #StopLossOrder };
+            case(#IcebergOrder(v)){ return #IcebergOrder };
+            case(#VWAP(v)){ return #VWAP };
+            case(#TWAP(v)){ return #TWAP };
         };
     };
     public func getSpread(_side: {#upward; #downward}, _spread: {#Arith: Price; #Geom: Ppm }, _gridPrice: Price) : Nat{
@@ -127,7 +145,7 @@ module {
             price := price + spread;
             spread := getSpread(#upward, _spread, price);
         };
-        if (gridCount_sell == 0) { gridCount_sell := 1; };
+        if (gridCount_sell < 2) { gridCount_sell := 2; };
         price := _initPrice;
         spread := getSpread(#downward, _spread, price);
         while(price > spread and Nat.sub(price, spread) >= _lowerPrice and gridCount_buy < 200){
@@ -135,8 +153,8 @@ module {
             price := Nat.sub(price, spread);
             spread := getSpread(#downward, _spread, price);
         };
-        if (gridCount_buy == 0) { gridCount_buy := 1; };
-        let n = Nat.min(gridCount_sell, gridCount_buy);
+        if (gridCount_buy < 2) { gridCount_buy := 2; };
+        let n = (gridCount_sell + gridCount_buy) / 2;
         return OB.floatToNat(OB.natToFloat(n) ** (1.0 / 10.0) * 1000000.0) / n; 
     };
     public func put(_data: STOrderRecords, _sto: STOrder) : STOrderRecords{
@@ -295,7 +313,7 @@ module {
         };
         return data;
     };
-    public func removePendingOrderByPrice(_data: STOrderRecords, _soid: Soid, _price: Price) : STOrderRecords{
+    public func removePendingOrderByPrice(_data: STOrderRecords, _soid: Soid, _side: {#Buy; #Sell}, _price: Price) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
             case(?(po)){
@@ -305,12 +323,18 @@ module {
                 //         hSpread := getSpread(#upward, grid.setting.spread, _price) / 2;
                 //     };
                 // };
-                let buyPendingOrders = Array.filter(po.pendingOrders.buy, func (t: (?Txid, Price, Nat)): Bool{ 
-                    t.1 != _price
-                });
-                let sellPendingOrders = Array.filter(po.pendingOrders.sell, func (t: (?Txid, Price, Nat)): Bool{ 
-                    t.1 != _price
-                });
+                var buyPendingOrders = po.pendingOrders.buy;
+                if (_side == #Buy){
+                    buyPendingOrders := Array.filter(po.pendingOrders.buy, func (t: (?Txid, Price, Nat)): Bool{ 
+                        t.1 != _price
+                    });
+                };
+                var sellPendingOrders = po.pendingOrders.sell;
+                if (_side == #Sell){
+                    sellPendingOrders := Array.filter(po.pendingOrders.sell, func (t: (?Txid, Price, Nat)): Bool{ 
+                        t.1 != _price
+                    });
+                };
                 let _po: STOrder = {
                     soid = po.soid;
                     icrc1Account = po.icrc1Account;
@@ -489,14 +513,46 @@ module {
         let sellOrders = List.filter(_data.sell, func (t: (Soid, Price)): Bool{ t.0 != _soid });
         return {buy = buyOrders; sell = sellOrders };
     };
-    public func putPOTxids(_data: STOrderTxids, _txid: Txid, _soid: Soid): STOrderTxids{
+    public func putSTOTxids(_data: STOrderTxids, _txid: Txid, _soid: Soid): STOrderTxids{
         return Trie.put(_data, keyb(_txid), Blob.equal, _soid).0;
     };
-    public func removePOTxids(_data: STOrderTxids, _txid: Txid): STOrderTxids{
+    public func removeSTOTxids(_data: STOrderTxids, _txid: Txid): STOrderTxids{
         return Trie.remove(_data, keyb(_txid), Blob.equal).0;
     };
     public func getSoidByTxid(_data: STOrderTxids, _txid: Txid): ?Soid{
         return Trie.get(_data, keyb(_txid), Blob.equal);
+    };
+    // StopLossOrder
+    public func updateStopLossOrder(_data: STOrderRecords, _soid: Soid, _condition: ?Condition, _triggeredOrder: ?TriggeredOrder) : STOrderRecords{
+        var data = _data;
+        switch(get(data, _soid)){
+            case(?(sto)){
+                var strategy = sto.strategy;
+                switch(strategy){
+                    case(#StopLossOrder(slo)){
+                        strategy := #StopLossOrder({
+                            condition = Option.get(_condition, slo.condition);
+                            triggeredOrder = switch(_triggeredOrder){ case(?tOrder){ _triggeredOrder }; case(_){ slo.triggeredOrder } };
+                        });
+                    };
+                    case(_){};
+                };
+                let _slo: STOrder = {
+                    soid = sto.soid;
+                    icrc1Account = sto.icrc1Account;
+                    stType = sto.stType;
+                    strategy = strategy;
+                    stats = sto.stats;
+                    status = sto.status;
+                    initTime = sto.initTime;
+                    triggerTime = sto.triggerTime;
+                    pendingOrders = sto.pendingOrders;
+                };
+                data := Trie.put(data, keyn(_soid), Nat.equal, _slo).0;
+            };
+            case(_){};
+        };
+        return data;
     };
     // GridOrder
     public func updateGridOrder(_data: STOrderRecords, _soid: Soid, _setting: ?GridSetting, _gridPrices: ?GridPrices) : STOrderRecords{
@@ -511,7 +567,7 @@ module {
                             gridPrices = Option.get(_gridPrices, go.gridPrices);
                         });
                     };
-                    // case(_){};
+                    case(_){};
                 };
                 let _po: STOrder = {
                     soid = po.soid;
@@ -549,7 +605,7 @@ module {
                             gridPrices = {midPrice = grid.gridPrices.midPrice; buy = gridPrices_buy; sell = gridPrices_sell };
                         });
                     };
-                    // case(_){};
+                    case(_){};
                 };
                 let _sto: STOrder = {
                     soid = sto.soid;
@@ -646,7 +702,7 @@ module {
                     case(#GridOrder(grid)){
                         return getGridPrices(grid.setting, _price, _midPrice, _lowerLimit, _upperLimit);
                     };
-                    // case(_){};
+                    case(_){};
                 };
             };
             case(_){};
@@ -657,45 +713,57 @@ module {
     {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; }{
         switch(_setting.amount, _side){
             case(#Token0(v), #Buy){
-                let quantity = OB.adjust(Nat.max(v, _minValue), _unitSize);
+                let quantity = OB.adjustFlooring(Nat.max(v, _minValue), _unitSize);
                 let amount = quantity * _price / _unitSize;
                 if (amount <= _token1Balance){
                     return #Buy(quantity, amount);
                 };
             };
             case(#Token0(v), #Sell){
-                let quantity = OB.adjust(Nat.max(v, _minValue), _unitSize);
+                let quantity = OB.adjustFlooring(Nat.max(v, _minValue), _unitSize);
                 if (quantity <= _token0Balance){
                     return #Sell(quantity);
                 };
             };
             case(#Token1(v), #Buy){
-                let quantity = OB.adjust(Nat.max(_unitSize * v / _price, _minValue), _unitSize);
+                let quantity = OB.adjustFlooring(Nat.max(_unitSize * v / _price, _minValue), _unitSize);
                 let amount = quantity * _price / _unitSize;
                 if (amount <= _token1Balance){
                     return #Buy(quantity, amount);
                 };
             };
             case(#Token1(v), #Sell){
-                let quantity = OB.adjust(Nat.max(_unitSize * v / _price, _minValue), _unitSize);
+                let quantity = OB.adjustFlooring(Nat.max(_unitSize * v / _price, _minValue), _unitSize);
                 if (quantity <= _token0Balance){
                     return #Sell(quantity);
                 };
             };
-            case(#Percent(optPpm), #Buy){
-                let ppmFactor = Option.get(_setting.ppmFactor, getPpmFactor(_setting.initPrice, _setting.spread, _setting.lowerLimit, _setting.upperLimit));
+            // case(#Percent(optPpm), #Buy){
+            //     let ppmFactor = Option.get(_setting.ppmFactor, getPpmFactor(_setting.initPrice, _setting.spread, _setting.lowerLimit, _setting.upperLimit));
+            //     let ppm = Option.get(optPpm, ppmFactor);
+            //     let quantity = OB.adjustFlooring(Nat.max(_unitSize * _token1Balance * ppm / _price / 1000000, _minValue), _unitSize);
+            //     let amount = quantity * _price / _unitSize;
+            //     if (amount <= _token1Balance){
+            //         return #Buy(quantity, amount);
+            //     };
+            // };
+            // case(#Percent(optPpm), #Sell){
+            //     let ppmFactor = Option.get(_setting.ppmFactor, getPpmFactor(_setting.initPrice, _setting.spread, _setting.lowerLimit, _setting.upperLimit));
+            //     let ppm = Option.get(optPpm, ppmFactor);
+            //     let quantity = OB.adjustFlooring(Nat.max(_token0Balance * ppm / 1000000, _minValue), _unitSize);
+            //     if (quantity <= _token0Balance){
+            //         return #Sell(quantity);
+            //     };
+            // };
+            case(#Percent(optPpm), _){
+                let ppmFactor = Option.get(_setting.ppmFactor, 10000);
                 let ppm = Option.get(optPpm, ppmFactor);
-                let quantity = OB.adjust(Nat.max(_unitSize * _token1Balance * ppm / _price / 1000000, _minValue), _unitSize);
+                let totalBalance = _token0Balance + _unitSize * _token1Balance / _price;
+                let quantity = OB.adjustFlooring(Nat.max(totalBalance * ppm / 1000000, _minValue), _unitSize);
                 let amount = quantity * _price / _unitSize;
-                if (amount <= _token1Balance){
+                if (_side == #Buy and amount <= _token1Balance){
                     return #Buy(quantity, amount);
-                };
-            };
-            case(#Percent(optPpm), #Sell){
-                let ppmFactor = Option.get(_setting.ppmFactor, getPpmFactor(_setting.initPrice, _setting.spread, _setting.lowerLimit, _setting.upperLimit));
-                let ppm = Option.get(optPpm, ppmFactor);
-                let quantity = OB.adjust(Nat.max(_token0Balance * ppm / 1000000, _minValue), _unitSize);
-                if (quantity <= _token0Balance){
+                }else if (_side == #Sell and quantity <= _token0Balance){
                     return #Sell(quantity);
                 };
             };
@@ -708,4 +776,148 @@ module {
         };
     };
 
+    // IcebergOrder / VWAP / TWAP 
+    public func getQuantityForPO(_amount: {#Token0: Nat; #Token1: Nat}, _side: OB.OrderSide, _price: Price, _unitSize: Nat) : 
+    {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; }{
+        let _minValue = _unitSize * 10;
+        switch(_amount, _side){
+            case(#Token0(v), #Buy){
+                let quantity = OB.adjustFlooring(Nat.max(v, _minValue), _unitSize);
+                let amount = quantity * _price / _unitSize;
+                return #Buy(quantity, amount);
+            };
+            case(#Token0(v), #Sell){
+                let quantity = OB.adjustFlooring(Nat.max(v, _minValue), _unitSize);
+                return #Sell(quantity);
+            };
+            case(#Token1(v), #Buy){
+                let quantity = OB.adjustFlooring(Nat.max(_unitSize * v / _price, _minValue), _unitSize);
+                let amount = quantity * _price / _unitSize;
+                return #Buy(quantity, amount);
+            };
+            case(#Token1(v), #Sell){
+                let quantity = OB.adjustFlooring(Nat.max(_unitSize * v / _price, _minValue), _unitSize);
+                return #Sell(quantity);
+            };
+        };
+    };
+    public func isReachedLimit(_totalLimit: {#Token0: Nat; #Token1: Nat}, _totalAmount: {#Token0: Nat; #Token1: Nat}, _price: Price, _unitSize: Nat) : Bool{
+        var res: Bool = false;
+        switch(_totalLimit, _totalAmount){
+            case(#Token0(limit), #Token0(amount)){ return amount >= limit };
+            case(#Token1(limit), #Token1(amount)){ return amount >= limit };
+            case(#Token0(limit), #Token1(amount)){ return _unitSize * amount / _price >= limit };
+            case(#Token1(limit), #Token0(amount)){ return amount * _price / _unitSize >= limit };
+        };
+        return res;
+    };
+    public func getPrice(_side: OB.OrderSide, _price: Price, _spread: Price) : Price{
+        switch(_side){
+            case(#Buy){
+                return _price + _spread;
+            };
+            case(#Sell){
+                return Nat.max(_price, _spread + 1) - _spread;
+            };
+        };
+    };
+
+    // IcebergOrder
+    public func updateIcebergOrder(_data: STOrderRecords, _soid: Soid, _setting: ?IcebergOrderSetting, _lastTxid: ?Blob) : STOrderRecords{
+        var data = _data;
+        switch(get(data, _soid)){
+            case(?(po)){
+                var strategy = po.strategy;
+                switch(strategy){
+                    case(#IcebergOrder(io)){
+                        strategy := #IcebergOrder({
+                            setting = Option.get(_setting, io.setting);
+                            lastTxid = switch(_lastTxid){ case(?txid){ _lastTxid }; case(_){ io.lastTxid } };
+                        });
+                    };
+                    case(_){};
+                };
+                let _po: STOrder = {
+                    soid = po.soid;
+                    icrc1Account = po.icrc1Account;
+                    stType = po.stType;
+                    strategy = strategy;
+                    stats = po.stats;
+                    status = po.status;
+                    initTime = po.initTime;
+                    triggerTime = po.triggerTime;
+                    pendingOrders = po.pendingOrders;
+                };
+                data := Trie.put(data, keyn(_soid), Nat.equal, _po).0;
+            };
+            case(_){};
+        };
+        return data;
+    };
+
+    // VWAP
+    public func updateVWAP(_data: STOrderRecords, _soid: Soid, _setting: ?VWAPSetting, _lastVol: ?Nat) : STOrderRecords{
+        var data = _data;
+        switch(get(data, _soid)){
+            case(?(po)){
+                var strategy = po.strategy;
+                switch(strategy){
+                    case(#VWAP(vo)){
+                        strategy := #VWAP({
+                            setting = Option.get(_setting, vo.setting);
+                            lastVol = switch(_lastVol){ case(?v){ _lastVol }; case(_){ vo.lastVol } };
+                        });
+                    };
+                    case(_){};
+                };
+                let _po: STOrder = {
+                    soid = po.soid;
+                    icrc1Account = po.icrc1Account;
+                    stType = po.stType;
+                    strategy = strategy;
+                    stats = po.stats;
+                    status = po.status;
+                    initTime = po.initTime;
+                    triggerTime = po.triggerTime;
+                    pendingOrders = po.pendingOrders;
+                };
+                data := Trie.put(data, keyn(_soid), Nat.equal, _po).0;
+            };
+            case(_){};
+        };
+        return data;
+    };
+
+    // TWAP
+    public func updateTWAP(_data: STOrderRecords, _soid: Soid, _setting: ?TWAPSetting, _lastTime: ?Timestamp) : STOrderRecords{
+        var data = _data;
+        switch(get(data, _soid)){
+            case(?(po)){
+                var strategy = po.strategy;
+                switch(strategy){
+                    case(#TWAP(to)){
+                        strategy := #TWAP({
+                            setting = Option.get(_setting, to.setting);
+                            lastTime = switch(_lastTime){ case(?v){ _lastTime }; case(_){ to.lastTime } };
+                        });
+                    };
+                    case(_){};
+                };
+                let _po: STOrder = {
+                    soid = po.soid;
+                    icrc1Account = po.icrc1Account;
+                    stType = po.stType;
+                    strategy = strategy;
+                    stats = po.stats;
+                    status = po.status;
+                    initTime = po.initTime;
+                    triggerTime = po.triggerTime;
+                    pendingOrders = po.pendingOrders;
+                };
+                data := Trie.put(data, keyn(_soid), Nat.equal, _po).0;
+            };
+            case(_){};
+        };
+        return data;
+    };
 };

@@ -5,36 +5,6 @@
       "type": "motoko",
       "args" : "--compacting-gc"
     },
-    "Pair1": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair2": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair3": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair4": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair5": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair6": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
     "Router": {
       "main": "./ICDexRouter.mo",
       "type": "motoko",
@@ -48,7 +18,7 @@
       "optimize": "size"
     },
     "RouterTest": {
-      "main": "./ICDexRouterTest.mo",
+      "main": "./ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"

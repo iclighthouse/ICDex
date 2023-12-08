@@ -32,8 +32,9 @@ module {
         fallbackByTxid : shared (_txid: Txid, _sa: ?Sa) -> async Bool;
         setVipMaker : shared (_account: Address, _rate: Nat) -> async ();
         removeVipMaker : shared (_account: Address) -> async ();
-        changeOwner : shared (_newOwner: Principal) -> async Bool;
-        setOrderFail : shared (_txid: Text) -> async Bool;
+        // changeOwner : shared (_newOwner: Principal) -> async Bool;
+        setOrderFail : shared (_txid: Text, _unlock0: Amount, _unlock1: Amount) -> async Bool;
+        sto_enableStratOrder : shared (_arg: {#Enable; #Disable}) -> async ();
         pendingAll : shared query(_page: ?Nat, _size: ?Nat) -> async ICDexTypes.TrieList<Txid, ICDexTypes.TradingOrder>;
         sync : shared () -> async ();
         getConfig : shared query() -> async DexSetting;
