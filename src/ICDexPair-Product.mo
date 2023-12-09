@@ -122,9 +122,9 @@
 /// - Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled. 
 /// No cancellation fee is paid for strategic orders.
 /// - Strategic order
-///     - Pro-Order: When configuring a strategy, a fixed amount of token1 is charged as a fee (poFee1); when triggering new trade and filling 
+///     - Pro-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (poFee1); when triggering new trade and filling 
 ///     it, charge the amount of token (token0 or token1) received by the pro-trader `token_amount * fee_ratio` (poFee2) is charged as the pro-trading fee.
-///     - StopLoss-Order: When configuring a strategy, a fixed amount of token1 is charged as a fee (sloFee1); when triggering new trade and 
+///     - StopLoss-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (sloFee1); when triggering new trade and 
 ///     filling it, charge the amount of token (token0 or token1) received by the pro-trader `token_amount * fee_ratio` (sloFee2) is charged 
 ///     as the pro-trading fee.
 ///
@@ -144,7 +144,7 @@
 /// you need to use the generateTxid() method of DRC205 to generate a txid and TxAccount.
 /// - Step2  
 /// Deposit to TxAccount the funds needed for the order.
-///     - DebitToken is DRC20 token: not needed to transfer funds to TxAccount, but need to call drc20_approve to approve sufficient amount 
+///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to TxAccount, but need to approve sufficient amount 
 ///     for PoolAccount.
 ///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds to TxAccount.
 /// - Step3  
@@ -155,25 +155,28 @@
 /// ### PoolMode Trade
 /// The trader is required to call the accountConfig() method to enable PoolMode. Funds for PoolMode orders are kept in PoolAccount and 
 /// are recorded in the trader's TraderAccounts and are in the locked state. The funds are sent to the recipients when the order is matched 
-/// or canceled.  
-/// Trading process in tunnel mode:  
+/// or canceled.    
+/// Notes:   
+/// In PoolMode, it is compatible with TunnelMode's trading process, the difference is that the approving amount in Step2 should be 
+/// added with an additional token's fee.   
+/// The following is the trading process of TunnelMode:   
 /// If the available balance in the trader's TraderAccount is sufficient, the operation starts from Step4. Otherwise the operation starts 
-/// from Step1.
+/// from Step1. 
 /// - Step1
 /// Call getDepositAccount() to get the DepositAccount. This is a query method, if called off-chain (e.g., web-side),  
 /// You should generate the account address directly using the following rule: `{owner = pair_canister_id; subaccount = ?your_accountId }`.
 /// - Step2  
 /// Deposit funds to DepositAccount.
-///     - DebitToken is DRC20 token: not needed to transfer funds to DepositAccount, but need to call drc20_approve to approve sufficient 
+///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient 
 ///     amount for PoolAccount.
-///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds to DepositAccount.
+///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (order amount + token_fee) to DepositAccount.
 /// - Step3  
 /// Calling deposit() completes the deposit operation, the funds are deposited into PoolAccount, and TraderAccount increases the available 
 /// balance.
 /// - Step4  
 /// Calls the trade(), trade_b(), tradeMKT(), or tradeMKT_b() methods to submit a trade order. When submitting an order nonce can be filled 
 /// with null, if a specific value is filled it must be the currently available nonce value, otherwise an exception is thrown. The advantage 
-/// of providing a nonce value for a trade is that the txid can be calculated in advance from the nonce value.
+/// of providing a nonce value for a trade is that the txid can be calculated in advance from the nonce value.  
 /// - Step5  
 /// If the trader has not enabled "Keeping balance in TraderAccount", the funds in TraderAccount will be automatically withdrawn to the 
 /// trader's wallet. If he has enabled this option, he needs to call withdraw() method to complete the withdrawal operation. Withdrawal is 
@@ -406,16 +409,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
 
     // Variables
     private var icdex_debug : Bool = false; /*config*/
-    private let version_: Text = "0.12.9";
+    private let version_: Text = "0.12.10";
     private let ns_: Nat = 1_000_000_000;
+    private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
     private stable var pause: Bool = false;
-    private stable var mode: SysMode = #GeneralTrading;
+    private stable var mode: SysMode = #GeneralTrading; // Currently only #GeneralTrading and #DisabledTrading are used.
     private stable var pairOpeningTime: Time.Time = 0;
-    private stable var owner: Principal = Option.get(initArgs.owner, installMsg.caller);
-    private stable var icdex_: Principal = installMsg.caller; // icdex_router (to be upgraded)
-    // private stable var icrouter_: Principal = Principal.fromText("j4d4d-pqaaa-aaaak-aanxq-cai"); // dex_rooter (to be upgraded)
+    // private stable var owner: Principal = Option.get(initArgs.owner, installMsg.caller);
     private stable var token0_: Principal = initArgs.token0;
     private stable var token0Symbol: Text = "";
     private stable var token0Std: Types.TokenStd = #drc20;
@@ -582,6 +584,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     private func _checkTPSLimit() : Bool{
         return _tps(5, null).1 < setting.MAX_TPS*10 and _tps(15, null).1 < setting.MAX_TPS*8;
     };
+    // Total number of asynchronous message queues
     private func _asyncMessageSize() : Nat{
         return countAsyncMessage + _getSaga().asyncMessageSize();
     };
@@ -1423,7 +1426,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                         ttids := Tools.arrayAppend(ttids, _sendToken0(true, toid, _txid, _preTtids, [icrc1Account], [tokenAmount], ?_txid, null));
                     }else{ gas0 := tokenAmount; };
                     if (fee0 > _getFee0()){
-                        ttids := Tools.arrayAppend(ttids, _sendToken0(true, toid, _txid, _preTtids, [{owner = icdex_; subaccount = null}], [fee0], ?_txid, null));
+                        ttids := Tools.arrayAppend(ttids, _sendToken0(true, toid, _txid, _preTtids, [{owner = icdexRouter; subaccount = null}], [fee0], ?_txid, null));
                     };
                     let remaining: OrderPrice = OrderBook.setQuantity(order.remaining, 0, null);
                     _update(_txid, ?remaining, ?toid, null, ?{gas0=gas0; gas1=0}, ?{fee0=fee0; fee1=0}, null, ?(tokenAmount, 0, toid));
@@ -1435,7 +1438,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                         ttids := Tools.arrayAppend(ttids, _sendToken1(true, toid, _txid, _preTtids, [icrc1Account], [currencyAmount], ?_txid, null));
                     }else{ gas1 := currencyAmount; };
                     if (fee1 > _getFee1()){
-                        ttids := Tools.arrayAppend(ttids, _sendToken1(true, toid, _txid, _preTtids, [{owner = icdex_; subaccount = null}], [fee1], ?_txid, null));
+                        ttids := Tools.arrayAppend(ttids, _sendToken1(true, toid, _txid, _preTtids, [{owner = icdexRouter; subaccount = null}], [fee1], ?_txid, null));
                     };
                     let remaining: OrderPrice = OrderBook.setQuantity(order.remaining, 0, ?0); 
                     _update(_txid, ?remaining, ?toid, null, ?{gas0=0; gas1=gas1}, ?{fee0=0; fee1=fee1}, null, ?(0, currencyAmount, toid));
@@ -2483,9 +2486,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                             };
                         };
                         if (icdexFee > _getFee0()){  // makerTxAccount -> router
-                            transferBatch_to := Tools.arrayAppend(transferBatch_to, [{owner = icdex_; subaccount = null}]);
+                            transferBatch_to := Tools.arrayAppend(transferBatch_to, [{owner = icdexRouter; subaccount = null}]);
                             transferBatch_value := Tools.arrayAppend(transferBatch_value, [icdexFee]);
-                            // let ttids = _sendToken0(true, toid, filled.counterparty, [], [{owner = icdex_; subaccount = null}], [icdexFee], ?filled.counterparty, null);
+                            // let ttids = _sendToken0(true, toid, filled.counterparty, [], [{owner = icdexRouter; subaccount = null}], [icdexFee], ?filled.counterparty, null);
                             // preTtids := Tools.arrayAppend(preTtids, ttids);
                         };
                         if (brokerFee > _getFee0()){
@@ -2546,7 +2549,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                             };
                         };
                         if (icdexFee > _getFee1()){
-                            transferBatch_to := Tools.arrayAppend(transferBatch_to, [{owner = icdex_; subaccount = null}]);
+                            transferBatch_to := Tools.arrayAppend(transferBatch_to, [{owner = icdexRouter; subaccount = null}]);
                             transferBatch_value := Tools.arrayAppend(transferBatch_value, [icdexFee]);
                             // let ttids = _sendToken1(true, toid, filled.counterparty, [], [{owner = icdex_; subaccount = null}], [icdexFee], ?filled.counterparty, null);
                             // preTtids := Tools.arrayAppend(preTtids, ttids);
@@ -2593,6 +2596,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         let __start = Time.now();
         assert(mode == #GeneralTrading);
         if (not(initialized)){ await* _init(); await* _getGas(true); };
+        let prePrice = icdex_lastPrice.price;
         var order = _order;
         if (OrderBook.side(order) == #Buy and OrderBook.quantity(order) > 0 and OrderBook.amount(order) == 0){
             let token1Amount = OrderBook.quantity(order) * order.price / setting.UNIT_SIZE;
@@ -2768,13 +2772,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
             };
             case(_){};
         };
-        let p_toid = _autoWithdraw({owner = icdex_; subaccount = null}, null);
+        let p_toid = _autoWithdraw({owner = icdexRouter; subaccount = null}, null);
         if (not(_quickly)){
             if (countFilled > 0 and enableStrategyOrders){
                 if (icdex_debug){
-                    await _hook_stoWorktop(null, null); // ?OrderBook.side(order)
+                    await _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell })); 
                 }else{
-                    let f = _hook_stoWorktop(null, null);
+                    let f = _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell }));
                 };
             };
             await* _ictcSagaRun(toid, false); // >= 10
@@ -3512,7 +3516,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
             name = name_;
             version = version_;
             decimals = 0;
-            owner = owner;
+            owner = icdexRouter;
             paused = not(_notPaused(null));
             setting = setting;
             token0 = (token0_, token0Symbol, token0Std);
@@ -3628,7 +3632,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     };
     private func _defaultConfig(_a: AccountId) : (){
         // Default: icdex-fee recipient, broker; vip-maker, pro-trader
-        if (_a == Tools.principalToAccountBlob(icdex_, null)){
+        if (_a == Tools.principalToAccountBlob(icdexRouter, null)){
             _accountConfig(_a, null, ?true);
         };
         if (Option.isSome(Trie.get(stats_brokers, keyb(_a), Blob.equal))){
@@ -3996,7 +4000,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         let pairCanisterId = Principal.fromActor(this);
         return {
             pool = ({owner = pairCanisterId; subaccount = ?Blob.fromArray(sa_zero) }, Hex.encode(Tools.principalToAccount(pairCanisterId, ?sa_zero)));
-            fees = ({owner = icdex_; subaccount = null }, Hex.encode(Tools.principalToAccount(icdex_, null)));
+            fees = ({owner = icdexRouter; subaccount = null }, Hex.encode(Tools.principalToAccount(icdexRouter, null)));
         };
     };
 
@@ -4011,7 +4015,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         return _getAccountBalance(account);
     };
 
-    /// Returns the balance kept in PoolAccount by a trader in a safe way. (An exception will be thrown when the ICTC is executing but has not yet completed. You should try the query again after a while)
+    /// Returns the balance kept in PoolAccount by a trader in a safe way. (An exception will be thrown when the ICTC is executing and has not yet completed. You should try the query again after a while)
     public query func safeAccountBalance(_a: Address): async {balance: KeepingBalance; pendingOrders: (Amount, Amount); price: STO.Price; unitSize: Nat}{
         let account = _getAccountId(_a);
         assert(_accountIctcDone(account));
@@ -4044,7 +4048,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     public shared(msg) func accountConfig(_exMode: {#PoolMode; #TunnelMode}, _enKeepingBalance: Bool, _sa: ?Sa) : async (){
         let account = Tools.principalToAccountBlob(msg.caller, _sa);
         // Default:
-        if (account == Tools.principalToAccountBlob(icdex_, null)){ // Fee recipient
+        if (account == Tools.principalToAccountBlob(icdexRouter, null)){ // Fee recipient
             assert(_enKeepingBalance == true);
         };
         if (Option.isSome(Trie.get(stats_brokers, keyb(account), Blob.equal))){ // broker
@@ -4120,9 +4124,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     private stable var enableStrategyOrders: Bool = true;
     // Policy order global configuration
     private stable var sto_setting: STO.Setting = {
-        poFee1 = (if (token1_ == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")) { 200_000_000 }else{ 10_000_000_000_000_000_000 }); // Fixed costs when configuring the pro-order strategy
+        poFee1 = 5_000_000_000; // ICL (smallest_units). Fixed costs when configuring the pro-order strategy
         poFee2 = 0.0005; // When an order from pro-order is filled, token0/token1 will be charged proportionally as a fee.
-        sloFee1 = (if (token1_ == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")) { 10_000_000 }else{ 500_000_000_000_000_000 }); // Fixed costs when configuring the stop-loss-order strategy
+        sloFee1 = 200_000_000; // ICL (smallest_units). Fixed costs when configuring the stop-loss-order strategy
         sloFee2 = 0.0005; // When an order from stop-loss-order is filled, token0/token1 will be charged proportionally as a fee.
         gridMaxPerSide = 3; // Maximum number of grids on one side of the grid order. This configuration for vip-maker is multiplied by 2.
         proCountMax = 5; // Maximum number of pro-orders allowed to be created per trader.
@@ -4149,37 +4153,42 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
             case(_){ return false };
         };
     };
-    private func _chargeSTOrderFee1(_a: AccountId, _stType: STO.STType, _act: {#Create; #Update}) : (){
-        let icdex_account = Tools.principalToAccountBlob(icdex_, null);
+    private func _chargeSTOrderFee1(_account: ICRC1.Account, _stType: STO.STType, _act: {#Create; #Update}) : async* (){
+        let icdex_account = Tools.principalToAccountBlob(icdexRouter, null);
+        var value : Nat = 0;
         switch(_stType, _act){
             case(#StopLossOrder, #Create){
-                if (sto_setting.sloFee1 > 0){
-                    ignore _subAccountBalance(_a, #token1, #available(sto_setting.sloFee1));
-                    ignore _addAccountBalance(icdex_account, #token1, #available(sto_setting.sloFee1));
-                };
+                value := sto_setting.sloFee1;
             };
             case(#StopLossOrder, #Update){
-                if (sto_setting.sloFee1 > 0){
-                    ignore _subAccountBalance(_a, #token1, #available(sto_setting.sloFee1 / 5));
-                    ignore _addAccountBalance(icdex_account, #token1, #available(sto_setting.sloFee1 / 5));
-                };
+                value := sto_setting.sloFee1 / 5;
             };
             case(_, #Create){
-                if (sto_setting.poFee1 > 0){
-                    ignore _subAccountBalance(_a, #token1, #available(sto_setting.poFee1));
-                    ignore _addAccountBalance(icdex_account, #token1, #available(sto_setting.poFee1));
-                };
+                value := sto_setting.poFee1;
             };
             case(_, #Update){
-                if (sto_setting.poFee1 > 0){
-                    ignore _subAccountBalance(_a, #token1, #available(sto_setting.poFee1 / 5));
-                    ignore _addAccountBalance(icdex_account, #token1, #available(sto_setting.poFee1 / 5));
-                };
+                value := sto_setting.poFee1 / 5;
             };
+        };
+        if (value > 0){
+            let router: actor{
+                sys_getConfig: shared query () -> async {
+                    aggregator: Principal;
+                    blackhole: Principal;
+                    icDao: Principal;
+                    nftPlanetCards: Principal;
+                    sysToken: Principal;
+                    sysTokenFee: Nat;
+                    creatingPairFee: Nat;
+                    creatingMakerFee: Nat;
+                }
+            } = actor(Principal.toText(icdexRouter));
+            let sysToken = (await router.sys_getConfig()).sysToken;
+            await* _transferFrom(sysToken, _account, {owner = icdexRouter; subaccount = null}, value, null);
         };
     };
     private func _chargeSTOrderFee2(_a: AccountId, _stType: STO.STType, _value0: Amount, _value1: Amount) : (){
-        let icdex_account = Tools.principalToAccountBlob(icdex_, null);
+        let icdex_account = Tools.principalToAccountBlob(icdexRouter, null);
         switch(_stType){
             case(#StopLossOrder){
                 let balances = _getAccountBalance(_a);
@@ -4834,23 +4843,26 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
             // ProOrder
             var pendingPOList = List.nil<STO.Soid>();
             var poCount : Nat = 0;
-            if (not(sto_isWorking)){ // global lock
+            if (Option.isSome(_soid)){
+                let thisSoid = Option.get(_soid, 0);
+                let (status, preOpenOrders) = _stoTrigger(thisSoid);
+                openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
+                if (status != #Running){
+                    icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
+                };
+            }else if (not(sto_isWorking)){ // global lock
                 sto_isWorking := true;
                 for (soid in List.toArray(icdex_activeProOrderList).vals()){
-                    if (Option.isNull(_soid) or _soid == ?soid){
-                        poCount += 1;
-                        let (status, preOpenOrders) = _stoTrigger(soid);
-                        openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
-                        if (status == #Running){
-                            pendingPOList := List.push(soid, pendingPOList);
-                        }else{
-                            icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, soid, status);
-                        };
-                        if (poCount == 10 or poCount % 50 == 0){
-                            await _awaitFunc(); // Prevents insufficient number of available execution instructions
-                        };
-                    }else{
+                    poCount += 1;
+                    let (status, preOpenOrders) = _stoTrigger(soid);
+                    openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
+                    if (status == #Running){
                         pendingPOList := List.push(soid, pendingPOList);
+                    }else{
+                        icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, soid, status);
+                    };
+                    if (poCount == 10 or poCount % 50 == 0){
+                        await _awaitFunc(); // Prevents insufficient number of available execution instructions
                     };
                 };
                 sto_isWorking := false;
@@ -5038,18 +5050,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         if (STO.userPOSize(icdex_userProOrderList, account) >= sto_setting.proCountMax){
             throw Error.reject("451: You can only place a maximum of "# Nat.toText(sto_setting.proCountMax) #" pro-orders (excluding stop loss orders)"); 
         };
-        
+        var initPrice = icdex_lastPrice.price;
+        if (initPrice == 0){
+            throw Error.reject("458: Requires the pair to have at least one trade."); 
+        };
+
         // charge fee
         switch(_arg){
-            case(#GridOrder(arg)){ _chargeSTOrderFee1(account, #GridOrder, #Create); };
-            case(#IcebergOrder(arg)){ _chargeSTOrderFee1(account, #IcebergOrder, #Create); };
-            case(#VWAP(arg)){ _chargeSTOrderFee1(account, #VWAP, #Create); };
-            case(#TWAP(arg)){ _chargeSTOrderFee1(account, #TWAP, #Create); };
+            case(#GridOrder(arg)){ await* _chargeSTOrderFee1(icrc1Account, #GridOrder, #Create); };
+            case(#IcebergOrder(arg)){ await* _chargeSTOrderFee1(icrc1Account, #IcebergOrder, #Create); };
+            case(#VWAP(arg)){ await* _chargeSTOrderFee1(icrc1Account, #VWAP, #Create); };
+            case(#TWAP(arg)){ await* _chargeSTOrderFee1(icrc1Account, #TWAP, #Create); };
         };
         var soid : Nat = 0;
         switch(_arg){
             case(#GridOrder(arg)){
-                var initPrice = icdex_lastPrice.price;
                 if (initPrice > 10_000_000_000_000){
                     initPrice := initPrice / 1_000_000_000_000 * 1_000_000_000_000;
                 }else if (initPrice > 1_000_000_000){
@@ -5059,7 +5074,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                 }else if (initPrice > 1_000){
                     initPrice := initPrice / 100 * 100;
                 };
-                assert(initPrice > 0);
                 let ppmFactor = STO.getPpmFactor(initPrice, arg.spread, arg.lowerLimit, arg.upperLimit);
                 icdex_stOrderRecords := STO.new(icdex_stOrderRecords, icrc1Account, icdex_soid, #GridOrder({
                     setting = {
@@ -5148,6 +5162,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
         if (_exchangeMode(account, null) != #PoolMode or not(_isKeepingBalanceInPair(account))){
             throw Error.reject("450: Pro-trader SHOULD turn on the `PoolMode` mode and turn on `Keeping balance in TraderAccount`."); 
         };
+        // charge fee
+        switch(_arg){
+            case(#GridOrder(arg)){ 
+                if (arg.status != ?#Stopped and arg.status != ?#Deleted) await* _chargeSTOrderFee1(icrc1Account, #GridOrder, #Update); 
+            };
+            case(#IcebergOrder(arg)){ 
+                if (arg.status != ?#Stopped and arg.status != ?#Deleted) await* _chargeSTOrderFee1(icrc1Account, #IcebergOrder, #Update); 
+            };
+            case(#VWAP(arg)){ 
+                if (arg.status != ?#Stopped and arg.status != ?#Deleted) await* _chargeSTOrderFee1(icrc1Account, #VWAP, #Update); 
+            };
+            case(#TWAP(arg)){ 
+                if (arg.status != ?#Stopped and arg.status != ?#Deleted) await* _chargeSTOrderFee1(icrc1Account, #TWAP, #Update); 
+            };
+        };
         switch(STO.get(icdex_stOrderRecords, _soid)){
             case(?(sto)){
                 // cancel orders
@@ -5184,10 +5213,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                         let spread = Option.get(arg.spread, grid.setting.spread);
                         let amount = Option.get(arg.amount, grid.setting.amount);
                         status := Option.get(arg.status, sto.status);
-                        // charge fee (20% fee; #Stopped/#Deleted is free)
-                        if (status != #Stopped and status != #Deleted){
-                            _chargeSTOrderFee1(account, #GridOrder, #Update); // 20% fee
-                        };
                         let initPrice = grid.setting.initPrice;
                         let ppmFactor = STO.getPpmFactor(initPrice, spread, lowerLimit, upperLimit);
                         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, _soid, status);
@@ -5205,10 +5230,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                     };
                     case(#IcebergOrder(io), #IcebergOrder(arg)){
                         status := Option.get(arg.status, sto.status);
-                        // charge fee (20% fee; #Stopped/#Deleted is free)
-                        if (status != #Stopped and status != #Deleted){
-                            _chargeSTOrderFee1(account, #IcebergOrder, #Update); // 20% fee
-                        };
                         // update
                         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, _soid, status);
                         icdex_stOrderRecords := STO.updateIcebergOrder(icdex_stOrderRecords, _soid, ?Option.get(arg.setting, io.setting), null);
@@ -5216,10 +5237,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                     };
                     case(#VWAP(vo), #VWAP(arg)){
                         status := Option.get(arg.status, sto.status);
-                        // charge fee (20% fee; #Stopped/#Deleted is free)
-                        if (status != #Stopped and status != #Deleted){
-                            _chargeSTOrderFee1(account, #VWAP, #Update); // 20% fee
-                        };
                         // update
                         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, _soid, status);
                         icdex_stOrderRecords := STO.updateVWAP(icdex_stOrderRecords, _soid, ?Option.get(arg.setting, vo.setting), null);
@@ -5227,10 +5244,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                     };
                     case(#TWAP(to), #TWAP(arg)){
                         status := Option.get(arg.status, sto.status);
-                        // charge fee (20% fee; #Stopped/#Deleted is free)
-                        if (status != #Stopped and status != #Deleted){
-                            _chargeSTOrderFee1(account, #TWAP, #Update); // 20% fee
-                        };
                         // update
                         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, _soid, status);
                         icdex_stOrderRecords := STO.updateTWAP(icdex_stOrderRecords, _soid, ?Option.get(arg.setting, to.setting), null);
@@ -5301,7 +5314,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
             throw Error.reject("457: Insufficient balance. You SHOULD make a deposit first."); 
         };
         // charge fee
-        _chargeSTOrderFee1(account, #StopLossOrder, #Create);
+        await* _chargeSTOrderFee1(icrc1Account, #StopLossOrder, #Create);
         // put
         icdex_stOrderRecords := STO.new(icdex_stOrderRecords, icrc1Account, icdex_soid, #StopLossOrder({
             condition = {
@@ -5349,7 +5362,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
                             };
                             // charge fee (20% fee; #Stopped/#Deleted is free)
                             if (_status != #Stopped and _status != #Deleted){
-                                _chargeSTOrderFee1(account, #StopLossOrder, #Update); // 20% * fee
+                                await* _chargeSTOrderFee1(icrc1Account, #StopLossOrder, #Update); // 20% * fee
                             };
                             // update
                             icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, _soid, _status);
@@ -5995,7 +6008,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     public shared(msg) func clearAccountSetting() : async (){
         assert(_onlyOwner(msg.caller));
         icdex_accountSettings := Trie.filter(icdex_accountSettings, func (k: AccountId, v: AccountSetting): Bool{
-            if (k == Tools.principalToAccountBlob(icdex_, null)){
+            if (k == Tools.principalToAccountBlob(icdexRouter, null)){
                 return true;
             };
             if (Option.isSome(Trie.get(stats_brokers, keyb(k), Blob.equal))){
@@ -6658,7 +6671,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs) = this {
     public shared(msg) func withdraw_cycles(_amount: Nat) : async (){
         assert(_onlyOwner(msg.caller));
         type Wallet = actor{ wallet_receive : shared () -> async (); };
-        let wallet : Wallet = actor(Principal.toText(icdex_));
+        let wallet : Wallet = actor(Principal.toText(icdexRouter));
         let amount = Cycles.balance();
         assert(_amount + 20_000_000_000 < amount);
         Cycles.add(_amount);

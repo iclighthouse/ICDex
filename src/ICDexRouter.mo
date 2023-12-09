@@ -2,8 +2,45 @@
  * Module     : ICDexRouter
  * Author     : ICLighthouse Team
  * Stability  : Experimental
- * Github     : https://github.com/iclighthouse/
+ * Github     : https://github.com/iclighthouse/ICDex/
  */
+///
+/// ## Overview
+///
+/// ICDexRouter is a trading pair factory that is responsible for creating and managing ICDexPair, 
+/// and also for creating and managing ICDexMaker.
+///
+/// ## 1 Concepts
+/// 
+/// ### Owner (DAO)
+///
+/// Owner is the controller of the ICDexRouter, the initial value is creator, which can be modified to DAO canister for decentralization.
+///
+/// ### System Token
+///
+/// Utility token (ICL) in the ICDex economic model, which is used to purchase certain services in the ecosystem. ICL is also governance 
+/// token, which is used to govern the ICDex system.
+///
+/// ### ICDexPair (Trading Pair)
+///
+/// ICDexPair is an ICDex pair contract (canister), a pair is deployed in a separate canister, managed by ICDexRouter. A pair is 
+/// deployed in a separate canister, which is managed by ICDexRouter. For example, the pair "AAA/BBB", AAA means base token and BBB 
+/// means quote token.
+///
+/// ### NFT
+///
+/// The NFT collection ICLighthouse Planet Cards (goncb-kqaaa-aaaap-aakpa-cai) has special qualifications for some of the features 
+/// of ICDex, in addition to its own NFT properties. NFT holders of #NEPTUNE,#URANUS,#SATURN have the qualification to create an 
+/// ICDexMaker; NFT holders of #NEPTUNE have the permission to bind a Vip-maker role.
+///
+/// ### ICDexMaker (Public Maker & Private Maker)
+///
+/// ICDexMaker is ICDex's Automated Market Maker contract (Canister) that provides liquidity to a trading pair. An Automated Market 
+/// Maker is deployed in a separate canister that is managed by ICDexRouter.  
+/// ICDexMaker simulates the effect of Uniswap AMM using grid strategy orders, including Public Maker and Private Maker:
+/// - Public Maker is the public market making pool to which any user can add liquidity.
+/// - Private Maker is a private pool where only the creator can add liquidity.
+
 import Array "mo:base/Array";
 import Binary "mo:icl/Binary";
 import Blob "mo:base/Blob";
@@ -69,7 +106,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
     type Event = EventTypes.Event;
 
     private var icdex_debug : Bool = false; /*config*/
-    private let version_: Text = "0.12.9";
+    private let version_: Text = "0.12.10";
     private var ICP_FEE: Nat64 = 10000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -80,14 +117,14 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
     private var blackhole: Principal = Principal.fromText("7hdtw-jqaaa-aaaak-aaccq-cai");
     // Governance canister-id
     private stable var icDao: Principal = initDAO;
-    // icRouter: External trading pair catalog listings, which are not substantive dependencies of ICDex, can be reconfigured.
-    private stable var icRouter: Text = "i2ied-uqaaa-aaaar-qaaza-cai"; // pwokq-miaaa-aaaak-act6a-cai
+    // aggregator: External trading pair catalog listings, which are not substantive dependencies of ICDex, can be reconfigured.
+    private stable var aggregator: Text = "i2ied-uqaaa-aaaar-qaaza-cai"; // pwokq-miaaa-aaaak-act6a-cai
     if (icdex_debug){
-        icRouter := "pwokq-miaaa-aaaak-act6a-cai";
+        aggregator := "pwokq-miaaa-aaaak-act6a-cai";
     };
     // ICLighthouse Planet NFT
     private stable var nftPlanetCards: Principal = Principal.fromText("goncb-kqaaa-aaaap-aakpa-cai");
-    // ICDex's eco-incentive token that can be reconfigured.
+    // ICDex's governance token that can be reconfigured.
     private stable var sysToken: Principal = Principal.fromText("5573k-xaaaa-aaaak-aacnq-cai"); // will be configured as an SNS token
     private stable var sysTokenFee: Nat = 1_000_000; // 0.01 ICL
     private stable var creatingPairFee: Nat = 500_000_000_000; // 5000 ICL
@@ -387,7 +424,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
         });
         await pairActor.init();
         await pairActor.timerStart(900);
-        let router: Router.Self = actor(icRouter);
+        let router: Router.Self = actor(aggregator);
         try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
             await router.putByDex(
                 (token0Principal, token0Symbol, token0Std), 
@@ -469,7 +506,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
                     feeRate: Float = (await pairActor.feeStatus()).feeRate; //  0.5%
                 };
                 pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pairNew).0;
-                let router: Router.Self = actor(icRouter);
+                let router: Router.Self = actor(aggregator);
                 try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
                     await router.putByDex(
                         (token0Principal, token0Symbol, token0Std), 
@@ -821,7 +858,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
         let pair = _adjustPair2(_pair);
         pairs := Trie.put(pairs, keyp(pair.canisterId), Principal.equal, pair).0;
         await _syncFee(pair);
-        let router: Router.Self = actor(icRouter);
+        let router: Router.Self = actor(aggregator);
         try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
             await router.putByDex(
                 _pair.token0, 
@@ -835,7 +872,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
         pairs := Trie.filter(pairs, func (k: PairCanister, v: SwapPair): Bool{ 
             _pairCanister != k;
         });
-        let router: Router.Self = actor(icRouter);
+        let router: Router.Self = actor(aggregator);
         try{ // Manager external directory listings, if it fails it has no effect on ICDex.
             await router.removeByDex(_pairCanister);
         }catch(e){};
@@ -1087,7 +1124,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
         for (pair in _addPairs.vals()){
             pairList := Tools.arrayAppend(pairList, [(pair.dex, pair.canisterId, pair.quoteToken)]);
         };
-        let router : Router.Self = actor(icRouter);
+        let router : Router.Self = actor(aggregator);
         let res = await router.pushCompetitionByDex(_id, _name, _content, _start, _end, pairList);
         ignore _putEvent(#dexAddCompetition({ id = _id; name = _name; start = _start; end = _end; addPairs = _addPairs }), ?Tools.principalToAccountBlob(msg.caller, null));
         return res;
@@ -1222,7 +1259,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
         ignore _putEvent(#sysCancelOrder({ pair = _pair; txid = _txid }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     public shared(msg) func sys_config(_args: {
-        icRouter: ?Principal;
+        aggregator: ?Principal;
         blackhole: ?Principal;
         icDao: ?Principal;
         nftPlanetCards: ?Principal;
@@ -1232,7 +1269,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
         creatingMakerFee: ?Nat;
     }) : async (){
         assert(_onlyOwner(msg.caller));
-        icRouter := Principal.toText(Option.get(_args.icRouter, Principal.fromText(icRouter)));
+        aggregator := Principal.toText(Option.get(_args.aggregator, Principal.fromText(aggregator)));
         blackhole := Option.get(_args.blackhole, blackhole);
         icDao := Option.get(_args.icDao, icDao);
         nftPlanetCards := Option.get(_args.nftPlanetCards, nftPlanetCards);
@@ -1240,7 +1277,28 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal) = this {
         sysTokenFee := Option.get(_args.sysTokenFee, sysTokenFee);
         creatingPairFee := Option.get(_args.creatingPairFee, creatingPairFee);
         creatingMakerFee := Option.get(_args.creatingMakerFee, creatingMakerFee);
-        ignore _putEvent(#sysConfig({ icRouter = _args.icRouter; sysToken = _args.sysToken; sysTokenFee = _args.sysTokenFee; creatingPairFee = _args.creatingPairFee; creatingMakerFee = _args.creatingMakerFee;}), ?Tools.principalToAccountBlob(msg.caller, null));
+        ignore _putEvent(#sysConfig({ icRouter = _args.aggregator; sysToken = _args.sysToken; sysTokenFee = _args.sysTokenFee; creatingPairFee = _args.creatingPairFee; creatingMakerFee = _args.creatingMakerFee;}), ?Tools.principalToAccountBlob(msg.caller, null));
+    };
+    public query func sys_getConfig() : async {
+        aggregator: Principal;
+        blackhole: Principal;
+        icDao: Principal;
+        nftPlanetCards: Principal;
+        sysToken: Principal;
+        sysTokenFee: Nat;
+        creatingPairFee: Nat;
+        creatingMakerFee: Nat;
+    }{
+        return {
+            aggregator = Principal.fromText(aggregator);
+            blackhole = blackhole;
+            icDao = icDao;
+            nftPlanetCards = nftPlanetCards;
+            sysToken = sysToken;
+            sysTokenFee = sysTokenFee;
+            creatingPairFee = creatingPairFee;
+            creatingMakerFee = creatingMakerFee;
+        };
     };
 
     /* =======================
