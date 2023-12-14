@@ -253,7 +253,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.0";
+    private let version_: Text = "0.4.1";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1022,7 +1022,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         return valueFromDepositBalance;
     };
 
-    private stable var fallbacking_accounts = List.nil<(AccountId, Time.Time)>();
+    private stable var fallbacking_accounts = List.nil<(AccountId, Time.Time)>(); 
     private func _putFallbacking(_account: AccountId) : (){
         fallbacking_accounts := List.filter(fallbacking_accounts, func (t: (AccountId, Time.Time)): Bool{
             Time.now() < t.1 +  72 * 3600 * ns_  // 72h
@@ -1041,21 +1041,23 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Retrieve funds when an LP has a deposit exception and the funds are left in his DepositAccount.
-    private func _fallback(_icrc1Account: ICRC1.Account, instantly: Bool) : async* (value0: Amount, value1: Amount, toids: [Nat]){
+    private func _fallback(_icrc1Account: ICRC1.Account) : async* (value0: Amount, value1: Amount, toids: [Nat]){
         let sa_account = Tools.principalToAccountBlob(_icrc1Account.owner, _toSaNat8(_icrc1Account.subaccount));
         let icrc1Account = _icrc1Account;
         var value0: Nat = 0;
         var value1: Nat = 0;
         var toids: [Nat] = [];
-        if (instantly or not(_isFallbacking(sa_account))){
+        if (not(_isFallbacking(sa_account))){
             _putFallbacking(sa_account);
             try{
                 value0 := await* _getBaseBalance(sa_account);
+                value1 := await* _getQuoteBalance(sa_account);
             }catch(e){
+                _removeFallbacking(sa_account);
                 throw Error.reject("420: internal call error: "# Error.message(e)); 
             };
             let saga = _getSaga();
-            if (value0 > token0Fee){
+            if (value0 > token0Fee or value1 > token1Fee){
                 let toid = saga.create("fallback_1", #Backward, ?sa_account, ?(func (_toName: Text, _toid: Nat, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
                     if (_status == #Done or _status == #Recovered){
                         switch(_data){
@@ -1065,29 +1067,16 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                     };
                 }));
                 toids := Tools.arrayAppend(toids, [toid]);
-                ignore _sendToken0(toid, sa_account, [], [icrc1Account], [value0], ?sa_account, null);
+                if (value0 > token0Fee){
+                    ignore _sendToken0(toid, sa_account, [], [icrc1Account], [value0], ?sa_account, null);
+                };
+                if (value1 > token1Fee){
+                    ignore _sendToken1(toid, sa_account, [], [icrc1Account], [value1], ?sa_account, null);
+                };
                 saga.close(toid);
                 await* _ictcSagaRun(toid, true);
-            };
-            
-            try{
-                value1 := await* _getQuoteBalance(sa_account);
-            }catch(e){
-                throw Error.reject("420: internal call error: "# Error.message(e)); 
-            };
-            if (value1 > token1Fee){
-                let toid = saga.create("fallback_1", #Backward, ?sa_account, ?(func (_toName: Text, _toid: Nat, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
-                    if (_status == #Done or _status == #Recovered){
-                        switch(_data){
-                            case(?a){ _removeFallbacking(a) };
-                            case(_){};
-                        };
-                    };
-                }));
-                toids := Tools.arrayAppend(toids, [toid]);
-                ignore _sendToken1(toid, sa_account, [], [icrc1Account], [value1], ?sa_account, null);
-                saga.close(toid);
-                await* _ictcSagaRun(toid, true);
+            }else{
+                _removeFallbacking(sa_account);
             };
         };
         return (value0, value1, toids);
@@ -1277,7 +1266,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         };
         let _account = Tools.principalToAccountBlob(msg.caller, _sa);
         let _icrc1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa)};
-        let res = await* _fallback(_icrc1Account, false);
+        let res = await* _fallback(_icrc1Account);
         ignore _putEvent(#fallback({account = _icrc1Account; token0 = res.0; token1 = res.1; toids=res.2}), ?_account);
         return (res.0, res.1);
     };
@@ -1434,9 +1423,11 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         };
         // fallback
         try{
-            let r = await* _fallback(_icrc1Account, true);
+            let r = await* _fallback(_icrc1Account);
             ignore _putEvent(#fallback({account = _icrc1Account; token0 = r.0; token1 = r.1; toids=r.2}), ?_account);
-        }catch(e){};
+        }catch(e){
+            // throw Error.reject(Error.message(e)); // debug
+        };
         // run ictc
         await* _ictcSagaRun(gridToid, false);
         // return 

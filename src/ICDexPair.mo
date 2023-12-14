@@ -1549,18 +1549,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (Option.isNull(Trie.get(icdex_orders, keyb(txid), Blob.equal)) and not(_isFallbacking(txid))){ //  or side != 0
             _putFallbacking(txid);
             var txTokenBalance : Nat = 0;
-            try{
-                txTokenBalance := await* _getBaseBalance(txid);
-            }catch(e){
-                throw Error.reject("420: internal call error: "# Error.message(e)); 
-            };
             var txCurrencyBalance : Nat = 0;
             try{
+                txTokenBalance := await* _getBaseBalance(txid);
                 txCurrencyBalance := await* _getQuoteBalance(txid);
             }catch(e){
+                _removeFallbacking(txid);
                 throw Error.reject("420: internal call error: "# Error.message(e)); 
             };
-            if (txTokenBalance > _getFee0() and (side == 0 or side == 1)){
+            if ((txTokenBalance > _getFee0() and (side == 0 or side == 1)) or (txCurrencyBalance > _getFee1() and (side == 0 or side == -1))){
                 let saga = _getSaga();
                 let toid = saga.create("fallback_1", #Backward, ?_txid, ?(func (_toName: Text, _toid: Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
                     if (_status == #Done or _status == #Recovered){
@@ -1570,23 +1567,16 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         };
                     };
                 }));
-                ignore _sendToken0(false, toid, _txid, [], [icrc1Account], [txTokenBalance], ?_txid, null);
+                if ((txTokenBalance > _getFee0() and (side == 0 or side == 1))){
+                    ignore _sendToken0(false, toid, _txid, [], [icrc1Account], [txTokenBalance], ?_txid, null);
+                };
+                if (txCurrencyBalance > _getFee1() and (side == 0 or side == -1)){
+                    ignore _sendToken1(false, toid, _txid, [], [icrc1Account], [txCurrencyBalance], ?_txid, null);
+                };
                 saga.close(toid);
                 await* _ictcSagaRun(toid, false);
-            };
-            if (txCurrencyBalance > _getFee1() and (side == 0 or side == -1)){
-                let saga = _getSaga();
-                let toid = saga.create("fallback_1", #Backward, ?_txid, ?(func (_toName: Text, _toid: Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
-                    if (_status == #Done or _status == #Recovered){
-                        switch(_data){
-                            case(?txid){ _removeFallbacking(txid) };
-                            case(_){};
-                        };
-                    };
-                }));
-                ignore _sendToken1(false, toid, _txid, [], [icrc1Account], [txCurrencyBalance], ?_txid, null);
-                saga.close(toid);
-                await* _ictcSagaRun(toid, false);
+            }else{
+                _removeFallbacking(txid);
             };
             return true;
         }else { return false; };
@@ -4010,11 +4000,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             _putFallbacking(sa_account);
             try{
                 value0 := await* _getBaseBalance(sa_account);
+                value1 := await* _getQuoteBalance(sa_account);
             }catch(e){
+                _removeFallbacking(sa_account);
                 throw Error.reject("420: internal call error: "# Error.message(e)); 
             };
             let saga = _getSaga();
-            if (value0 > _getFee0()){
+            if (value0 > _getFee0() or value1 > _getFee1()){
                 let toid = saga.create("deposit_fallback_0", #Backward, ?sa_account, ?(func (_toName: Text, _toid: Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
                     if (_status == #Done or _status == #Recovered){
                         switch(_data){
@@ -4023,28 +4015,16 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         };
                     };
                 }));
-                ignore _sendToken0(false, toid, sa_account, [], [icrc1Account], [value0], ?sa_account, null);
+                if (value0 > _getFee0()){
+                    ignore _sendToken0(false, toid, sa_account, [], [icrc1Account], [value0], ?sa_account, null);
+                };
+                if (value1 > _getFee1()){
+                    ignore _sendToken1(false, toid, sa_account, [], [icrc1Account], [value1], ?sa_account, null);
+                };
                 saga.close(toid);
                 await* _ictcSagaRun(toid, false);
-            };
-            
-            try{
-                value1 := await* _getQuoteBalance(sa_account);
-            }catch(e){
-                throw Error.reject("420: internal call error: "# Error.message(e)); 
-            };
-            if (value1 > _getFee1()){
-                let toid = saga.create("deposit_fallback_1", #Backward, ?sa_account, ?(func (_toName: Text, _toid: Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
-                    if (_status == #Done or _status == #Recovered){
-                        switch(_data){
-                            case(?sa_account){ _removeFallbacking(sa_account) };
-                            case(_){};
-                        };
-                    };
-                }));
-                ignore _sendToken1(false, toid, sa_account, [], [icrc1Account], [value1], ?sa_account, null);
-                saga.close(toid);
-                await* _ictcSagaRun(toid, false);
+            }else{
+                _removeFallbacking(sa_account);
             };
         };
         return (value0, value1);
