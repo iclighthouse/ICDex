@@ -1,62 +1,26 @@
 {
   "canisters": {
-    "PairProduct": {
-      "main": "./ICDexPair-Product.mo",
+    "ICDexPair": {
+      "main": "src/ICDexPair.mo",
       "type": "motoko",
       "args" : "--compacting-gc"
     },
-    "Pair1": {
-      "main": "./ICDexPair.mo",
+    "ICDexMaker": {
+      "main": "src/ICDexMaker.mo",
       "type": "motoko",
       "args" : "--compacting-gc"
-    },
-    "Pair2": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair3": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair4": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair5": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Pair6": {
-      "main": "./ICDexPair.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
-    },
-    "Router": {
-      "main": "./ICDexRouter.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc",
-      "optimize": "size"
     },
     "RouterMain": {
-      "main": "./ICDexRouter.mo",
+      "main": "src/ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"
     },
     "RouterTest": {
-      "main": "./ICDexRouterTest.mo",
+      "main": "src/ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"
-    },
-    "ICDexMaker": {
-      "main": "./ICDexMaker.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
     }
   },
   "defaults": {

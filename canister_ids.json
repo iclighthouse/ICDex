@@ -1,24 +1,6 @@
 {
-  "Pair1": {
+  "ICDexPair": {
     "ic": "ynbvm-hiaaa-aaaak-adbqa-cai"
-  },
-  "Pair2": {
-    "ic": "t7bpn-paaaa-aaaak-acwca-cai"
-  },
-  "Pair3": {
-    "ic": "kkcje-piaaa-aaaak-ae5aq-cai"
-  },
-  "Pair4": {
-    "ic": "fpwot-xyaaa-aaaak-adp2a-cai"
-  },
-  "Pair5": {
-    "ic": "tkrhr-gaaaa-aaaak-aeyaq-cai"
-  },
-  "Pair6": {
-    "ic": "twv5a-raaaa-aaaak-aeycq-cai"
-  },
-  "Router": {
-    "ic": "ltyfs-qiaaa-aaaak-aan3a-cai"
   },
   "RouterTest": {
     "ic": "pymhy-xyaaa-aaaak-act7a-cai"

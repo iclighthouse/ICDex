@@ -78,11 +78,11 @@ module {
         #ambassadors;
         #traderReferrerTemps;
         #traderReferrers;
-        #rounds;
-        #competitors;
+        // #rounds;
+        // #competitors;
         #sagaData: {#All; #Base};
         #drc205Data: {#All; #Base};
-        #ictcTaskCallbackEvents;
+        // #ictcTaskCallbackEvents;
         #ictc_admins;
         #icdex_RPCAccounts;
         #icdex_accountSettings;
@@ -95,16 +95,6 @@ module {
         #icdex_stOrderTxids;
     };
 
-    // private stable var icdex_soid: STO.Soid = 1; // ***
-    // private stable var icdex_stOrderRecords: STO.STOrderRecords = Trie.empty(); // Trie.Trie<Soid, STOrder> // ***
-    // private stable var icdex_userProOrderList: STO.UserProOrderList = Trie.empty(); // Trie.Trie<AccountId, List.List<Soid>> // ***
-    // private stable var icdex_activeProOrderList: STO.ActiveProOrderList = List.nil<STO.Soid>(); // ***
-    // private stable var icdex_userStopLossOrderList: STO.UserStopLossOrderList = Trie.empty(); // Stop Loss Orders: Trie.Trie<AccountId, List.List<Soid>>; // ***
-    // private stable var icdex_activeStopLossOrderList: STO.ActiveStopLossOrderList = { // Stop Loss Orders: (Txid, Soid, trigger: Price) // ***
-    //     buy = List.nil<(STO.Soid, STO.Price)>(); 
-    //     sell = List.nil<(STO.Soid, STO.Price)>();
-    // }; 
-    // private stable var icdex_stOrderTxids: STO.STOrderTxids = Trie.empty(); // Trie.Trie<Txid, Soid> // ***
     public type BackupResponse = {
         #otherData: {
             icdex_index: Nat;
@@ -113,7 +103,7 @@ module {
             icdex_priceWeighted: Types.PriceWeighted;
             icdex_lastPrice: Types.OrderPrice;
             taDescription: Text;
-            activeRound: Nat;
+            // activeRound: Nat;
         };
         #icdex_orders: [(Txid, Types.TradingOrder)];
         #icdex_failedOrders: [(Txid, Types.TradingOrder)];
@@ -129,11 +119,11 @@ module {
         #ambassadors: [(AccountId, AmbassadorData)];
         #traderReferrerTemps: [(AccountId, (AccountId, Text, Time.Time))];
         #traderReferrers: [(AccountId, AccountId)];
-        #rounds: [(Nat, RoundItem)];
-        #competitors: [(Nat, [(AccountId, CompResult)])];
+        // #rounds: [(Nat, RoundItem)];
+        // #competitors: [(Nat, [(AccountId, CompResult)])];
         #sagaData: SagaData;
         #drc205Data: DRC205Data;
-        #ictcTaskCallbackEvents: [(Ttid, Time.Time)];
+        // #ictcTaskCallbackEvents: [(Ttid, Time.Time)];
         #ictc_admins: [Principal];
         #icdex_RPCAccounts: [(Text, [{ owner : Principal; subaccount : ?Blob; }])];
         #icdex_accountSettings: [(AccountId, Types.AccountSetting)];

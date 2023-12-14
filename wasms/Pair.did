@@ -1003,4 +1003,4 @@ type ICDexPair =
    withdraw : (opt Amount, opt Amount, opt Sa) -> (Amount, Amount);
    wallet_receive: () -> ();
  };
-service : (InitArgs) -> ICDexPair
+service : (InitArgs, bool) -> ICDexPair
