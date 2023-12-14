@@ -2,7 +2,7 @@
 
 ## Instruction
 
-ICDex is an order book DEX built on the IC network and the supported token standards are ICRC1 and DRC20.  
+ICDex is an order book DEX built on the IC network and supports the token standards ICRC1 and DRC20.  
 ICDex can be deployed on the IC main network or on a local test network. Due to ICDex's dependency on the DRC205 instance (canister-id: lw5dr-uiaaa-aaaak-ae2za-cai) and the ICLighthouse NFT (canister-id: goncb-kqaaa-aaaap-aakpa-cai) on the IC main network, locally deployed instances will not synchronize transaction records to the DRC205 instance (they will be cached locally) and will not be able to use features that require ICLighthouse NFTs as qualification (you can deploy a collection of NFTs locally). These features are non-core and have a low impact on testing.
 
 OrderBook: https://github.com/iclighthouse/ICDex/blob/main/OrderBook.md

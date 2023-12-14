@@ -1,6 +1,7 @@
-# ICDex
+# ICOrderBook
 
-ICDex: A fully on-chain orderbook Dex, with decentralised features and a great user experience like CEX.
+ICDex is A fully on-chain orderbook Dex, with decentralised features and a great user experience like CEX.  
+ICOrderBook is an exchange order book and matching engine that is a core component of ICDex.
 
 ## How it works
 
@@ -107,5 +108,5 @@ Trades from MKT orders are always takers, as market orders never go on the order
 
 ## Implementations
 
-http://icdex.io
+https://github.com/iclighthouse/icl-vessel/blob/main/src/OrderBook.mo
 
