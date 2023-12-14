@@ -201,7 +201,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.12";
+    private let version_: Text = "0.12.15";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -870,10 +870,10 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         backupData := Tools.arrayAppend(backupData, [ambassadors]);
         let traderReferrers = await pair.backup(#traderReferrers);
         backupData := Tools.arrayAppend(backupData, [traderReferrers]);
-        let rounds = await pair.backup(#rounds);
-        backupData := Tools.arrayAppend(backupData, [rounds]);
-        let competitors = await pair.backup(#competitors);
-        backupData := Tools.arrayAppend(backupData, [competitors]);
+        // let rounds = await pair.backup(#rounds);
+        // backupData := Tools.arrayAppend(backupData, [rounds]);
+        // let competitors = await pair.backup(#competitors);
+        // backupData := Tools.arrayAppend(backupData, [competitors]);
         var sagaData = await pair.backup(#sagaData(#Base));
         try { sagaData := await pair.backup(#sagaData(#All)); } catch(e){};
         backupData := Tools.arrayAppend(backupData, [sagaData]);
@@ -882,8 +882,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         backupData := Tools.arrayAppend(backupData, [drc205Data]);
         let traderReferrerTemps = await pair.backup(#traderReferrerTemps);
         backupData := Tools.arrayAppend(backupData, [traderReferrerTemps]);
-        let ictcTaskCallbackEvents = await pair.backup(#ictcTaskCallbackEvents);
-        backupData := Tools.arrayAppend(backupData, [ictcTaskCallbackEvents]);
+        // let ictcTaskCallbackEvents = await pair.backup(#ictcTaskCallbackEvents);
+        // backupData := Tools.arrayAppend(backupData, [ictcTaskCallbackEvents]);
         let ictc_admins = await pair.backup(#ictc_admins);
         backupData := Tools.arrayAppend(backupData, [ictc_admins]);
         let icdex_RPCAccounts = await pair.backup(#icdex_RPCAccounts);
@@ -906,7 +906,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let icdex_stOrderTxids = await pair.backup(#icdex_stOrderTxids);
         backupData := Tools.arrayAppend(backupData, [icdex_stOrderTxids]);
 
-        assert(backupData.size() == 30);
+        assert(backupData.size() == 27);
         ignore _putEvent(#backupPairData({ pair = _pair; timestamp = _now(); }), ?Tools.principalToAccountBlob(Principal.fromActor(this), null));
         return backupData;
     };
@@ -915,7 +915,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let pair : ICDexPrivate.Self = actor(Principal.toText(_pair));
         let info = await pair.info();
         assert(info.paused);
-        assert(_backupData.size() == 30);
+        assert(_backupData.size() == 27);
         for (item in _backupData.vals()){
             ignore await pair.recovery(item);
         };

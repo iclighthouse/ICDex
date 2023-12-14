@@ -435,7 +435,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.12";
+    private let version_: Text = "0.12.15";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
@@ -457,7 +457,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             ICP_FEE = 10_000; // 10_000 E8s
             TRADING_FEE = 5_000; // value 5000 means 0.5%
             MAKER_BONUS_RATE = 0; // value 25 means 25%   BONUS = MAKER_BONUS_RATE * fee
-            MAX_TPS = 10; 
+            MAX_TPS = 6; 
             MAX_PENDINGS = 20;
             STORAGE_INTERVAL = 10; // seconds
             ICTC_RUN_INTERVAL = 10; // seconds
@@ -6019,31 +6019,31 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // /* ===========================
     //   Competitions section
-    //   @deprecated: Removed the competition feature. Left part of the variables and functions for compatibility.
+    //   @deprecated: Removed the competition feature. 
     // ============================== */
     // // T1 -- start -- T2 -- end -- T3 -- settled -- T4
-    type CompCapital = {value0: Nat; value1: Nat; total: Float;}; // @deprecated
-    type RoundItem = { // @deprecated
-        name: Text;
-        content: Text; // H5
-        start: Time.Time;
-        end: Time.Time;
-        quoteToken: {#token0; #token1};
-        closedPrice: ?Float; // 1 smallest token = ? quote smallest token, Set only after the end time
-        isSettled: Bool;
-        minCapital: Nat;
-    };
-    type CompResult = { // @deprecated
-        icrc1Account: ICRC1.Account;
-        status: {#Active; #Dropout;};
-        vol: Vol;
-        capital: CompCapital;
-        assetValue: ?CompCapital; // Note: Only set after settlement
-    };
-    private stable var activeRound : Nat = 0; // @deprecated
-    private stable var rounds: Trie.Trie<Nat, RoundItem> = Trie.empty(); // @deprecated
-    private stable var competitors: Trie.Trie2D<Nat, AccountId, CompResult> = Trie.empty(); // @deprecated
-    private stable var ictcTaskCallbackEvents: Trie.Trie<SagaTM.Ttid, Time.Time> = Trie.empty(); // @deprecated
+    // type CompCapital = {value0: Nat; value1: Nat; total: Float;}; // @deprecated
+    // type RoundItem = { // @deprecated
+    //     name: Text;
+    //     content: Text; // H5
+    //     start: Time.Time;
+    //     end: Time.Time;
+    //     quoteToken: {#token0; #token1};
+    //     closedPrice: ?Float; // 1 smallest token = ? quote smallest token, Set only after the end time
+    //     isSettled: Bool;
+    //     minCapital: Nat;
+    // };
+    // type CompResult = { // @deprecated
+    //     icrc1Account: ICRC1.Account;
+    //     status: {#Active; #Dropout;};
+    //     vol: Vol;
+    //     capital: CompCapital;
+    //     assetValue: ?CompCapital; // Note: Only set after settlement
+    // };
+    // private stable var activeRound : Nat = 0; // @deprecated
+    // private stable var rounds: Trie.Trie<Nat, RoundItem> = Trie.empty(); // @deprecated
+    // private stable var competitors: Trie.Trie2D<Nat, AccountId, CompResult> = Trie.empty(); // @deprecated
+    // private stable var ictcTaskCallbackEvents: Trie.Trie<SagaTM.Ttid, Time.Time> = Trie.empty(); // @deprecated
     // private func _putTTCallback(_ttid: SagaTM.Ttid) : (){ 
     //     ictcTaskCallbackEvents := Trie.put(ictcTaskCallbackEvents, keyn(_ttid), Nat.equal, Time.now()).0;
     // };
@@ -6060,18 +6060,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     //         return false;
     //     };
     //     return Option.isSome(Trie.get(ictcTaskCallbackEvents, keyn(_ttid), Nat.equal));
-    // };
-    // private func _getCompAccountSa(_a: AccountId) : Blob{
-    //     let arr = Blob.toArrayMut(_a);
-    //     let len = arr.size();
-    //     if (len > 0){
-    //         if (arr[Nat.sub(len,1)] >= (255:Nat8)){
-    //             arr[Nat.sub(len,1)] := 0;
-    //         }else{
-    //             arr[Nat.sub(len,1)] += 1;
-    //         };
-    //     };
-    //     return Blob.fromArrayMut(arr);
     // };
     // End: Competitions
 
@@ -6650,7 +6638,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     icdex_priceWeighted = icdex_priceWeighted;
                     icdex_lastPrice = icdex_lastPrice;
                     taDescription = taDescription;
-                    activeRound = activeRound;
+                    // activeRound = activeRound;
                 });
             };
             case(#icdex_orders){
@@ -6726,21 +6714,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         return (k, v);
                     }));
             };
-            case(#rounds){
-                return #rounds(Trie.toArray<Nat, RoundItem, (Nat, RoundItem)>(rounds, 
-                    func (k: Nat, v: RoundItem): (Nat, RoundItem){
-                        return (k, v);
-                    }));
-            };
-            case(#competitors){
-                return #competitors(Trie.toArray<Nat, Trie.Trie<AccountId, CompResult>, (Nat, [(AccountId, CompResult)])>(competitors, 
-                    func (k: Nat, v: Trie.Trie<AccountId, CompResult>): (Nat, [(AccountId, CompResult)]){
-                        return (k, Trie.toArray<AccountId, CompResult, (AccountId, CompResult)>(v, 
-                            func (k1: AccountId, v1: CompResult): (AccountId, CompResult){
-                                return (k1, v1);
-                            }));
-                    }));
-            };
+            // case(#rounds){
+            //     return #rounds(Trie.toArray<Nat, RoundItem, (Nat, RoundItem)>(rounds, 
+            //         func (k: Nat, v: RoundItem): (Nat, RoundItem){
+            //             return (k, v);
+            //         }));
+            // };
+            // case(#competitors){
+            //     return #competitors(Trie.toArray<Nat, Trie.Trie<AccountId, CompResult>, (Nat, [(AccountId, CompResult)])>(competitors, 
+            //         func (k: Nat, v: Trie.Trie<AccountId, CompResult>): (Nat, [(AccountId, CompResult)]){
+            //             return (k, Trie.toArray<AccountId, CompResult, (AccountId, CompResult)>(v, 
+            //                 func (k1: AccountId, v1: CompResult): (AccountId, CompResult){
+            //                     return (k1, v1);
+            //                 }));
+            //         }));
+            // };
             case(#sagaData(mode)){
                 var data = _getSaga().getDataBase();
                 if (mode == #All){
@@ -6791,12 +6779,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         return (k, v);
                     }));
             };
-            case(#ictcTaskCallbackEvents){
-                return #ictcTaskCallbackEvents(Trie.toArray<Ttid, Time.Time, (Ttid, Time.Time)>(ictcTaskCallbackEvents, 
-                    func (k: Ttid, v: Time.Time): (Ttid, Time.Time){
-                        return (k, v);
-                    }));
-            };
+            // case(#ictcTaskCallbackEvents){
+            //     return #ictcTaskCallbackEvents(Trie.toArray<Ttid, Time.Time, (Ttid, Time.Time)>(ictcTaskCallbackEvents, 
+            //         func (k: Ttid, v: Time.Time): (Ttid, Time.Time){
+            //             return (k, v);
+            //         }));
+            // };
             case(#ictc_admins){
                 return #ictc_admins(ictc_admins);
             };
@@ -6866,7 +6854,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 icdex_priceWeighted := data.icdex_priceWeighted;
                 icdex_lastPrice := data.icdex_lastPrice;
                 taDescription := data.taDescription;
-                activeRound := data.activeRound;
+                // activeRound := data.activeRound;
             };
             case(#icdex_orders(data)){
                 for ((k, v) in data.vals()){
@@ -6927,20 +6915,20 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     traderReferrers := Trie.put(traderReferrers, keyb(k), Blob.equal, v).0;
                 };
             };
-            case(#rounds(data)){
-                for ((k, v) in data.vals()){
-                    rounds := Trie.put(rounds, keyn(k), Nat.equal, v).0;
-                };
-            };
-            case(#competitors(data)){
-                for ((k, v) in data.vals()){
-                    var trie: Trie.Trie<AccountId, CompResult> = Trie.empty();
-                    for ((k1, v1) in v.vals()){
-                        trie := Trie.put(trie, keyb(k1), Blob.equal, v1).0;
-                    };
-                    competitors := Trie.put(competitors, keyn(k), Nat.equal, trie).0;
-                };
-            };
+            // case(#rounds(data)){
+            //     for ((k, v) in data.vals()){
+            //         rounds := Trie.put(rounds, keyn(k), Nat.equal, v).0;
+            //     };
+            // };
+            // case(#competitors(data)){
+            //     for ((k, v) in data.vals()){
+            //         var trie: Trie.Trie<AccountId, CompResult> = Trie.empty();
+            //         for ((k1, v1) in v.vals()){
+            //             trie := Trie.put(trie, keyb(k1), Blob.equal, v1).0;
+            //         };
+            //         competitors := Trie.put(competitors, keyn(k), Nat.equal, trie).0;
+            //     };
+            // };
             case(#sagaData(data)){
                 _getSaga().setData({
                     autoClearTimeout = data.autoClearTimeout; 
@@ -6984,11 +6972,11 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     traderReferrerTemps := Trie.put(traderReferrerTemps, keyb(k), Blob.equal, v).0;
                 };
             };
-            case(#ictcTaskCallbackEvents(data)){
-                for ((k, v) in data.vals()){
-                    ictcTaskCallbackEvents := Trie.put(ictcTaskCallbackEvents, keyn(k), Nat.equal, v).0;
-                };
-            };
+            // case(#ictcTaskCallbackEvents(data)){
+            //     for ((k, v) in data.vals()){
+            //         ictcTaskCallbackEvents := Trie.put(ictcTaskCallbackEvents, keyn(k), Nat.equal, v).0;
+            //     };
+            // };
             case(#ictc_admins(data)){
                 ictc_admins := data;
             };

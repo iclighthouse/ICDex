@@ -78,11 +78,11 @@ module {
         #ambassadors;
         #traderReferrerTemps;
         #traderReferrers;
-        #rounds;
-        #competitors;
+        // #rounds;
+        // #competitors;
         #sagaData: {#All; #Base};
         #drc205Data: {#All; #Base};
-        #ictcTaskCallbackEvents;
+        // #ictcTaskCallbackEvents;
         #ictc_admins;
         #icdex_RPCAccounts;
         #icdex_accountSettings;
@@ -103,7 +103,7 @@ module {
             icdex_priceWeighted: Types.PriceWeighted;
             icdex_lastPrice: Types.OrderPrice;
             taDescription: Text;
-            activeRound: Nat;
+            // activeRound: Nat;
         };
         #icdex_orders: [(Txid, Types.TradingOrder)];
         #icdex_failedOrders: [(Txid, Types.TradingOrder)];
@@ -119,11 +119,11 @@ module {
         #ambassadors: [(AccountId, AmbassadorData)];
         #traderReferrerTemps: [(AccountId, (AccountId, Text, Time.Time))];
         #traderReferrers: [(AccountId, AccountId)];
-        #rounds: [(Nat, RoundItem)];
-        #competitors: [(Nat, [(AccountId, CompResult)])];
+        // #rounds: [(Nat, RoundItem)];
+        // #competitors: [(Nat, [(AccountId, CompResult)])];
         #sagaData: SagaData;
         #drc205Data: DRC205Data;
-        #ictcTaskCallbackEvents: [(Ttid, Time.Time)];
+        // #ictcTaskCallbackEvents: [(Ttid, Time.Time)];
         #ictc_admins: [Principal];
         #icdex_RPCAccounts: [(Text, [{ owner : Principal; subaccount : ?Blob; }])];
         #icdex_accountSettings: [(AccountId, Types.AccountSetting)];
