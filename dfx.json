@@ -1,15 +1,14 @@
 {
   "canisters": {
-    "PairProduct": {
+    "ICDexPair": {
       "main": "./ICDexPair.mo",
       "type": "motoko",
       "args" : "--compacting-gc"
     },
-    "Router": {
-      "main": "src/ICDexRouter.mo",
+    "ICDexMaker": {
+      "main": "src/ICDexMaker.mo",
       "type": "motoko",
-      "args" : "--compacting-gc",
-      "optimize": "size"
+      "args" : "--compacting-gc"
     },
     "RouterMain": {
       "main": "src/ICDexRouter.mo",
@@ -22,11 +21,6 @@
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"
-    },
-    "ICDexMaker": {
-      "main": "src/ICDexMaker.mo",
-      "type": "motoko",
-      "args" : "--compacting-gc"
     }
   },
   "defaults": {

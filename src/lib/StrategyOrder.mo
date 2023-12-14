@@ -2,9 +2,14 @@
  * Module     : StrategyOrder.mo
  * Author     : ICLighthouse Team
  * Stability  : Experimental
- * Description: Strategic orders: Professional orders and Stop loss orders.
- * Refers     : https://github.com/iclighthouse/
+ * Description: Strategy for trading: Professional orders and Stop loss orders.
+ * Refers     : https://github.com/iclighthouse/ICDex/
  */
+///
+/// StrategyOrder is a strategy executor that is hooked into the _trade() function of a trading pair. Strategy Order is divided 
+/// into stop-loss-orders and pro-orders, and pro-orders include Grid, Iceberg, VWAP, and TWAP orders. The StrategyOrder module 
+/// is a library of functions that provide basic functionality of Strategy Order.
+
 import Nat "mo:base/Nat";
 import Nat64 "mo:base/Nat64";
 import Int "mo:base/Int";
@@ -18,42 +23,53 @@ import Blob "mo:base/Blob";
 import Binary "mo:icl/Binary";
 import OB "mo:icl/OrderBook";
 import STO "mo:icl/STOTypes";
-
-/// Fee model
-/// 1. Fixed fee at time of order
-/// 2. Pro-rated fee when triggered (regardless of whether or not it is filled)
+import Pair "mo:icl/ICDexTypes";
+import Tools "mo:icl/Tools";
 
 module {
-    public type Txid = STO.Txid;
-    public type AccountId = STO.AccountId;
+    public type Txid = STO.Txid; // Blob
+    public type AccountId = STO.AccountId; // Blob
     public type ICRC1Account = STO.ICRC1Account;
-    public type Nonce = STO.Nonce;
-    public type Amount = STO.Amount;
+    public type Nonce = STO.Nonce; // Nat
+    public type Amount = STO.Amount; // Nat
     public type Timestamp = STO.Timestamp; // seconds
-    public type Price = STO.Price;
-    public type OrderSide = OB.OrderSide;
-    // pro-orders
-    public type Soid = STO.Soid;
-    public type Ppm = STO.Ppm; //  1 / 1000000
-    public type STOrderRecords = STO.STOrderRecords; 
-    public type UserProOrderList = STO.UserProOrderList; // Excluding Stop Loss Orders; UserOrderCount <= 5; 
-    public type ActiveProOrderList = STO.ActiveProOrderList; // Excluding Stop Loss Orders
-    public type UserStopLossOrderList = STO.UserStopLossOrderList; // Stop Loss Orders; UserOrderCount <= 10; 
-    public type ActiveStopLossOrderList = STO.ActiveStopLossOrderList; // Stop Loss Orders
-    public type STOrderTxids = STO.STOrderTxids; 
+    public type Price = STO.Price; // How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
+    public type OrderSide = OB.OrderSide; // {#Buy; #Sell}
+    public type Soid = STO.Soid; // Nat
+    public type Ppm = STO.Ppm; //  ppm. 1/1000000.
+    public type STOrderRecords = STO.STOrderRecords; // Strategies
+    public type UserProOrderList = STO.UserProOrderList; // Index relationship table between users and pro-orders. 
+    public type ActiveProOrderList = STO.ActiveProOrderList; // Currently active pro-orders. 
+    public type UserStopLossOrderList = STO.UserStopLossOrderList; // Index relationship table between users and stop-loss-orders.
+    public type ActiveStopLossOrderList = STO.ActiveStopLossOrderList; // Currently active stop-loss-orders. 
+    public type STOrderTxids = STO.STOrderTxids; // Index relationship table between trade orders (txid) and strategies (soid).
 
     public type Setting = STO.Setting;
+    // type STOrder = { // Data structure of a strategy order
+    //     soid: Soid; // index
+    //     icrc1Account: ICRC1Account; // owner
+    //     stType: STType; // {#StopLossOrder; #GridOrder; #IcebergOrder; #VWAP; #TWAP }; 
+    //     strategy: STStrategy; // Strategy configuration and intermediate states.
+    //     stats: STStats; // Strategy statistics.
+    //     status: STStatus; // Strategy status.
+    //     initTime: Timestamp; // Timestamp at initialization.
+    //     triggerTime: Timestamp; // Timestamp of latest trigger.
+    //     pendingOrders: { buy: [(?Txid, Price, quantity: Nat)]; sell: [(?Txid, Price, quantity: Nat)] }; // Trade orders that are in the process of being placed or have already been placed.
+    // };
+    public type STOrder = STO.STOrder; // Data structure of a strategy order
     public type STType = STO.STType; // {#StopLossOrder; #GridOrder; #IcebergOrder; #VWAP; #TWAP }; 
     public type STStrategy = STO.STStrategy;
     public type STStats = STO.STStats;
     public type STStatus = STO.STStatus;
-    public type STOrder = STO.STOrder;
-    public type StopLossOrder = STO.StopLossOrder;
+    // StopLossOrder
+    public type StopLossOrder = STO.StopLossOrder; // stop-loss-order
     public type Condition = STO.Condition;
     public type TriggeredOrder = STO.TriggeredOrder;
     // GridOrder
     public type GridOrderSetting = STO.GridOrderSetting;
     public type GridSetting = STO.GridSetting;
+    public type GridPrices = STO.GridPrices;
+    public type GridOrder = STO.GridOrder;
     // IcebergOrder
     public type IcebergOrderSetting = STO.IcebergOrderSetting;
     public type IcebergOrder = STO.IcebergOrder;
@@ -64,16 +80,24 @@ module {
     public type TWAPSetting = STO.TWAPSetting;
     public type TWAP = STO.TWAP;
 
-    // public type GridProgress = {
-    //     ppmFactor: ?{buy: Nat; sell: Nat}; //  1000000 * 1/n * (n ** (1/10))
-    //     gridPrices: { buy: [Price]; sell: [Price] };  // ordered
-    // };
-    public type GridPrices = STO.GridPrices;
-    public type GridOrder = STO.GridOrder;
-
     private func _now() : Timestamp{
         return Int.abs(Time.now() / 1000000000);
     };
+    private func _toSaNat8(_sa: ?Blob) : ?[Nat8]{
+        let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+        switch(_sa){
+            case(?(sa)){ 
+                if (sa.size() == 0 or sa == Blob.fromArray(sa_zero)){
+                    return null;
+                }else{
+                    return ?Blob.toArray(sa); 
+                };
+            };
+            case(_){ return null; };
+        }
+    };
+
+    // Pushes a new item into the `(Soid, Price)` list  according to the `Price` sorting rule.
     private func _pushSortedSTOList(_list: List.List<(Soid, Price)>, _order: {#Asc; #Desc}, _item: (Soid, Price)) : List.List<(Soid, Price)>{
         var list = _list;
         var temp : List.List<(Soid, Price)> = null;
@@ -106,14 +130,16 @@ module {
         };
         return list;
     };
-    // replace Hash.hash (Warning: Incompatible)
-    public func natHash(n : Nat) : Hash.Hash{
+
+    // Calculate the hash value of Nat.
+    private func natHash(n : Nat) : Hash.Hash{
         return Blob.hash(Blob.fromArray(Binary.BigEndian.fromNat64(Nat64.fromIntWrap(n))));
     };
     private func keyn(t: Nat) : Trie.Key<Nat> { return { key = t; hash = natHash(t) }; };
     private func keyb(t: Blob) : Trie.Key<Blob> { return { key = t; hash = Blob.hash(t) }; };
 
-    public func getSTType(_strategy: STStrategy) : STType{
+    /// Returns the type of a strategy. 
+    public func getSTType(_strategy: STStrategy) : STType{ // {#StopLossOrder; #GridOrder; #IcebergOrder; #VWAP; #TWAP }; 
         switch(_strategy){
             case(#GridOrder(v)){ return #GridOrder };
             case(#StopLossOrder(v)){ return #StopLossOrder };
@@ -122,7 +148,10 @@ module {
             case(#TWAP(v)){ return #TWAP };
         };
     };
-    public func getSpread(_side: {#upward; #downward}, _spread: {#Arith: Price; #Geom: Ppm }, _gridPrice: Price) : Nat{
+
+    /// GridOrder: Calculate grid spread based on spread configuration `_spread`.  
+    /// #Arith: arithmetic; #Geom: geometric (1 ppm means 1/1_000_000).
+    public func getSpread(_side: {#upward; #downward}, _spread: {#Arith: Price; #Geom: Ppm }, _gridPrice: Price) : Price{
         switch(_side){
             case(#upward){
                 return switch(_spread){ case(#Arith(v)){ v }; case(#Geom(ppm)){ _gridPrice * ppm / 1000000 } };
@@ -132,8 +161,11 @@ module {
             };
         };
     };
-    public func getPpmFactor(_initPrice: Price, _spread: {#Arith: Price; #Geom: Ppm }, _lowerPrice: Price, _upperPrice: Price) : Nat{
-        // 1000000 * 1/n * (n ** (1/10))
+
+    /// GridOrder: Default grid order amount factor, initialized when the strategy is created. `ppmFactor = 1000000 * 1/n * (n ** (1/10))`, 
+    /// Where n is `(n1 + n2) / 2`, and n1, n2 is between 2 and 200. n1 is the number of grids between the latest price and the lowerLimit, 
+    /// and n2 is the number of grids between the latest price and the upperLimit.
+    public func getPpmFactor(_initPrice: Price, _spread: {#Arith: Price; #Geom: Ppm }, _lowerPrice: Price, _upperPrice: Price) : Ppm{
         var price : Price = 0;
         var spread: Price = 0;
         var gridCount_buy: Nat = 0;
@@ -157,12 +189,18 @@ module {
         let n = (gridCount_sell + gridCount_buy) / 2;
         return OB.floatToNat(OB.natToFloat(n) ** (1.0 / 10.0) * 1000000.0) / n; 
     };
+
+    /// Add a strategy.
     public func put(_data: STOrderRecords, _sto: STOrder) : STOrderRecords{
         return Trie.put(_data, keyn(_sto.soid), Nat.equal, _sto).0;
     };
+
+    /// Returns a strategy order information and status.
     public func get(_data: STOrderRecords, _soid: Soid) : ?STOrder{
         return Trie.get(_data, keyn(_soid), Nat.equal);
     };
+
+    /// Create a new strategy.
     public func new(_data: STOrderRecords, _icrc1Account: ICRC1Account, _soid: Soid, _strategy: STStrategy) : STOrderRecords{
         let sto: STOrder = {
             soid = _soid;
@@ -182,9 +220,13 @@ module {
         };
         return Trie.put(_data, keyn(_soid), Nat.equal, sto).0;
     };
+
+    /// Remove a strategy.
     public func remove(_data: STOrderRecords, _soid: Soid) : STOrderRecords{
         return Trie.remove(_data, keyn(_soid), Nat.equal).0;
     };
+
+    /// Updates the status of a strategy.
     public func updateStatus(_data: STOrderRecords, _soid: Soid, _status: STStatus) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -206,6 +248,8 @@ module {
         };
         return data;
     };
+
+    /// Updates the latest trigger time for a strategy.
     public func updateTriggerTime(_data: STOrderRecords, _soid: Soid) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -227,6 +271,8 @@ module {
         };
         return data;
     };
+
+    /// Updates the statistics for a strategy.
     public func updateStats(_data: STOrderRecords, _soid: Soid, _add: STStats) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -253,6 +299,8 @@ module {
         };
         return data;
     };
+
+    /// When a strategy is triggered and trade orders are placed, update the pending status of the trade order to the strategy order.
     public func putPendingOrder(_data: STOrderRecords, _soid: Soid, _side: {#Buy; #Sell}, _item: (?Txid, Price, quantity: Nat)) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -290,6 +338,8 @@ module {
         };
         return data;
     };
+
+    /// Removes a record of trade order from a strategy order.
     public func removePendingOrder(_data: STOrderRecords, _soid: Soid, _txid: Txid) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -313,6 +363,8 @@ module {
         };
         return data;
     };
+
+    /// Removes a record of trade order from a strategy order.
     public func removePendingOrderByPrice(_data: STOrderRecords, _soid: Soid, _side: {#Buy; #Sell}, _price: Price) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -352,6 +404,9 @@ module {
         };
         return data;
     };
+
+    /// Returns whether a trade order triggered by a strategy order already exists (whether the same trade order has already 
+    /// been triggered and has been placed or is in the process of being placed).
     public func isPendingOrder(_data: STOrderRecords, _soid: Soid, _side: {#Buy; #Sell}, _price: Price) : (Bool, ?Txid){
         switch(get(_data, _soid)){
             case(?(sto)){
@@ -390,6 +445,8 @@ module {
         };
         return (false, null);
     };
+
+    /// GridOrder: Returns trade orders with a PENDING status outside the specified grid price range as invalid orders.
     public func getInvalidOrders(_orders: [(?Txid, Price, Nat)], _side: {#Buy; #Sell}, _thresholdFirst: Price, _thresholdLast: Price) : [(?Txid, Price, Nat)]{
         var res: [(?Txid, Price, Nat)] = [];
         switch(_side){
@@ -414,6 +471,8 @@ module {
         };
         return res;
     };
+
+    /// GridOrder: Determines whether a grid price exists within the current active grid price range.
     public func isExistingPrice(_prices: [Price], _price: Price, _spreadSetting: {#Arith: Price; #Geom: Ppm }) : Bool{
         let hSpread = getSpread(#upward, _spreadSetting, _price) / 2;
         for(price in _prices.vals()){
@@ -426,6 +485,7 @@ module {
         return false;
     };
     
+    /// Returns the number of pro-orders for a trader.
     public func userPOSize(_data: UserProOrderList, _a: AccountId): Nat{
         switch(Trie.get(_data, keyb(_a), Blob.equal)){
             case(?(list)){
@@ -436,6 +496,8 @@ module {
             };
         };
     };
+
+    /// Returns the number of stop-loss-orders for a trader.
     public func userSLOSize(_data: UserStopLossOrderList, _a: AccountId): Nat{
         switch(Trie.get(_data, keyb(_a), Blob.equal)){
             case(?(list)){
@@ -446,6 +508,8 @@ module {
             };
         };
     };
+
+    /// Adds a record to the traders and pro-orders index table.
     public func putUserPOList(_data: UserProOrderList, _a: AccountId, _soid: Soid): UserProOrderList{
         switch(Trie.get(_data, keyb(_a), Blob.equal)){
             case(?(list)){
@@ -456,6 +520,8 @@ module {
             };
         };
     };
+
+    /// Removes a record from the traders and pro-orders index table.
     public func removeUserPOList(_data: UserProOrderList, _a: AccountId, _soid: Soid): UserProOrderList{
         switch(Trie.get(_data, keyb(_a), Blob.equal)){
             case(?(list)){
@@ -469,6 +535,8 @@ module {
             case(_){ return _data };
         };
     };
+
+    /// Adds a record to the traders and stop-loss-orders index table.
     public func putUserSLOList(_data: UserStopLossOrderList, _a: AccountId, _soid: Soid): UserStopLossOrderList{
         switch(Trie.get(_data, keyb(_a), Blob.equal)){
             case(?(list)){
@@ -479,6 +547,8 @@ module {
             };
         };
     };
+
+    /// Removes a record from the traders and stop-loss-orders index table.
     public func removeUserSLOList(_data: UserStopLossOrderList, _a: AccountId, _soid: Soid): UserStopLossOrderList{
         switch(Trie.get(_data, keyb(_a), Blob.equal)){
             case(?(list)){
@@ -492,12 +562,18 @@ module {
             case(_){ return _data };
         };
     };
+
+    /// Adds a record to the currently active pro-orders queue.
     public func putActivePOList(_data: ActiveProOrderList, _soid: Soid): ActiveProOrderList{
         return List.reverse(List.push(_soid, List.reverse(_data)));
     };
+
+    /// Removes a record from the currently active pro-orders queue.
     public func removeActivePOList(_data: ActiveProOrderList, _soid: Soid): ActiveProOrderList{
         return List.filter(_data, func (t: Soid): Bool{ t != _soid });
     };
+
+    /// Adds a record to the currently active stop-loss-orders queue.
     public func putActiveSLOList(_data: ActiveStopLossOrderList, _side: {#Buy; #Sell}, _item: (Soid, Price)): ActiveStopLossOrderList{
         switch(_side){
             case(#Buy){
@@ -508,21 +584,30 @@ module {
             };
         };
     };
+
+    /// Removes a record from the currently active stop-loss-orders queue.
     public func removeActiveSLOList(_data: ActiveStopLossOrderList, _soid: Soid): ActiveStopLossOrderList{
         let buyOrders = List.filter(_data.buy, func (t: (Soid, Price)): Bool{ t.0 != _soid });
         let sellOrders = List.filter(_data.sell, func (t: (Soid, Price)): Bool{ t.0 != _soid });
         return {buy = buyOrders; sell = sellOrders };
     };
+
+    /// Adds a record to the trade orders and strategy orders index table.
     public func putSTOTxids(_data: STOrderTxids, _txid: Txid, _soid: Soid): STOrderTxids{
         return Trie.put(_data, keyb(_txid), Blob.equal, _soid).0;
     };
+
+    /// Removes a record from the trade orders and strategy orders index table.
     public func removeSTOTxids(_data: STOrderTxids, _txid: Txid): STOrderTxids{
         return Trie.remove(_data, keyb(_txid), Blob.equal).0;
     };
+
+    /// Returns the soid of the strategy order based on the specified txid.
     public func getSoidByTxid(_data: STOrderTxids, _txid: Txid): ?Soid{
         return Trie.get(_data, keyb(_txid), Blob.equal);
     };
-    // StopLossOrder
+
+    /// StopLossOrder: Updates a stop-loss-order strategy.
     public func updateStopLossOrder(_data: STOrderRecords, _soid: Soid, _condition: ?Condition, _triggeredOrder: ?TriggeredOrder) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -554,7 +639,8 @@ module {
         };
         return data;
     };
-    // GridOrder
+
+    /// GridOrder: Updates a pro-order (GridOrder) strategy.
     public func updateGridOrder(_data: STOrderRecords, _soid: Soid, _setting: ?GridSetting, _gridPrices: ?GridPrices) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -586,6 +672,8 @@ module {
         };
         return data;
     };
+
+    /// GridOrder: Removes a grid price from the currently active grid prices of a grid order strategy.
     public func removeGridPrice(_data: STOrderRecords, _soid: Soid, _price: Price) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -624,6 +712,8 @@ module {
         };
         return data;
     };
+
+    /// GridOrder: Returns the currently active grid prices for a grid order strategy.
     public func getGridPrices(_setting: GridSetting, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
         let initPrice = _setting.initPrice;
         let sideSize = _setting.gridCountPerSide;
@@ -695,6 +785,8 @@ module {
         };
         return {midPrice = ?midPrice; sell = gridPrice_sell; buy = gridPrice_buy};
     };
+
+    /// GridOrder: Similar to getGridPrices().
     public func getGridPrices2(_data: STOrderRecords, _soid: Soid, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
          switch(get(_data, _soid)){
             case(?(po)){
@@ -709,6 +801,8 @@ module {
         };
         return {midPrice = null; sell = []; buy = []};
     };
+
+    /// GridOrder: Calculates the quantity of trade order triggered by GridOrder.
     public func getQuantityPerOrder(_setting: GridSetting, _price: Price, _unitSize: Nat, _token0Balance: Amount, _token1Balance: Amount, _side: {#Buy; #Sell}, _minValue: Amount) : 
     {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; }{
         switch(_setting.amount, _side){
@@ -776,7 +870,7 @@ module {
         };
     };
 
-    // IcebergOrder / VWAP / TWAP 
+    /// IcebergOrder / VWAP / TWAP: Calculates the quantity of trade order triggered by the IcebergOrder, VWAP or TWAP.
     public func getQuantityForPO(_amount: {#Token0: Nat; #Token1: Nat}, _side: OB.OrderSide, _price: Price, _unitSize: Nat) : 
     {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; }{
         let _minValue = _unitSize * 10;
@@ -801,6 +895,8 @@ module {
             };
         };
     };
+
+    /// IcebergOrder / VWAP / TWAP: Returns whether the market price has reached the limit range of the strategy.
     public func isReachedLimit(_totalLimit: {#Token0: Nat; #Token1: Nat}, _totalAmount: {#Token0: Nat; #Token1: Nat}, _price: Price, _unitSize: Nat) : Bool{
         var res: Bool = false;
         switch(_totalLimit, _totalAmount){
@@ -811,6 +907,8 @@ module {
         };
         return res;
     };
+
+    /// Returns the price of a trade order that increases or decreases by a slippage (spread).
     public func getPrice(_side: OB.OrderSide, _price: Price, _spread: Price) : Price{
         switch(_side){
             case(#Buy){
@@ -822,7 +920,7 @@ module {
         };
     };
 
-    // IcebergOrder
+    /// IcebergOrder: Updates a pro-order (IcebergOrder) strategy.
     public func updateIcebergOrder(_data: STOrderRecords, _soid: Soid, _setting: ?IcebergOrderSetting, _lastTxid: ?Blob) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -855,7 +953,7 @@ module {
         return data;
     };
 
-    // VWAP
+    /// VWAP: Updates a pro-order (VWAP) strategy.
     public func updateVWAP(_data: STOrderRecords, _soid: Soid, _setting: ?VWAPSetting, _lastVol: ?Nat) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -888,7 +986,7 @@ module {
         return data;
     };
 
-    // TWAP
+    /// TWAP: Updates a pro-order (TWAP) strategy.
     public func updateTWAP(_data: STOrderRecords, _soid: Soid, _setting: ?TWAPSetting, _lastTime: ?Timestamp) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
@@ -919,5 +1017,388 @@ module {
             case(_){};
         };
         return data;
+    };
+
+    /* trigger */
+    type OrderPrice = OB.OrderPrice;
+    type TxnStatus = {#Failed; #Pending; #Completed; #PartiallyCompletedAndCancelled; #Cancelled;};
+
+    /// Stop-loss-order trigger
+    public func sloTrigger(_data: STOrderRecords, _balances: Pair.KeepingBalance, _price: Price, _unitSize: Nat, _soid: STO.Soid, sto: STO.STOrder): 
+    (STOrderRecords, STO.STStatus, [(STO.Soid, STO.ICRC1Account, OrderPrice)]){
+        var data = _data;
+        let price = _price; // icdex_lastPrice.price;
+        var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
+        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
+        let balances = _balances; // _getAccountBalance(account);
+        let balance0 = balances.token0.available;
+        let balance1 = balances.token1.available;
+        switch(sto.strategy){
+            case(#StopLossOrder(slo)){
+                var status : STO.STStatus = sto.status;
+                var orderQuantity : {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; } = #Sell(0);
+                var orderPrice : OrderPrice = { quantity = orderQuantity; price = slo.condition.order.price; };
+                var quantity: Nat = 0;
+                var amount: Nat = 0;
+                switch(slo.condition.order.side){
+                    case(#Buy){
+                        if (price >= slo.condition.triggerPrice){
+                            quantity := OB.adjustFlooring(slo.condition.order.quantity, _unitSize);
+                            amount := quantity * slo.condition.order.price / _unitSize;
+                            orderQuantity := #Buy(quantity, amount);
+                            orderPrice := { quantity = orderQuantity; price = slo.condition.order.price; };
+                            status := #Stopped;
+                        };
+                    };
+                    case(#Sell){
+                        if (price <= slo.condition.triggerPrice){
+                            quantity := OB.adjustFlooring(slo.condition.order.quantity, _unitSize);
+                            orderQuantity := #Sell(quantity);
+                            orderPrice := { quantity = orderQuantity; price = slo.condition.order.price; };
+                            status := #Stopped;
+                        };
+                    };
+                };
+                // pre-order
+                if (quantity >= _unitSize*2){
+                    res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
+                    data := putPendingOrder(data, _soid, slo.condition.order.side, (null, slo.condition.order.price, quantity));
+                };
+                // update data
+                if (res.size() > 0 and Option.isNull(slo.triggeredOrder)){
+                    data := updateTriggerTime(data, _soid);
+                    data := updateStopLossOrder(data, _soid, null, ?{
+                        triggerPrice = price;
+                        order = { side = slo.condition.order.side; quantity = quantity; price = slo.condition.order.price; };
+                    });
+                };
+                // return
+                return (data, status, res);
+            };
+            case(_){};
+        };
+        return (data, sto.status, res);
+    };
+
+    /// Grid-order trigger
+    public func goTrigger(_data: STOrderRecords, _balances: Pair.KeepingBalance, _price: Price, _unitSize: Nat, _soid: STO.Soid, sto: STO.STOrder): 
+    (STOrderRecords, STO.STStatus, ordersTriggered: [(STO.Soid, STO.ICRC1Account, OrderPrice)], ordersToBeCancel: [(Txid, ?OrderSide)]){
+        var data = _data;
+        let price = _price; // icdex_lastPrice.price;
+        var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
+        var ordersToBeCancel: [(Txid, ?OrderSide)] = [];
+        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
+        let balances = _balances; // _getAccountBalance(account);
+        let balance0 = balances.token0.available;
+        let balance1 = balances.token1.available;
+        switch(sto.strategy){
+            case(#GridOrder(grid)){
+                // prices : {midPrice: ?Price; sell: [Price]; buy: [Price]}
+                let prices = getGridPrices(grid.setting, price, grid.gridPrices.midPrice, null, null);
+                var insufficientBalance : Bool = false;
+                // cancel
+                if (prices.buy.size() > 0){
+                    let invalidOrders = getInvalidOrders(sto.pendingOrders.buy, #Buy, prices.buy[0], prices.buy[Nat.sub(prices.buy.size(),1)]);
+                    for ((optTxid, price, quantity) in invalidOrders.vals()){
+                        switch(optTxid){
+                            case(?txid){
+                                // ignore _cancelOrder(txid, ?#Buy);
+                                ordersToBeCancel := Tools.arrayAppend(ordersToBeCancel, [(txid, ?#Buy)]);
+                            };
+                            case(_){
+                                data := removePendingOrderByPrice(data, _soid, #Buy, price);
+                                // data := STO.removeGridPrice(data, _soid, price);
+                            };
+                        };
+                    };
+                };
+                if (prices.sell.size() > 0){
+                    let invalidOrders = getInvalidOrders(sto.pendingOrders.sell, #Sell, prices.sell[0], prices.sell[Nat.sub(prices.sell.size(),1)]);
+                    for ((optTxid, price, quantity) in invalidOrders.vals()){
+                        switch(optTxid){
+                            case(?txid){
+                                // ignore _cancelOrder(txid, ?#Sell);
+                                ordersToBeCancel := Tools.arrayAppend(ordersToBeCancel, [(txid, ?#Buy)]);
+                            };
+                            case(_){
+                                data := removePendingOrderByPrice(data, _soid, #Sell, price);
+                                // data := STO.removeGridPrice(data, _soid, price);
+                            };
+                        };
+                    };
+                };
+                // pre-order
+                var toBeLockedValue0: Nat = 0;
+                var toBeLockedValue1: Nat = 0;
+                for(gridPrice in prices.sell.vals()){
+                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, balance0, balance1, #Sell, _unitSize*10);
+                    let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
+                    let quantity = OB.quantity(orderPrice);
+                    if (toBeLockedValue0 + quantity > balances.token0.available){
+                        insufficientBalance := true;
+                    };
+                    if (quantity >= _unitSize*10 and toBeLockedValue0 + quantity <= balances.token0.available and 
+                    not(isExistingPrice(grid.gridPrices.sell, gridPrice, grid.setting.spread))){
+                        res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
+                        data := putPendingOrder(data, _soid, #Sell, (null, gridPrice, quantity));
+                        toBeLockedValue0 += quantity;
+                    };
+                    // if (pendingValue0 + quantity <= balance0){
+                    //     pendingValue0 += quantity;
+                    // };
+                };
+                for(gridPrice in prices.buy.vals()){
+                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, balance0, balance1, #Buy, _unitSize*10);
+                    let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
+                    let quantity = OB.quantity(orderPrice);
+                    let amount = OB.amount(orderPrice);
+                    if (toBeLockedValue1 + amount > balances.token1.available){
+                        insufficientBalance := true;
+                    };
+                    if (quantity >= _unitSize*10 and amount > 0 and toBeLockedValue1 + amount <= balances.token1.available and 
+                    not(isExistingPrice(grid.gridPrices.buy, gridPrice, grid.setting.spread))){
+                        res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
+                        data := putPendingOrder(data, _soid, #Buy, (null, gridPrice, quantity));
+                        toBeLockedValue1 += amount;
+                    };
+                    // if (pendingValue1 + amount <= balance1){
+                    //     pendingValue1 += amount;
+                    // };
+                };
+                // update data
+                if (res.size() > 0){
+                    data := updateTriggerTime(data, _soid);
+                    data := updateGridOrder(data, _soid, null, ?prices);
+                }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
+                    return (data, #Stopped, res, ordersToBeCancel);
+                };
+            };
+            case(_){};
+        };
+        return (data, sto.status, res, ordersToBeCancel);
+    };
+
+    /// Iceberg-order trigger
+    public func ioTrigger(_data: STOrderRecords, _balances: Pair.KeepingBalance, _price: Price, _unitSize: Nat, _txnStatus: ?TxnStatus, _soid: STO.Soid, sto: STO.STOrder): 
+    (STOrderRecords, STO.STStatus, ordersTriggered: [(STO.Soid, STO.ICRC1Account, OrderPrice)]){
+        var data = _data;
+        let price = _price; // icdex_lastPrice.price;
+        var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
+        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
+        let balances = _balances; // _getAccountBalance(account);
+        let balance0 = balances.token0.available;
+        let balance1 = balances.token1.available;
+        switch(sto.strategy){
+            case(#IcebergOrder(io)){
+                var status : STO.STStatus = sto.status;
+                var orderQuantity : {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; } = #Sell(0);
+                var orderPrice : OrderPrice = { quantity = orderQuantity; price = io.setting.order.price; };
+                var quantity: Nat = 0;
+                var amount: Nat = 0;
+                var insufficientBalance : Bool = false;
+                // trigger
+                var trigger: Bool = true;
+                switch(_txnStatus){
+                    case(?txnStatus){
+                        if (txnStatus == #Pending) { trigger := false };
+                    };
+                    case(_){};
+                };
+                
+                if (_now() > io.setting.endTime){
+                    status := #Stopped;
+                };
+                if (trigger and status == #Running and _now() >= io.setting.startingTime){
+                    orderQuantity := getQuantityForPO(io.setting.amountPerTrigger, io.setting.order.side, io.setting.order.price, _unitSize);
+                    orderPrice := { quantity = orderQuantity; price = io.setting.order.price; };
+                    quantity := OB.quantity(orderPrice);
+                    amount := OB.amount(orderPrice);
+                    if (OB.side(orderPrice) == #Buy and amount > balances.token1.available){
+                        insufficientBalance := true;
+                    }else if (OB.side(orderPrice) == #Sell and quantity > balances.token0.available){
+                        insufficientBalance := true;
+                    };
+                    var totalAmount: {#Token0: Nat; #Token1: Nat} = #Token0(0);
+                    switch(io.setting.totalLimit){
+                        case(#Token0(v)){ totalAmount := #Token0(quantity + Nat.max(sto.stats.totalInAmount.token0, sto.stats.totalOutAmount.token0)); };
+                        case(#Token1(v)){ totalAmount := #Token1(amount + Nat.max(sto.stats.totalInAmount.token1, sto.stats.totalOutAmount.token1)); };
+                    };
+                    if (isReachedLimit(io.setting.totalLimit, totalAmount, io.setting.order.price, _unitSize)){
+                        status := #Stopped;
+                    };
+                };
+                // pre-order
+                if (trigger and quantity >= _unitSize*10 and not(insufficientBalance)){
+                    res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
+                    data := putPendingOrder(data, _soid, io.setting.order.side, (null, io.setting.order.price, quantity));
+                };
+                // update data
+                if (res.size() > 0){
+                    data := updateTriggerTime(data, _soid);
+                }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
+                    return (data, #Stopped, res);
+                };
+                // return
+                return (data, status, res);
+            };
+            case(_){};
+        };
+        return (data, sto.status, res);
+    };
+
+    /// VWAP Trigger
+    public func vwapTrigger(_data: STOrderRecords, _balances: Pair.KeepingBalance, _price: Price, _unitSize: Nat, _totalVol: Pair.Vol, _vol24h: Pair.Vol,
+    _soid: STO.Soid, sto: STO.STOrder): (STOrderRecords, STO.STStatus, ordersTriggered: [(STO.Soid, STO.ICRC1Account, OrderPrice)]){
+        var data = _data;
+        let price = _price; // icdex_lastPrice.price;
+        var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
+        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
+        let balances = _balances; // _getAccountBalance(account);
+        let balance0 = balances.token0.available;
+        let balance1 = balances.token1.available;
+        switch(sto.strategy){
+            case(#VWAP(vwap)){
+                var status : STO.STStatus = sto.status;
+                let thisPrice = getPrice(vwap.setting.order.side, price, vwap.setting.order.priceSpread);
+                var orderQuantity : {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; } = #Sell(0);
+                var orderPrice : OrderPrice = { quantity = orderQuantity; price = thisPrice; };
+                var quantity: Nat = 0;
+                var amount: Nat = 0;
+                var insufficientBalance : Bool = false;
+                // trigger
+                var trigger: Bool = true;
+                if (vwap.setting.order.side == #Buy and thisPrice > vwap.setting.order.priceLimit){
+                    trigger := false;
+                }else if (vwap.setting.order.side == #Sell and thisPrice < vwap.setting.order.priceLimit){
+                    trigger := false;
+                }else{
+                    switch(vwap.setting.triggerVol, vwap.lastVol){ // token1
+                        case(#Arith(t), ?lastVol){
+                            if (Nat.sub(_totalVol.value1, lastVol) < t){ trigger := false; };
+                        };
+                        case(#Geom(ppm), ?lastVol){
+                            let t = _vol24h.value1 * ppm / 1_000_000;
+                            if (Nat.sub(_totalVol.value1, lastVol) < t){ trigger := false; };
+                        };
+                        case(_){};
+                    };
+                };
+                
+                if (_now() > vwap.setting.endTime){
+                    status := #Stopped;
+                };
+                if (trigger and status == #Running and _now() >= vwap.setting.startingTime){
+                    orderQuantity := getQuantityForPO(vwap.setting.amountPerTrigger, vwap.setting.order.side, thisPrice, _unitSize);
+                    orderPrice := { quantity = orderQuantity; price = thisPrice; };
+                    quantity := OB.quantity(orderPrice);
+                    amount := OB.amount(orderPrice);
+                    if (OB.side(orderPrice) == #Buy and amount > balances.token1.available){
+                        insufficientBalance := true;
+                    }else if (OB.side(orderPrice) == #Sell and quantity > balances.token0.available){
+                        insufficientBalance := true;
+                    };
+                    var totalAmount: {#Token0: Nat; #Token1: Nat} = #Token0(0);
+                    switch(vwap.setting.totalLimit){
+                        case(#Token0(v)){ totalAmount := #Token0(quantity + Nat.max(sto.stats.totalInAmount.token0, sto.stats.totalOutAmount.token0)); };
+                        case(#Token1(v)){ totalAmount := #Token1(amount + Nat.max(sto.stats.totalInAmount.token1, sto.stats.totalOutAmount.token1)); };
+                    };
+                    if (isReachedLimit(vwap.setting.totalLimit, totalAmount, thisPrice, _unitSize)){
+                        status := #Stopped;
+                    };
+                };
+                // pre-order
+                if (trigger and quantity >= _unitSize*10 and not(insufficientBalance)){
+                    res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
+                    data := putPendingOrder(data, _soid, vwap.setting.order.side, (null, thisPrice, quantity));
+                };
+                // update data
+                if (res.size() > 0){
+                    data := updateTriggerTime(data, _soid);
+                    data := updateVWAP(data, _soid, null, ?_totalVol.value1);
+                }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
+                    return (data, #Stopped, res);
+                };
+                // return
+                return (data, status, res);
+            };
+            case(_){};
+        };
+        return (data, sto.status, res);
+    };
+
+    /// TWAP Trigger
+    public func twapTrigger(_data: STOrderRecords, _balances: Pair.KeepingBalance, _price: Price, _unitSize: Nat, _soid: STO.Soid, sto: STO.STOrder): 
+    (STOrderRecords, STO.STStatus, ordersTriggered: [(STO.Soid, STO.ICRC1Account, OrderPrice)]){
+        var data = _data;
+        let price = _price;
+        var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
+        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
+        let balances = _balances; // _getAccountBalance(account);
+        let balance0 = balances.token0.available;
+        let balance1 = balances.token1.available;
+        switch(sto.strategy){
+            case(#TWAP(twap)){
+                var status : STO.STStatus = sto.status;
+                let thisPrice = getPrice(twap.setting.order.side, price, twap.setting.order.priceSpread);
+                var orderQuantity : {#Buy: (quantity: Nat, amount: Nat); #Sell: Nat; } = #Sell(0);
+                var orderPrice : OrderPrice = { quantity = orderQuantity; price = thisPrice; };
+                var quantity: Nat = 0;
+                var amount: Nat = 0;
+                var insufficientBalance : Bool = false;
+                // trigger
+                var trigger: Bool = true;
+                if (twap.setting.order.side == #Buy and thisPrice > twap.setting.order.priceLimit){
+                    trigger := false;
+                }else if (twap.setting.order.side == #Sell and thisPrice < twap.setting.order.priceLimit){
+                    trigger := false;
+                }else{
+                    switch(twap.lastTime){ // seconds
+                        case(?lastTime){
+                            if (Nat.sub(_now(), lastTime) < twap.setting.triggerInterval){ trigger := false; };
+                        };
+                        case(_){};
+                    };
+                };
+                
+                if (_now() > twap.setting.endTime){
+                    status := #Stopped;
+                };
+                if (trigger and status == #Running and _now() >= twap.setting.startingTime){
+                    orderQuantity := getQuantityForPO(twap.setting.amountPerTrigger, twap.setting.order.side, thisPrice, _unitSize);
+                    orderPrice := { quantity = orderQuantity; price = thisPrice; };
+                    quantity := OB.quantity(orderPrice);
+                    amount := OB.amount(orderPrice);
+                    if (OB.side(orderPrice) == #Buy and amount > balances.token1.available){
+                        insufficientBalance := true;
+                    }else if (OB.side(orderPrice) == #Sell and quantity > balances.token0.available){
+                        insufficientBalance := true;
+                    };
+                    var totalAmount: {#Token0: Nat; #Token1: Nat} = #Token0(0);
+                    switch(twap.setting.totalLimit){
+                        case(#Token0(v)){ totalAmount := #Token0(quantity + Nat.max(sto.stats.totalInAmount.token0, sto.stats.totalOutAmount.token0)); };
+                        case(#Token1(v)){ totalAmount := #Token1(amount + Nat.max(sto.stats.totalInAmount.token1, sto.stats.totalOutAmount.token1)); };
+                    };
+                    if (isReachedLimit(twap.setting.totalLimit, totalAmount, thisPrice, _unitSize)){
+                        status := #Stopped;
+                    };
+                };
+                // pre-order
+                if (trigger and quantity >= _unitSize*10 and not(insufficientBalance)){
+                    res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
+                    data := putPendingOrder(data, _soid, twap.setting.order.side, (null, thisPrice, quantity));
+                };
+                // update data
+                if (res.size() > 0){
+                    data := updateTriggerTime(data, _soid);
+                    data := updateTWAP(data, _soid, null, ?_now());
+                }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
+                    return (data, #Stopped, res);
+                };
+                // return
+                return (data, status, res);
+            };
+            case(_){};
+        };
+        return (data, sto.status, res);
     };
 };

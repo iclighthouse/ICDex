@@ -35,6 +35,15 @@ module {
         // changeOwner : shared (_newOwner: Principal) -> async Bool;
         setOrderFail : shared (_txid: Text, _unlock0: Amount, _unlock1: Amount) -> async Bool;
         sto_enableStratOrder : shared (_arg: {#Enable; #Disable}) -> async ();
+        sto_config: shared (_config: {
+            poFee1: ?Nat; 
+            poFee2: ?Float; 
+            sloFee1: ?Nat; 
+            sloFee2: ?Float; 
+            gridMaxPerSide: ?Nat; 
+            proCountMax: ?Nat;
+            stopLossCountMax: ?Nat;
+        }) -> async ();
         pendingAll : shared query(_page: ?Nat, _size: ?Nat) -> async ICDexTypes.TrieList<Txid, ICDexTypes.TradingOrder>;
         sync : shared () -> async ();
         getConfig : shared query() -> async DexSetting;

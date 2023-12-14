@@ -20,7 +20,16 @@ module {
     public type Event = { 
         #initOrUpgrade : {version: Text};
         #changeOwner: {newOwner: Principal};
-        #sysConfig: { icRouter: ?Principal; sysToken: ?Principal; sysTokenFee: ?Nat; creatingPairFee: ?Nat; creatingMakerFee: ?Nat;};
+        #sysConfig: {
+            aggregator: ?Principal;
+            blackhole: ?Principal;
+            icDao: ?Principal;
+            nftPlanetCards: ?Principal;
+            sysToken: ?Principal;
+            sysTokenFee: ?Nat;
+            creatingPairFee: ?Nat;
+            creatingMakerFee: ?Nat;
+        };
         #sysWithdraw: { token: Principal; to: Principal; value: Nat; txid: {#txid: Txid; #index: Nat} };
         #sysTrade: { pair: Principal; tokenTxid : {#txid: Txid; #index: Nat}; order: Pair.OrderPrice; orderType: Pair.OrderType; result: Pair.TradingResult };
         #sysCancelOrder: { pair: Principal; txid: ?Txid };
@@ -33,7 +42,7 @@ module {
         #rollbackPairWasm: { pair: Principal; success: Bool };
         #reinstallPairWasm: { pair: Principal; version: Text; success: Bool };
         #setPairControllers: { pair: Principal; controllers: [Principal] };
-        #removePairDataSnapshot: { pair: Principal; timeBefor: Timestamp; };
+        #removePairDataSnapshot: { pair: Principal; timeBefore: Timestamp; };
         #backupPairData: { pair: Principal; timestamp: Timestamp; };
         #recoveryPairData: { pair: Principal; timestamp: Timestamp; };
         #addPairToList: { pair: Principal;};
@@ -46,6 +55,15 @@ module {
         #pairSetUpgradeMode: { pair: Principal; mode: {#Base; #All} };
         #pairSetOrderFail: { pair: Principal; txidHex: Text; refundToken0: Amount; refundToken1: Amount };
         #pairEnableStratOrder: { pair: Principal; arg: {#Enable; #Disable} };
+        #pairSTOConfig: {pair: Principal; config: {
+            poFee1: ?Nat; 
+            poFee2: ?Float; 
+            sloFee1: ?Nat; 
+            sloFee2: ?Float; 
+            gridMaxPerSide: ?Nat; 
+            proCountMax: ?Nat;
+            stopLossCountMax: ?Nat;
+        }};
         #pairICTCSetAdmin: { app: Principal; admin: Principal; act: { #Add; #Remove } };
         #pairICTCClearLog: { app: Principal; expiration: ?Int; forced: Bool };
         #pairICTCRedoTT: { app: Principal; toid: Nat; ttid: Nat; completed: Bool };
@@ -77,6 +95,7 @@ module {
             volFactor: Nat; // e.g. 2
         } };
         #upgradeMaker: { version: Text; pair: Principal; maker: Principal; name: ?Text; completed: Bool };
+        #reinstallMaker: { version: Text; pair: Principal; maker: Principal; completed: Bool };
         #rollbackMaker: { pair: Principal; maker: Principal; completed: Bool };
         #removeMaker: { pair: Principal; maker: Principal; };
         #makerSetControllers: { pair: Principal; maker: Principal; controllers: [Principal] };

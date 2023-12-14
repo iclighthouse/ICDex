@@ -95,16 +95,6 @@ module {
         #icdex_stOrderTxids;
     };
 
-    // private stable var icdex_soid: STO.Soid = 1; // ***
-    // private stable var icdex_stOrderRecords: STO.STOrderRecords = Trie.empty(); // Trie.Trie<Soid, STOrder> // ***
-    // private stable var icdex_userProOrderList: STO.UserProOrderList = Trie.empty(); // Trie.Trie<AccountId, List.List<Soid>> // ***
-    // private stable var icdex_activeProOrderList: STO.ActiveProOrderList = List.nil<STO.Soid>(); // ***
-    // private stable var icdex_userStopLossOrderList: STO.UserStopLossOrderList = Trie.empty(); // Stop Loss Orders: Trie.Trie<AccountId, List.List<Soid>>; // ***
-    // private stable var icdex_activeStopLossOrderList: STO.ActiveStopLossOrderList = { // Stop Loss Orders: (Txid, Soid, trigger: Price) // ***
-    //     buy = List.nil<(STO.Soid, STO.Price)>(); 
-    //     sell = List.nil<(STO.Soid, STO.Price)>();
-    // }; 
-    // private stable var icdex_stOrderTxids: STO.STOrderTxids = Trie.empty(); // Trie.Trie<Txid, Soid> // ***
     public type BackupResponse = {
         #otherData: {
             icdex_index: Nat;
