@@ -1,7 +1,7 @@
 {
   "canisters": {
     "ICDexPair": {
-      "main": "./ICDexPair.mo",
+      "main": "src/ICDexPair.mo",
       "type": "motoko",
       "args" : "--compacting-gc"
     },
