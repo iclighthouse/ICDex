@@ -133,7 +133,7 @@
 /// - Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled. 
 /// No cancellation fee is paid for strategic orders.
 /// - Strategic order
-///     - Pro-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (poFee1); when triggering new trade and filling 
+///     - Pro-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (poFee1), this fee is free for vip-makers; when triggering new trade and filling 
 ///     it, charge the amount of token (token0 or token1) received by the pro-trader `token_amount * fee_ratio` (poFee2) is charged as the 
 ///     pro-trading fee.
 ///     - StopLoss-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (sloFee1); when triggering new trade and 
@@ -435,7 +435,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.16";
+    private let version_: Text = "0.12.17";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
@@ -4286,7 +4286,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 value := sto_setting.poFee1 / 5;
             };
         };
-        if (value > 0){
+        let account = Tools.principalToAccountBlob(_account.owner, _toSaNat8(_account.subaccount));
+        if (value > 0 and _getMakerRebateRate(account) == 0){ // Free for VIP-Maker
             let router: actor{
                 sys_getConfig: shared query () -> async {
                     aggregator: Principal;

@@ -696,6 +696,13 @@ func maker_rollback(_pair : Principal, _maker : Principal) : async (canister : ?
 Rollback an ICDexMaker canister.
 permissions: Dao, Private Maker Creator
 
+## Function `maker_approveToPair`
+``` motoko no-repl
+func maker_approveToPair(_pair : Principal, _maker : Principal, _amount : Nat) : async Bool
+```
+
+Let ICDexMaker approve the `_amount` of the sysToken to the trading pair.
+
 ## Function `maker_remove`
 ``` motoko no-repl
 func maker_remove(_pair : Principal, _maker : Principal) : async ()
