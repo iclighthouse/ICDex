@@ -435,7 +435,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.15";
+    private let version_: Text = "0.12.16";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
@@ -2838,13 +2838,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             case(_){};
         };
         let saga = _getSaga();
+        let toid = saga.create("cancelAll", #Forward, null, null);
+        var ttids : [Nat] = [];
         for ((txid, order) in Trie.iter(orders)){
-            let toid = saga.create("cancelAll", #Forward, ?txid, null);
-            let ttids = _cancel(toid, txid, _side);
-            saga.close(toid);
-            if (ttids.size() == 0){
-                ignore saga.doneEmpty(toid);
-            };
+            ttids := Tools.arrayAppend(ttids, _cancel(toid, txid, _side));
+        };
+        saga.close(toid);
+        if (ttids.size() == 0){
+            ignore saga.doneEmpty(toid);
         };
         // drc205; 
         await* _callDrc205Store(false, false);
@@ -4391,7 +4392,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                                 };
                                 icdex_stOrderRecords := STO.updateIcebergOrder(icdex_stOrderRecords, soid, null, ?r.txid); // for IcebergOrder
                             }else{
-                                ignore _cancelOrder(r.txid, ?side);
+                                ignore _cancelOrder(r.txid, null);
                             };
                         };
                         case(#err(e)){
@@ -4412,9 +4413,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func _cancelOrder(_txid: Txid, _side: ?OrderBook.OrderSide) : SagaTM.Toid{
         if (_isPending(_txid)){
             let saga = _getSaga();
-            let toid = saga.create("cancel", #Forward, ?_txid, null);
+            let toid = saga.create("cancel_by_grid", #Forward, ?_txid, null);
             let ttids = _cancel(toid, _txid, _side);
             saga.close(toid);
+            if (ttids.size() == 0){
+                ignore saga.doneEmpty(toid);
+            };
             return toid;
         }else{
             switch(STO.getSoidByTxid(icdex_stOrderTxids, _txid)){

@@ -1118,7 +1118,7 @@ module {
                         switch(optTxid){
                             case(?txid){
                                 // ignore _cancelOrder(txid, ?#Sell);
-                                ordersToBeCancel := Tools.arrayAppend(ordersToBeCancel, [(txid, ?#Buy)]);
+                                ordersToBeCancel := Tools.arrayAppend(ordersToBeCancel, [(txid, ?#Sell)]);
                             };
                             case(_){
                                 data := removePendingOrderByPrice(data, _soid, #Sell, price);
