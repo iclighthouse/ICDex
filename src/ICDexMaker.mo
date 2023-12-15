@@ -253,7 +253,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.1";
+    private let version_: Text = "0.4.2";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1882,6 +1882,40 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         assert(_onlyOwner(msg.caller) and paused);
         let pair: ICDex.Self = actor(Principal.toText(pairPrincipal));
         await pair.cancelAll(#self_sa(null), null);
+    };
+
+    /// Approve a token amount to the trading pair
+    public shared(msg) func approveToPair(_token: Principal, _std: ICDex.TokenStd, _amount: Amount) : async Bool{
+        assert(_onlyOwner(msg.caller));
+        try{
+            if (_std == #drc20){
+                let token: DRC20.Self = actor(Principal.toText(_token));
+                let dexAccount = Tools.principalToAccountBlob(pairPrincipal, null);
+                let res = await token.drc20_approve(_accountIdToHex(dexAccount), _amount, null, null, null);
+                switch(res){
+                    case(#ok(txid)){ return true; };
+                    case(#err(e)){ return false; };
+                };
+            }else { // icrc1
+                let token : ICRC1.Self = actor(Principal.toText(_token));
+                let res = await token.icrc2_approve({
+                    from_subaccount = null;
+                    spender = {owner = pairPrincipal; subaccount = null}; 
+                    amount = _amount; 
+                    expected_allowance = null; 
+                    expires_at = null;
+                    fee = null;
+                    memo = null;
+                    created_at_time = null;
+                });
+                switch(res){
+                    case(#Ok(n)){ return true; };
+                    case(#Err(e)){ return false; };
+                };
+            };
+        }catch(e){
+            return false; 
+        };
     };
 
     /// Synchronize token information

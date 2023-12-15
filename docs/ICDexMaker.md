@@ -356,6 +356,13 @@ func cancelAllOrders() : async ()
 
 Cancels all trade orders that the strategy order placed in the pair's order book.
 
+## Function `approveToPair`
+``` motoko no-repl
+func approveToPair(_token : Principal, _std : ICDex.TokenStd, _amount : Amount) : async Bool
+```
+
+Approve a token amount to the trading pair
+
 ## Function `debug_sync`
 ``` motoko no-repl
 func debug_sync() : async Bool

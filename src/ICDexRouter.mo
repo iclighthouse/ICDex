@@ -201,7 +201,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.15";
+    private let version_: Text = "0.12.16";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -2113,6 +2113,21 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             }else{
                 _putPrivateMaker(_arg.pair, makerCanister, accountId);
             };
+
+            let arg: ICRC1.TransferArgs = {
+                from_subaccount = null;
+                to = {owner = makerCanister; subaccount = null};
+                amount = sysTokenFee;
+                fee = null;
+                memo = null;
+                created_at_time = null;
+            };
+            ignore await token.icrc1_transfer(arg);
+            let maker : actor{
+                approveToPair : shared (_token: Principal, _std: TokenStd, _amount: Nat) -> async Bool;
+            } = actor(Principal.toText(makerCanister));
+            ignore await maker.approveToPair(sysToken, #icrc1, 2 ** 255);
+
             cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
             ignore _putEvent(#createMaker({ version = maker_wasmVersion; arg = _arg; makerCanisterId = makerCanister }), ?Tools.principalToAccountBlob(msg.caller, null));
             return makerCanister;
@@ -2216,6 +2231,26 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let res = await* _maker_update(_pair, _maker, maker_wasm_preVersion, #upgrade, { name = null });
         ignore _putEvent(#rollbackMaker({ pair = _pair; maker = _maker; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
         return res;
+    };
+
+    /// Let ICDexMaker approve the `_amount` of the sysToken to the trading pair.
+    public shared(msg) func maker_approveToPair(_pair: Principal, _maker: Principal, _amount: Nat): async Bool{
+        let accountId = Tools.principalToAccountBlob(msg.caller, null);
+        assert(_onlyOwner(msg.caller) or _OnlyMakerCreator(_pair, _maker, accountId));
+        let token: ICRC1.Self = actor(Principal.toText(sysToken));
+        let arg: ICRC1.TransferArgs = {
+            from_subaccount = null;
+            to = {owner = _maker; subaccount = null};
+            amount = sysTokenFee;
+            fee = null;
+            memo = null;
+            created_at_time = null;
+        };
+        ignore await token.icrc1_transfer(arg);
+        let maker : actor{
+            approveToPair : shared (_token: Principal, _std: TokenStd, _amount: Nat) -> async Bool;
+        } = actor(Principal.toText(_maker));
+        return await maker.approveToPair(sysToken, #icrc1, _amount);
     };
 
     /// Remove an Automated Market Maker (ICDexMaker).

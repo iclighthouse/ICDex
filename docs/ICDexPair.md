@@ -132,7 +132,7 @@ paid by the taker as a reward, which may vary from Vip-maker to Vip-maker.
 - Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled. 
 No cancellation fee is paid for strategic orders.
 - Strategic order
-    - Pro-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (poFee1); when triggering new trade and filling 
+    - Pro-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (poFee1), this fee is free for vip-makers; when triggering new trade and filling 
     it, charge the amount of token (token0 or token1) received by the pro-trader `token_amount * fee_ratio` (poFee2) is charged as the 
     pro-trading fee.
     - StopLoss-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (sloFee1); when triggering new trade and 
