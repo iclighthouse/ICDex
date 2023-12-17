@@ -77,7 +77,14 @@
 ///     volFactor: Nat; // LP‘s liquidity limit = LP's trading volume * volFactor.  e.g. 2
 /// }
 /// ```
-/// ### 
+/// ### Preparing requirements for creating a grid order (with at least one requirement)
+/// - Make ICDexMaker get the vip-maker role via NFT bindings to create/update a grid order for free. 
+/// - Deposit enough ICLs to ICDexMaker as fees for creating/updating a grid order.
+///
+/// ### The creator activates ICDexMaker by adding the first liquidity
+/// The creator activates ICDexMaker by adding the first liquidity.
+/// The first liquidity must be added by the creator, requiring the amount of token0 to be greater than token0_fee * 100000, and 
+/// the amount of token1 to be greater than token1_fee * 100000.
 ///
 /// ## 3 Fee model
 ///
@@ -253,7 +260,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.2";
+    private let version_: Text = "0.4.3";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -293,7 +300,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var gridUpperLimit: Price = initArgs.upperLimit; // Highest grid price
     private stable var gridSpread: Nat = Nat.max(initArgs.spreadRate, 100); // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
     private stable var gridSoid : ?Nat = null; // If the grid order has been successfully created, save the strategy id.
-    private stable var gridOrderDeleted : Bool = false; // Whether the strategy order has been canceled.
+    private stable var gridOrderDeleted : Bool = false; // Grid order is deleted by DAO.
     // Events
     private stable var blockIndex : ICEvents.BlockHeight = 0;
     private stable var firstBlockIndex : ICEvents.BlockHeight = 0;
@@ -432,11 +439,32 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         switch(_args){
             case(#This(method)){
                 switch(method){
+                    case(#dexDepositFallback(_pair, _sa)){
+                        var result = (0, 0); // Receipt
+                        // do
+                        result := await*_localDexDepositFallback(_pair, _sa);
+                        // check & return
+                        return (#Done, ?#This(#dexDepositFallback(result)), null);
+                    };
                     case(_){return (#Error, null, ?{code=#future(9901); message="Non-local function."; });};
                 };
             };
             case(_){ return (#Error, null, ?{code=#future(9901); message="Non-local function."; });};
         };
+    };
+
+    // ICTC local task: Fallback funds from pair.
+    private func _localDexDepositFallback(_pair: Principal, _sa: ?Sa) : async* (value0: Amount, value1: Amount){
+        var value0: Amount = 0;
+        var value1: Amount = 0;
+        let pair : ICDex.Self = actor(Principal.toText(_pair));
+        try{
+            let (fbValue0, fbValue1) = await pair.depositFallback(_sa);
+            value0 := Nat.sub(Nat.max(fbValue0, token0Fee), token0Fee);
+            value1 := Nat.sub(Nat.max(fbValue1, token1Fee), token1Fee);
+            _updatePoolLocalBalance(?#add(value0), ?#add(value1));
+        }catch(e){};
+        return (value0, value1);
     };
 
     // // Task callback
@@ -796,13 +824,13 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         var balance1 = poolLocalBalance.balance1;
         switch(_token0){
             case(?#add(v)){ balance0 += v };
-            case(?#sub(v)){ balance0 -= v };
+            case(?#sub(v)){ balance0 := Nat.sub(Nat.max(balance0, v), v) }; // The reason for this treatment is that there may be floating calculation differences and handling fee differences, as follows
             case(?#set(v)){ balance0 := v };
             case(_){};
         };
         switch(_token1){
             case(?#add(v)){ balance1 += v };
-            case(?#sub(v)){ balance1 -= v };
+            case(?#sub(v)){ balance1 := Nat.sub(Nat.max(balance1, v), v) };
             case(?#set(v)){ balance1 := v };
             case(_){};
         };
@@ -814,13 +842,13 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         var balance1 = poolBalance.balance1;
         switch(_token0){
             case(?#add(v)){ balance0 += v };
-            case(?#sub(v)){ balance0 -= v };
+            case(?#sub(v)){ balance0 := Nat.sub(Nat.max(balance0, v), v) };
             case(?#set(v)){ balance0 := v };
             case(_){};
         };
         switch(_token1){
             case(?#add(v)){ balance1 += v };
-            case(?#sub(v)){ balance1 -= v };
+            case(?#sub(v)){ balance1 := Nat.sub(Nat.max(balance1, v), v) };
             case(?#set(v)){ balance1 := v };
             case(_){};
         };
@@ -831,7 +859,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         poolShareWeighted := _calcuShareWeighted(poolShareWeighted, poolShares);
         switch(_act){
             case(#add(v)){ poolShares += v };
-            case(#sub(v)){ poolShares -= v };
+            case(#sub(v)){ poolShares := Nat.sub(Nat.max(poolShares, v), v) };
             case(#set(v)){ poolShares := v };
         };
     };
@@ -855,7 +883,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         var newShares = shares.0;
         switch(_act){
             case(#add(v)){ newShares += v };
-            case(#sub(v)){ newShares -= v };
+            case(#sub(v)){ newShares := Nat.sub(Nat.max(newShares, v), v) };
             case(#set(v)){ newShares := v };
         };
         accountShares := Trie.put(accountShares, keyb(_a), Blob.equal, (newShares, shares.1)).0;
@@ -880,8 +908,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 spread = #Geom(gridSpread);
                 amount = #Percent(null);
             }), null)), []);
+        let comp = _buildTask(null, pairPrincipal, #__skip, []);
         // Assign soid to gridSoid when the task is completed
-        return saga.push(_toid, task, null, ?(func(_toName: Text, _ttid: SagaTM.Ttid, _task: SagaTM.Task, _result: SagaTM.TaskResult) : async (){
+        return saga.push(_toid, task, ?comp, ?(func(_toName: Text, _ttid: SagaTM.Ttid, _task: SagaTM.Task, _result: SagaTM.TaskResult) : async (){
             switch(_result.0, _result.1, _result.2){
                 case(#Done, ?(#StratOrder(#sto_createProOrder(soid))), _){ gridSoid := ?soid };
                 case(_, _, _){};
@@ -899,7 +928,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 amount = ?#Percent(null);
                 status = ?_status;
             }), null)), []);
-        return saga.push(_toid, task, null, null);
+        let comp = _buildTask(null, pairPrincipal, #__skip, []);
+        return saga.push(_toid, task, ?comp, null);
     };
 
     // Fetch the volume of an account in a trading pair
@@ -909,7 +939,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         return userLiquidity.vol;
     };
 
-    // Fetch ICDexMaker's balance in a trading pair
+    // Fetch ICDexMaker's balance in a trading pair: Updates the total pool balance and returns the available balance.
     private func _fetchPoolBalance() : async* (available0: Amount, available1: Amount){ // sysTransactionLock
         if (sysTransactionLock){
             throw Error.reject("401: The system transaction is locked, please try again later.");
@@ -1083,6 +1113,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Pushes a transaction to ICTC to update the grid order, returning the transaction id.
+    // update-231227: Change transaction #Forward to #Backward to enable automatic compensation on exceptions so that ICDexMaker is not suspended.
     private func _updateGridOrder(_accountId: AccountId, _token0: Amount, _token1: Amount, _updateMode: {#auto; #instantly}) : SagaTM.Toid{ // sysTransactionLock
         assert(not(sysTransactionLock));
         sysTransactionLock := true;
@@ -1093,7 +1124,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         let dexAccount = Tools.principalToAccountBlob(pairPrincipal, null);
         let saga = _getSaga();
         var ttidSize : Nat = 0;
-        let toid = saga.create("dex_deposit", #Forward, null, ?(func (_toName: Text, _toid: SagaTM.Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
+        let toid = saga.create("dex_deposit", #Backward, null, ?(func (_toName: Text, _toid: SagaTM.Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
             if (_status == #Done or _status == #Recovered){
                 sysTransactionLock := false;
             };
@@ -1103,12 +1134,24 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             if (token0Std == #drc20){ 
                 _updatePoolLocalBalance(?#sub(token0Fee), null);
                 let task0 = _buildTask(?_accountId, token0Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token0, 10**Nat8.toNat(token0Decimals + 10)), null, null, null)), []);
-                let ttid0 = saga.push(toid, task0, null, null);
+                let comp0 = _buildTask(?_accountId, token0Principal, #__skip, []);
+                let ttid0 = saga.push(toid, task0, ?comp0, null);
             }else{
-                let ttids0 = _sendToken0(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token0], ?_accountId, null);
+                // let ttids0 = _sendToken0(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token0], ?_accountId, null);
+                let task0 = _buildTask(?_accountId, token0Principal, #ICRC1New(#icrc1_transfer({
+                    from_subaccount = null;
+                    to = dexDepositIcrc1Account;
+                    amount = Nat.sub(_token0, token0Fee);
+                    fee = null;
+                    memo = ?_accountId;
+                    created_at_time = null; // nanos
+                })), []);
+                let comp0 = _buildTask(?_accountId, Principal.fromActor(this), #This(#dexDepositFallback(pairPrincipal, null)), []);
+                let ttid0 = saga.push(toid, task0, ?comp0, null);
             };
             let task1 = _buildTask(?_accountId, pairPrincipal, #ICDex(#deposit(#token0, Nat.sub(_token0, token0Fee), null)), []);
-            let ttid1 = saga.push(toid, task1, null, null);
+            let comp1 = _buildTask(?_accountId, pairPrincipal, #__skip, []);
+            let ttid1 = saga.push(toid, task1, ?comp1, null);
             ttidSize += 2;
         };
         if (_token1 > token1Fee){
@@ -1116,12 +1159,24 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             if (token1Std == #drc20){
                 _updatePoolLocalBalance(null, ?#sub(token1Fee));
                 let task0 = _buildTask(?_accountId, token1Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token1, 10**Nat8.toNat(token1Decimals + 10)), null, null, null)), []);
-                let ttid0 = saga.push(toid, task0, null, null);
+                let comp0 = _buildTask(?_accountId, token1Principal, #__skip, []);
+                let ttid0 = saga.push(toid, task0, ?comp0, null);
             }else{
-                let ttids1 = _sendToken1(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token1], ?_accountId, null);
+                // let ttids0 = _sendToken1(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token1], ?_accountId, null);
+                let task0 = _buildTask(?_accountId, token1Principal, #ICRC1New(#icrc1_transfer({
+                    from_subaccount = null;
+                    to = dexDepositIcrc1Account;
+                    amount = Nat.sub(_token1, token1Fee);
+                    fee = null;
+                    memo = ?_accountId;
+                    created_at_time = null; // nanos
+                })), []);
+                let comp0 = _buildTask(?_accountId, Principal.fromActor(this), #This(#dexDepositFallback(pairPrincipal, null)), []);
+                let ttid0 = saga.push(toid, task0, ?comp0, null);
             };
             let task1 = _buildTask(?_accountId, pairPrincipal, #ICDex(#deposit(#token1, Nat.sub(_token1, token1Fee), null)), []);
-            let ttid1 = saga.push(toid, task1, null, null);
+            let comp1 = _buildTask(?_accountId, pairPrincipal, #__skip, []);
+            let ttid1 = saga.push(toid, task1, ?comp1, null);
             ttidSize += 2;
         };
         if (_token0 > 0 or _token1 > 0){
@@ -1408,11 +1463,13 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 _updatePoolLocalBalance(?#add(addLiquidityToken0), ?#add(addLiquidityToken1));
             };
             if (poolLocalBalance.balance0 > poolBalance.balance0 * 10 / 100 or poolLocalBalance.balance1 > poolBalance.balance1 * 10 / 100){ 
-                let value0 = Nat.sub(poolLocalBalance.balance0, poolBalance.balance0 * 5 / 100);
-                let value1 = Nat.sub(poolLocalBalance.balance1, poolBalance.balance1 * 5 / 100);
-                let toid = _updateGridOrder(_account, value0, value1, #auto); // sysTransactionLock
-                gridToid := toid;
-                toids := Tools.arrayAppend(toids, [toid]);
+                let value0 = Nat.sub(Nat.max(poolLocalBalance.balance0, poolBalance.balance0 * 5 / 100), poolBalance.balance0 * 5 / 100); // fixed a bug
+                let value1 = Nat.sub(Nat.max(poolLocalBalance.balance1, poolBalance.balance1 * 5 / 100), poolBalance.balance1 * 5 / 100); // fixed a bug
+                if (not(gridOrderDeleted) and (value0 > token0Fee * 2 or value1 > token1Fee * 2)){
+                    let toid = _updateGridOrder(_account, value0, value1, #auto); // sysTransactionLock
+                    gridToid := toid;
+                    toids := Tools.arrayAppend(toids, [toid]);
+                };
             };
         };
         // exception
@@ -1481,8 +1538,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             throw Error.reject("401: The system transaction is locked, please try again later."); 
         };
         var values = _sharesToAmount(_shares);
-        if (values.value0 > available0InPool or values.value1 > available1InPool){
-            let toid = saga.create("stop_gridOrder", #Forward, null, null); 
+        if (not(gridOrderDeleted) and (values.value0 > available0InPool or values.value1 > available1InPool)){
+            let toid = saga.create("stop_gridOrder", #Backward, null, null); // Change transaction #Forward to #Backward
             let ttid = _ictcUpdateGridOrder(toid, #Stopped);
             await* _ictcSagaRun(toid, true);
             try{
@@ -1529,7 +1586,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 };
             }catch(e){
                 sysTransactionLock := false;
-                throw Error.reject(Error.message(e));
+                throw Error.reject("You can't withdraw too much at once, so reduce the share of liquidity you want to remove. Error:" # Error.message(e));
             };
         };
         sharesAvailable := _getAccountShares(_account).0;
@@ -1723,9 +1780,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         volFactor := Option.get(_config.volFactor, volFactor);
         withdrawalFee := Option.get(_config.withdrawalFeePpm, withdrawalFee);
         ignore _putEvent(#config({setting = _config}), ?Tools.principalToAccountBlob(msg.caller, null));
-        let toid = _updateGridOrder(Tools.principalToAccountBlob(msg.caller, null), 0, 0, #instantly); // sysTransactionLock
-        ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?Tools.principalToAccountBlob(msg.caller, null));
-        await* _ictcSagaRun(toid, true);
+        // let toid = _updateGridOrder(Tools.principalToAccountBlob(msg.caller, null), 0, 0, #instantly); // sysTransactionLock
+        // ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?Tools.principalToAccountBlob(msg.caller, null));
+        // await* _ictcSagaRun(toid, true);
         return true;
     };
 
@@ -1884,7 +1941,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         await pair.cancelAll(#self_sa(null), null);
     };
 
-    /// Approve a token amount to the trading pair
+    /// Approves the `amount` of a `token` the trading pair could spend.
     public shared(msg) func approveToPair(_token: Principal, _std: ICDex.TokenStd, _amount: Amount) : async Bool{
         assert(_onlyOwner(msg.caller));
         try{

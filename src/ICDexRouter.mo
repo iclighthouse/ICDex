@@ -2233,7 +2233,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         return res;
     };
 
-    /// Let ICDexMaker approve the `_amount` of the sysToken to the trading pair.
+    /// Let ICDexMaker approve the `_amount` of the sysToken the trading pair could spend.
     public shared(msg) func maker_approveToPair(_pair: Principal, _maker: Principal, _amount: Nat): async Bool{
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
         assert(_onlyOwner(msg.caller) or _OnlyMakerCreator(_pair, _maker, accountId));

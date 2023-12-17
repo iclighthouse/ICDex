@@ -76,7 +76,14 @@ args:
     volFactor: Nat; // LP‘s liquidity limit = LP's trading volume * volFactor.  e.g. 2
 }
 ```
-### 
+### Preparing requirements for creating a grid order (with at least one requirement)
+- Make ICDexMaker get the vip-maker role via NFT bindings to create/update a grid order for free. 
+- Deposit enough ICLs to ICDexMaker as fees for creating/updating a grid order.
+
+### The creator activates ICDexMaker by adding the first liquidity
+The creator activates ICDexMaker by adding the first liquidity.
+The first liquidity must be added by the creator, requiring the amount of token0 to be greater than token0_fee * 100000, and 
+the amount of token1 to be greater than token1_fee * 100000.
 
 ## 3 Fee model
 
@@ -361,7 +368,7 @@ Cancels all trade orders that the strategy order placed in the pair's order book
 func approveToPair(_token : Principal, _std : ICDex.TokenStd, _amount : Amount) : async Bool
 ```
 
-Approve a token amount to the trading pair
+Approves the `amount` of a `token` the trading pair could spend.
 
 ## Function `debug_sync`
 ``` motoko no-repl

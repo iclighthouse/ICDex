@@ -158,7 +158,7 @@ you need to use the generateTxid() method of DRC205 to generate a txid and TxAcc
 - Step2  
 Deposit to TxAccount the funds needed for the order.
     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to TxAccount, but need to approve sufficient amount 
-    for PoolAccount.
+    PoolAccount could spend.
     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds to TxAccount.
 - Step3  
 Calls the trade(), trade_b(), tradeMKT(), or tradeMKT_b() methods to submit a trade order. When submitting an order nonce can be filled 
@@ -181,7 +181,7 @@ You should generate the account address directly using the following rule: `{own
 - Step2  
 Deposit funds to DepositAccount.
     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient 
-    amount for PoolAccount.
+    PoolAccount could spend.
     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (order amount + token_fee) to DepositAccount.
 - Step3  
 Calling deposit() completes the deposit operation, the funds are deposited into PoolAccount, and TraderAccount increases the available 
