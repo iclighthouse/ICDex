@@ -181,7 +181,7 @@
 /// You should generate the account address directly using the following rule: `{owner = pair_canister_id; subaccount = ?your_accountId }`.
 /// - Step2  
 /// Deposit funds to DepositAccount.
-///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient 
+///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient amount 
 ///     PoolAccount could spend.
 ///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (order amount + token_fee) to DepositAccount.
 /// - Step3  

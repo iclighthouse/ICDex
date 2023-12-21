@@ -260,7 +260,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.3";
+    private let version_: Text = "0.4.5";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -280,11 +280,13 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var token0Std: ICDex.TokenStd = initArgs.token0Std;
     private stable var token0Decimals: Nat8 = 0;
     private stable var token0Fee: Nat = 0;
+    private stable var token0ICRC2: Bool = false;
     private stable var token1Principal: Principal = initArgs.token1;
     private stable var token1Symbol: Text = "";
     private stable var token1Std: ICDex.TokenStd = initArgs.token1Std;
     private stable var token1Decimals: Nat8 = 0;
     private stable var token1Fee: Nat = 0;
+    private stable var token1ICRC2: Bool = false;
     private stable var pairUnitSize: Nat = initArgs.unitSize; // UnitSize of the pair.
     private stable var poolThreshold: Amount = initArgs.threshold; // token1 (smallest_units). Threshold for activating liquidity limit.
     private stable var volFactor: Nat = initArgs.volFactor; // A factor for calculating liquidity limits based on volumes.
@@ -442,7 +444,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                     case(#dexDepositFallback(_pair, _sa)){
                         var result = (0, 0); // Receipt
                         // do
-                        result := await*_localDexDepositFallback(_pair, _sa);
+                        result := await* _localDexDepositFallback(_pair, _sa);
                         // check & return
                         return (#Done, ?#This(#dexDepositFallback(result)), null);
                     };
@@ -1052,6 +1054,76 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         return valueFromDepositBalance;
     };
 
+    // tokens (drc20/icrc2) approve
+    private func _tokensApprove() : async* (){
+        let dexAccount = Tools.principalToAccountBlob(pairPrincipal, null);
+        let dexICRC1Account: ICRC1.Account = {owner = pairPrincipal; subaccount = null};
+        if (token0Std == #drc20){ // token0: drc20
+            let token: DRC20.Self = actor(Principal.toText(token0Principal));
+            try{
+                switch(await token.drc20_approve(_accountIdToHex(dexAccount), 2 ** 255, null, null, null)){
+                    case(#ok(txid)){};
+                    case(#err(e)){
+                        throw Error.reject("An error occurred in token0.drc20_approve(). ("# debug_show(e) #")");
+                    };
+                };
+            }catch(e){
+                throw Error.reject("An error occurred in token0.drc20_approve(). ("# Error.message(e) #")");
+            };
+        }else{ // token0: ?icrc2
+            let token: ICRC1.Self = actor(Principal.toText(token0Principal));
+            try{
+                switch(await token.icrc2_approve({
+                    from_subaccount = null;
+                    spender = dexICRC1Account;
+                    amount = 2 ** 255; 
+                    expected_allowance = null; 
+                    expires_at = null;
+                    fee = null;
+                    memo = null;
+                    created_at_time = null;
+                })){
+                    case(#Ok(index)){
+                        token0ICRC2 := true;
+                    };
+                    case(#Err(e)){};
+                };
+            }catch(e){};
+        };
+        if (token1Std == #drc20){ // token1: drc20
+            let token: DRC20.Self = actor(Principal.toText(token1Principal));
+            try{
+                switch(await token.drc20_approve(_accountIdToHex(dexAccount), 2 ** 255, null, null, null)){
+                    case(#ok(txid)){};
+                    case(#err(e)){
+                        throw Error.reject("An error occurred in token1.drc20_approve(). ("# debug_show(e) #")");
+                    };
+                };
+            }catch(e){
+                throw Error.reject("An error occurred in token1.drc20_approve(). ("# Error.message(e) #")");
+            };
+        }else{ // token1: ?icrc2
+            let token: ICRC1.Self = actor(Principal.toText(token1Principal));
+            try{
+                switch(await token.icrc2_approve({
+                    from_subaccount = null;
+                    spender = dexICRC1Account;
+                    amount = 2 ** 255; 
+                    expected_allowance = null; 
+                    expires_at = null;
+                    fee = null;
+                    memo = null;
+                    created_at_time = null;
+                })){
+                    case(#Ok(index)){
+                        token1ICRC2 := true;
+                    };
+                    case(#Err(e)){};
+                };
+            }catch(e){};
+        };
+    };
+
     private stable var fallbacking_accounts = List.nil<(AccountId, Time.Time)>(); 
     private func _putFallbacking(_account: AccountId) : (){
         fallbacking_accounts := List.filter(fallbacking_accounts, func (t: (AccountId, Time.Time)): Bool{
@@ -1129,15 +1201,11 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 sysTransactionLock := false;
             };
         })); 
-        if (_token0 > token0Fee){
+        if (_token0 > token0Fee * 2){
             _updatePoolLocalBalance(?#sub(_token0), null);
-            if (token0Std == #drc20){ 
-                _updatePoolLocalBalance(?#sub(token0Fee), null);
-                let task0 = _buildTask(?_accountId, token0Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token0, 10**Nat8.toNat(token0Decimals + 10)), null, null, null)), []);
-                let comp0 = _buildTask(?_accountId, token0Principal, #__skip, []);
-                let ttid0 = saga.push(toid, task0, ?comp0, null);
-            }else{
+            if (token0Std != #drc20 and not(token0ICRC2)){
                 // let ttids0 = _sendToken0(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token0], ?_accountId, null);
+                _updatePoolLocalBalance(?#sub(token0Fee), null);
                 let task0 = _buildTask(?_accountId, token0Principal, #ICRC1New(#icrc1_transfer({
                     from_subaccount = null;
                     to = dexDepositIcrc1Account;
@@ -1149,20 +1217,16 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 let comp0 = _buildTask(?_accountId, Principal.fromActor(this), #This(#dexDepositFallback(pairPrincipal, null)), []);
                 let ttid0 = saga.push(toid, task0, ?comp0, null);
             };
-            let task1 = _buildTask(?_accountId, pairPrincipal, #ICDex(#deposit(#token0, Nat.sub(_token0, token0Fee), null)), []);
+            let task1 = _buildTask(?_accountId, pairPrincipal, #ICDex(#deposit(#token0, Nat.sub(_token0, token0Fee*2), null)), []);
             let comp1 = _buildTask(?_accountId, pairPrincipal, #__skip, []);
             let ttid1 = saga.push(toid, task1, ?comp1, null);
             ttidSize += 2;
         };
-        if (_token1 > token1Fee){
+        if (_token1 > token1Fee * 2){
             _updatePoolLocalBalance(null, ?#sub(_token1));
-            if (token1Std == #drc20){
-                _updatePoolLocalBalance(null, ?#sub(token1Fee));
-                let task0 = _buildTask(?_accountId, token1Principal, #DRC20(#approve(_accountIdToHex(dexAccount), Nat.max(_token1, 10**Nat8.toNat(token1Decimals + 10)), null, null, null)), []);
-                let comp0 = _buildTask(?_accountId, token1Principal, #__skip, []);
-                let ttid0 = saga.push(toid, task0, ?comp0, null);
-            }else{
+            if (token1Std != #drc20 and not(token1ICRC2)){
                 // let ttids0 = _sendToken1(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token1], ?_accountId, null);
+                _updatePoolLocalBalance(null, ?#sub(token1Fee));
                 let task0 = _buildTask(?_accountId, token1Principal, #ICRC1New(#icrc1_transfer({
                     from_subaccount = null;
                     to = dexDepositIcrc1Account;
@@ -1174,7 +1238,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 let comp0 = _buildTask(?_accountId, Principal.fromActor(this), #This(#dexDepositFallback(pairPrincipal, null)), []);
                 let ttid0 = saga.push(toid, task0, ?comp0, null);
             };
-            let task1 = _buildTask(?_accountId, pairPrincipal, #ICDex(#deposit(#token1, Nat.sub(_token1, token1Fee), null)), []);
+            let task1 = _buildTask(?_accountId, pairPrincipal, #ICDex(#deposit(#token1, Nat.sub(_token1, token1Fee*2), null)), []);
             let comp1 = _buildTask(?_accountId, pairPrincipal, #__skip, []);
             let ttid1 = saga.push(toid, task1, ?comp1, null);
             ttidSize += 2;
@@ -1390,6 +1454,18 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             // _removeFallbacking(_account);
             exceptMessage := "412: Exception on deposit. ("# Error.message(e) #")";
         };
+        // drc20/icrc2 approve
+        if (isInitAdd and depositedToken0 > token0Fee and depositedToken1 > token1Fee){
+            try{
+                await* _tokensApprove();
+                depositedToken0 -= token0Fee;
+                depositedToken1 -= token1Fee;
+            }catch(e){
+                isException := true;
+                exceptMessage := "400: An error occurred in token0.drc20_approve(). ("# Error.message(e) #")";
+            };
+        };
+
         if (sysTransactionLock){
             isException := true;
             exceptMessage := "401: The system transaction is locked, please try again later. ";
