@@ -72,7 +72,7 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
     - backup: Bool // Whether to back up the previous version.
 
 ### 8. (optional) Create ICDexMaker for trading pair
-- call maker_create() // Requires the trading pair to complete at least one trade.
+#### Step 1. call maker_create() // Requires the trading pair to complete at least one trade.
 - args: 
 ```
 {
@@ -86,6 +86,14 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
     volFactor: Nat; // e.g. 2
 }
 ```
+#### Step 2. Preparing requirements for creating a grid order (with at least one requirement)
+- Make ICDexMaker get the vip-maker role via NFT bindings to create/update a grid order for free. 
+- Deposit enough ICLs to ICDexMaker as fees for creating/updating a grid order.
+
+#### Step 3. The creator activates ICDexMaker by adding the first liquidity
+The creator activates ICDexMaker by adding the first liquidity.
+The first liquidity must be added by the creator, requiring the amount of token0 to be greater than token0_fee * 100000, and the amount of token1 to be greater than token1_fee * 100000.
+
 
 ## Docs
 
@@ -104,7 +112,7 @@ https://github.com/iclighthouse/ICDex/tree/main/docs
 
 - ICDexRouter (Testnet)
     - Canister-id: pymhy-xyaaa-aaaak-act7a-cai
-    - Module hash: 6920760aea372afe847444eb840b2b0685d125d42eeee3b2ef428223502848a2
+    - Module hash: f9c3d08f0f15eb48e42217a8b3afda6a01243de308d08a648a9af4bf257f137e
     - Version: 0.12.16
     - DFX version: 0.15.0 (moc 0.9.7)
     - Build: {

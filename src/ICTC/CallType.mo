@@ -193,9 +193,12 @@ module {
             }, _sa: ?STO.Sa);
         };
         #This: {
-            #dip20Send : (_a: Blob, _value: Nat);
-            #dip20SendComp : (_a: Blob, _p: Principal, _value: Nat);
+            // #dip20Send : (_a: Blob, _value: Nat);
+            // #dip20SendComp : (_a: Blob, _p: Principal, _value: Nat);
+            // for ICDexPair
             #batchTransfer: ([(_act: {#add; #sub}, _account: Blob, _token: {#token0; #token1}, _amount: {#locked: Nat; #available: Nat})]);
+            // for ICDexMaker
+            #dexDepositFallback: (_pair: Principal, _sa: ?[Nat8]);
         };
     };
 
@@ -318,9 +321,10 @@ module {
             #sto_updateProOrder : STO.Soid;
         };
         #This: {
-            #dip20Send : ();
-            #dip20SendComp : ();
+            // #dip20Send : ();
+            // #dip20SendComp : ();
             #batchTransfer: ([{token0:{locked: Nat; available: Nat}; token1:{locked: Nat; available: Nat}}]);
+            #dexDepositFallback: (value0: Nat, value1: Nat);
         };
     };
 

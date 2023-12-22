@@ -701,7 +701,7 @@ permissions: Dao, Private Maker Creator
 func maker_approveToPair(_pair : Principal, _maker : Principal, _amount : Nat) : async Bool
 ```
 
-Let ICDexMaker approve the `_amount` of the sysToken to the trading pair.
+Let ICDexMaker approve the `_amount` of the sysToken the trading pair could spend.
 
 ## Function `maker_remove`
 ``` motoko no-repl
