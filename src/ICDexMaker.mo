@@ -260,7 +260,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.6";
+    private let version_: Text = "0.4.7";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1194,7 +1194,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         };
         sysTransactionLock := true;
         try{
-            let (v0, v1, status) = await pair.withdraw2((if (_token0 > 0){ ?(_token0 + token0Fee) }else{ null }), (if (_token1 > 0){ ?(_token1 + token1Fee) }else{ null }), null);
+            let available0 = Nat.sub(Nat.max(poolBalance.balance0, poolLocalBalance.balance0), poolLocalBalance.balance0);
+            let available1 = Nat.sub(Nat.max(poolBalance.balance1, poolLocalBalance.balance1), poolLocalBalance.balance1);
+            let (v0, v1, status) = await pair.withdraw2((if (_token0 >= available0){ null }else{ ?(_token0) }), (if (_token1 >= available1){ null }else{ ?(_token1) }), null);
             sysTransactionLock := false;
             _updatePoolLocalBalance(?#add(v0), ?#add(v1));
             ignore _putEvent(#dexWithdraw({token0 = v0; token1 = v1: Nat; toid=null}), null);
@@ -1393,6 +1395,42 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         //};
     };
 
+    // Check that ICDexMaker has enough ICL balance needed to create/update a strategy order (vip-maker role can create it for free)
+    private func _checkFeeBalance() : async* Bool{
+        let isCreating: Bool = Option.isNull(gridSoid);
+        let pair: ICDex.Self = actor(Principal.toText(pairPrincipal));
+        let makerAccountId = _getThisAccount(Blob.fromArray(sa_zero));
+        // vip-makers
+        let isVipMaker: Bool = (await pair.makerRebate(_accountIdToHex(makerAccountId))).0 > 0;
+        if (isVipMaker){
+            return true;
+        };
+        // others
+        let sto: STO.Self = actor(Principal.toText(pairPrincipal));
+        let fee = (await sto.sto_getConfig()).poFee1;
+        let router: actor{
+            sys_getConfig: shared query () -> async {
+                aggregator: Principal;
+                blackhole: Principal;
+                icDao: Principal;
+                nftPlanetCards: Principal;
+                sysToken: Principal;
+                sysTokenFee: Nat;
+                creatingPairFee: Nat;
+                creatingMakerFee: Nat;
+            }
+        } = actor(Principal.toText(icdex_));
+        let config = await router.sys_getConfig();
+        let sysToken = config.sysToken;
+        let token : ICRC1.Self = actor(Principal.toText(sysToken));
+        let balance = await token.icrc1_balance_of({owner = Principal.fromActor(this); subaccount = null});
+        if (isCreating){
+            return balance >= fee + config.sysTokenFee;
+        }else{
+            return balance >= fee * 1 / 5 + config.sysTokenFee;
+        };
+    };
+
     // Initializes ICDexMaker.
     private func _init() : async* Bool{
         if (not(initialized)){
@@ -1445,14 +1483,17 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (paused){
             throw Error.reject("400: The canister has been suspended."); 
         };
+        if (not(await* _checkFeeBalance())){
+            throw Error.reject("400: This ICDexMaker SHOULD be granted vip-maker status or this canister ("# Principal.toText(Principal.fromActor(this)) #") needs a sufficient ICL balance for grid order fees."); 
+        };
         if (sysTransactionLock){
             throw Error.reject("401: The system transaction is locked, please try again later."); 
         };
         let _account = Tools.principalToAccountBlob(msg.caller, _sa);
         let _icrc1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa)};
         assert(visibility == #Public or _onlyCreator(_account));
-        assert(initialized or _onlyCreator(_account));
         let isInitAdd: Bool = not(initialized) or poolShares == 0;
+        assert(not(isInitAdd) or _onlyCreator(_account)); // Can only be initialized by the creator
         var isException: Bool = false;
         var exceptMessage: Text = "";
         if (not(initialized)){
@@ -1627,6 +1668,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     public shared(msg) func remove(_shares: Amount, _sa: ?Sa) : async (value0: Amount, value1: Amount){
         if (paused or not(initialized)){
             throw Error.reject("400: The canister has been suspended."); 
+        };
+        if (not(await* _checkFeeBalance())){
+            throw Error.reject("400: This ICDexMaker needs to be granted vip-maker status or this canister-id ("# Principal.toText(Principal.fromActor(this)) #") needs a sufficient ICL balance for grid order fees."); 
         };
         if (sysTransactionLock){
             throw Error.reject("401: The system transaction is locked, please try again later."); 
