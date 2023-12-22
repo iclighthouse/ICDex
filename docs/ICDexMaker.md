@@ -337,7 +337,7 @@ Withdraw funds from the trading pair to ICDexMaker local account. This operation
 
 ## Function `dexDeposit`
 ``` motoko no-repl
-func dexDeposit(_token0 : Amount, _token1 : Amount) : async (token0 : Amount, token1 : Amount)
+func dexDeposit(_token0 : Amount, _token1 : Amount) : async (toid : Nat)
 ```
 
 Deposit from ICDexMaker local account to TraderAccount in trading pair. This operation is not required for non-essential purposes.

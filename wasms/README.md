@@ -10,8 +10,8 @@
     - Wasm tool: ic-wasm 0.7.0, Command `$ ic-wasm ICDexPair.wasm -o ICDexPair.wasm metadata candid:service -f Pair.did -v public`
 
 - ICDexMaker Wasm
-    - Module hash: aaa28bbea4ab1e18b69bef77b292867bb02d67bc59c02ee15602db004792bc73
-    - Version: 0.4.5
+    - Module hash: 616ba59722e86d3a98c34832e7420a69074267f902b5f097b5b68907131d1b88
+    - Version: 0.4.6
     - DFX version: 0.15.0 (moc 0.9.7)
     - Build: {
         "args": "--compacting-gc", 
