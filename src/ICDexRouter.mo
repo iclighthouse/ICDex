@@ -201,7 +201,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.16";
+    private let version_: Text = "0.12.17";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -436,7 +436,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         token1Symbol := tokenInfo1.symbol;
         token1Decimals := tokenInfo1.decimals;
         token1Std := tokenInfo1.std;
-        assert(token1Std == #drc20 or token1Std == #icrc1 or token0Std == #icp);
+        assert(token1Std == #drc20 or token1Std == #icrc1 or token1Std == #icp);
         swapName := "icdex:" # token0Symbol # "/" # token1Symbol;
 
         // create

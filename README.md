@@ -112,8 +112,8 @@ https://github.com/iclighthouse/ICDex/tree/main/docs
 
 - ICDexRouter (Testnet)
     - Canister-id: pymhy-xyaaa-aaaak-act7a-cai
-    - Module hash: f9c3d08f0f15eb48e42217a8b3afda6a01243de308d08a648a9af4bf257f137e
-    - Version: 0.12.16
+    - Module hash: 051eff7197baa758c21aab563b52ce811c7eac3ab2862e7c7823e58e034bcec1
+    - Version: 0.12.17
     - DFX version: 0.15.0 (moc 0.9.7)
     - Build: {
         "args": "--compacting-gc"
