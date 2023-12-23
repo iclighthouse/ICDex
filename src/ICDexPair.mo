@@ -158,9 +158,9 @@
 /// you need to use the generateTxid() method of DRC205 to generate a txid and TxAccount.
 /// - Step2  
 /// Deposit to TxAccount the funds needed for the order.
-///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to TxAccount, but need to approve sufficient amount 
-///     PoolAccount could spend.
-///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds to TxAccount.
+///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to TxAccount, but need to approve sufficient amount (value + 
+///     token_fee) PoolAccount could spend.
+///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (value) to TxAccount.
 /// - Step3  
 /// Calls the trade(), trade_b(), tradeMKT(), or tradeMKT_b() methods to submit a trade order. When submitting an order nonce can be filled 
 /// with null, if a specific value is filled it must be the currently available nonce value, otherwise an exception is thrown. The advantage 
@@ -172,7 +172,7 @@
 /// or canceled.    
 /// Notes:   
 /// In PoolMode, it is compatible with TunnelMode's trading process, the difference is that the approving amount in Step2 should be 
-/// added with an additional token's fee.   
+/// added with an additional token_fee (approve: (value + token_fee * 2) or transfer: (value + token_fee)).   
 /// The following is the trading process of TunnelMode:   
 /// If the available balance in the trader's TraderAccount is sufficient, the operation starts from Step4. Otherwise the operation starts 
 /// from Step1. 
@@ -181,9 +181,9 @@
 /// You should generate the account address directly using the following rule: `{owner = pair_canister_id; subaccount = ?your_accountId }`.
 /// - Step2  
 /// Deposit funds to DepositAccount.
-///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient amount 
-///     PoolAccount could spend.
-///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (order amount + token_fee) to DepositAccount.
+///     - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient amount (value + 
+///     token_fee * 2) PoolAccount could spend.
+///     - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (value + token_fee) to DepositAccount.
 /// - Step3  
 /// Calling deposit() completes the deposit operation, the funds are deposited into PoolAccount, and TraderAccount increases the available 
 /// balance.
@@ -435,7 +435,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.17";
+    private let version_: Text = "0.12.18";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
@@ -4240,7 +4240,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private stable var enableStrategyOrders: Bool = true;
     // Policy order global configuration
     private stable var sto_setting: STO.Setting = {
-        poFee1 = 5_000_000_000; // ICL (smallest_units). Fixed costs when configuring the pro-order strategy
+        poFee1 = 2_000_000_000; // ICL (smallest_units). Fixed costs when configuring the pro-order strategy
         poFee2 = 0.0005; // When an order from pro-order is filled, token0/token1 will be charged proportionally as a fee.
         sloFee1 = 100_000_000; // ICL (smallest_units). Fixed costs when configuring the stop-loss-order strategy
         sloFee2 = 0.0005; // When an order from stop-loss-order is filled, token0/token1 will be charged proportionally as a fee.
@@ -4277,13 +4277,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 value := sto_setting.sloFee1;
             };
             case(#StopLossOrder, #Update){
-                value := sto_setting.sloFee1 / 5;
+                value := sto_setting.sloFee1 * 5 / 100;
             };
             case(_, #Create){
                 value := sto_setting.poFee1;
             };
             case(_, #Update){
-                value := sto_setting.poFee1 / 5;
+                value := sto_setting.poFee1 * 5 / 100;
             };
         };
         let account = Tools.principalToAccountBlob(_account.owner, _toSaNat8(_account.subaccount));

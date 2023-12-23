@@ -260,7 +260,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.7";
+    private let version_: Text = "0.4.8";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1427,7 +1427,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (isCreating){
             return balance >= fee + config.sysTokenFee;
         }else{
-            return balance >= fee * 1 / 5 + config.sysTokenFee;
+            return balance >= fee * 5 / 100 + config.sysTokenFee;
         };
     };
 

@@ -157,9 +157,9 @@ Call getTxAccount() to get the TxAccount, nonce and txid of the new order. This 
 you need to use the generateTxid() method of DRC205 to generate a txid and TxAccount.
 - Step2  
 Deposit to TxAccount the funds needed for the order.
-    - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to TxAccount, but need to approve sufficient amount 
-    PoolAccount could spend.
-    - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds to TxAccount.
+    - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to TxAccount, but need to approve sufficient amount (value + 
+    token_fee) PoolAccount could spend.
+    - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (value) to TxAccount.
 - Step3  
 Calls the trade(), trade_b(), tradeMKT(), or tradeMKT_b() methods to submit a trade order. When submitting an order nonce can be filled 
 with null, if a specific value is filled it must be the currently available nonce value, otherwise an exception is thrown. The advantage 
@@ -171,7 +171,7 @@ are recorded in the trader's TraderAccounts and are in the locked state. The fun
 or canceled.    
 Notes:   
 In PoolMode, it is compatible with TunnelMode's trading process, the difference is that the approving amount in Step2 should be 
-added with an additional token's fee.   
+added with an additional token_fee (approve: (value + token_fee * 2) or transfer: (value + token_fee)).   
 The following is the trading process of TunnelMode:   
 If the available balance in the trader's TraderAccount is sufficient, the operation starts from Step4. Otherwise the operation starts 
 from Step1. 
@@ -180,9 +180,9 @@ Call getDepositAccount() to get the DepositAccount. This is a query method, if c
 You should generate the account address directly using the following rule: `{owner = pair_canister_id; subaccount = ?your_accountId }`.
 - Step2  
 Deposit funds to DepositAccount.
-    - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient amount 
-    PoolAccount could spend.
-    - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (order amount + token_fee) to DepositAccount.
+    - DebitToken is DRC20/ICRC2 token: not needed to transfer funds to DepositAccount, but need to approve sufficient amount (value + 
+    token_fee * 2) PoolAccount could spend.
+    - DebitToken is ICRC1 token: need to call icrc1_transfer to transfer the required funds (value + token_fee) to DepositAccount.
 - Step3  
 Calling deposit() completes the deposit operation, the funds are deposited into PoolAccount, and TraderAccount increases the available 
 balance.
