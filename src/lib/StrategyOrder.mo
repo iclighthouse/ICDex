@@ -1225,7 +1225,7 @@ module {
                     };
                 };
                 // pre-order
-                if (trigger and quantity >= _unitSize*10 and not(insufficientBalance)){
+                if (trigger and status == #Running and quantity >= _unitSize*10 and not(insufficientBalance)){
                     res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                     data := putPendingOrder(data, _soid, io.setting.order.side, (null, io.setting.order.price, quantity));
                 };
@@ -1304,7 +1304,7 @@ module {
                     };
                 };
                 // pre-order
-                if (trigger and quantity >= _unitSize*10 and not(insufficientBalance)){
+                if (trigger and status == #Running and quantity >= _unitSize*10 and not(insufficientBalance)){
                     res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                     data := putPendingOrder(data, _soid, vwap.setting.order.side, (null, thisPrice, quantity));
                 };
@@ -1380,7 +1380,7 @@ module {
                     };
                 };
                 // pre-order
-                if (trigger and quantity >= _unitSize*10 and not(insufficientBalance)){
+                if (trigger and status == #Running and quantity >= _unitSize*10 and not(insufficientBalance)){
                     res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                     data := putPendingOrder(data, _soid, twap.setting.order.side, (null, thisPrice, quantity));
                 };
