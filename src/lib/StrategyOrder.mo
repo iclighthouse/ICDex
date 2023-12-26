@@ -302,6 +302,7 @@ module {
 
     /// When a strategy is triggered and trade orders are placed, update the pending status of the trade order to the strategy order.
     public func putPendingOrder(_data: STOrderRecords, _soid: Soid, _side: {#Buy; #Sell}, _item: (?Txid, Price, quantity: Nat)) : STOrderRecords{
+        // update-231226: Improvement: enforce a stricter write-in policy
         var data = _data;
         switch(get(data, _soid)){
             case(?(po)){
@@ -310,13 +311,13 @@ module {
                 switch(_side){
                     case(#Buy){
                         buyPendingOrders := Array.filter(buyPendingOrders, func (t: (?Txid, Price, Nat)): Bool{ 
-                            t.1 != _item.1
+                            not((Option.isNull(t.0) or (Option.isSome(t.0) and t.0 == _item.0)) and t.1 == _item.1)
                         });
                         buyPendingOrders := OB.arrayAppend(buyPendingOrders, [_item]);
                     };
                     case(#Sell){
                         sellPendingOrders := Array.filter(sellPendingOrders, func (t: (?Txid, Price, Nat)): Bool{ 
-                            t.1 != _item.1
+                            not((Option.isNull(t.0) or (Option.isSome(t.0) and t.0 == _item.0)) and t.1 == _item.1)
                         });
                         sellPendingOrders := OB.arrayAppend(sellPendingOrders, [_item]);
                     };
@@ -346,7 +347,7 @@ module {
             case(?(po)){
                 let buyPendingOrders = Array.filter(po.pendingOrders.buy, func (t: (?Txid, Price, Nat)): Bool{ t.0 != ?_txid });
                 let sellPendingOrders = Array.filter(po.pendingOrders.sell, func (t: (?Txid, Price, Nat)): Bool{ t.0 != ?_txid });
-                let _po: STOrder = {
+                let poNew: STOrder = {
                     soid = po.soid;
                     icrc1Account = po.icrc1Account;
                     stType = po.stType;
@@ -357,7 +358,7 @@ module {
                     triggerTime = po.triggerTime;
                     pendingOrders = {buy = buyPendingOrders; sell = sellPendingOrders};
                 };
-                data := Trie.put(data, keyn(_soid), Nat.equal, _po).0;
+                data := Trie.put(data, keyn(_soid), Nat.equal, poNew).0;
             };
             case(_){};
         };
@@ -473,14 +474,16 @@ module {
     };
 
     /// GridOrder: Determines whether a grid price exists within the current active grid price range.
-    public func isExistingPrice(_prices: [Price], _price: Price, _spreadSetting: {#Arith: Price; #Geom: Ppm }) : Bool{
-        let hSpread = getSpread(#upward, _spreadSetting, _price) / 2;
-        for(price in _prices.vals()){
-            let valueMin = Nat.sub(Nat.max(price,hSpread), hSpread);
-            let valueMax = price + hSpread;
-            if (_price >= valueMin and _price <= valueMax){
-                return true;
-            };
+    public func isExistingPrice(_prices: [Price], _price: Price, _pendingOrders: [(?Txid, Price, Nat)]) : Bool{
+        // update-231226: fix a issue that will be over-ordered under special circumstances. Solution: Modified filtering policy.
+        if (_prices.size() > 0){
+            let vFirst = Nat.max(_prices[0], 1); // > 0
+            let vLast = Nat.max(_prices[Nat.sub(_prices.size(),1)], 1); // > 0
+            let min = Nat.sub(Nat.min(vFirst, vLast), 1);
+            let max = Nat.max(vFirst, vLast) + 1;
+            return (_price >= min and _price <= max) or Option.isSome(Array.find(_pendingOrders, func (t: (?Txid, Price, Nat)): Bool{
+                _price >= Nat.sub(Nat.max(t.1, 1), 1) and _price <= t.1 + 1;
+            }));
         };
         return false;
     };
@@ -673,24 +676,18 @@ module {
         return data;
     };
 
-    /// GridOrder: Removes a grid price from the currently active grid prices of a grid order strategy.
-    public func removeGridPrice(_data: STOrderRecords, _soid: Soid, _price: Price) : STOrderRecords{
+    /// GridOrder: Removes grid prices of a grid order strategy.
+    public func removeGridPrices(_data: STOrderRecords, _soid: Soid) : STOrderRecords{
+        // update-231226: Refactoring: deleting the prices dataset in its entirety
         var data = _data;
         switch(get(data, _soid)){
             case(?(sto)){
                 var strategy = sto.strategy;
                 switch(strategy){
                     case(#GridOrder(grid)){
-                        let hSpread = getSpread(#upward, grid.setting.spread, _price) / 2;
-                        let gridPrices_buy = Array.filter(grid.gridPrices.buy, func (t: Price): Bool{ 
-                            t <= Nat.sub(Nat.max(_price,hSpread), hSpread) or t >= _price + hSpread
-                        });
-                        let gridPrices_sell = Array.filter(grid.gridPrices.sell, func (t: Price): Bool{ 
-                            t <= Nat.sub(Nat.max(_price,hSpread), hSpread) or t >= _price + hSpread
-                        });
                         strategy := #GridOrder({
                             setting = grid.setting;
-                            gridPrices = {midPrice = grid.gridPrices.midPrice; buy = gridPrices_buy; sell = gridPrices_sell };
+                            gridPrices = {midPrice = grid.gridPrices.midPrice; buy = []; sell = [] };
                         });
                     };
                     case(_){};
@@ -1138,7 +1135,7 @@ module {
                         insufficientBalance := true;
                     };
                     if (quantity >= _unitSize*10 and toBeLockedValue0 + quantity <= balances.token0.available and 
-                    not(isExistingPrice(grid.gridPrices.sell, gridPrice, grid.setting.spread))){
+                    not(isExistingPrice(grid.gridPrices.sell, gridPrice, sto.pendingOrders.sell))){
                         res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                         data := putPendingOrder(data, _soid, #Sell, (null, gridPrice, quantity));
                         toBeLockedValue0 += quantity;
@@ -1156,7 +1153,7 @@ module {
                         insufficientBalance := true;
                     };
                     if (quantity >= _unitSize*10 and amount > 0 and toBeLockedValue1 + amount <= balances.token1.available and 
-                    not(isExistingPrice(grid.gridPrices.buy, gridPrice, grid.setting.spread))){
+                    not(isExistingPrice(grid.gridPrices.buy, gridPrice, sto.pendingOrders.buy))){
                         res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                         data := putPendingOrder(data, _soid, #Buy, (null, gridPrice, quantity));
                         toBeLockedValue1 += amount;

@@ -435,7 +435,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.18";
+    private let version_: Text = "0.12.19";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
@@ -4393,7 +4393,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                                 };
                                 icdex_stOrderRecords := STO.updateIcebergOrder(icdex_stOrderRecords, soid, null, ?r.txid); // for IcebergOrder
                             }else{
-                                ignore _cancelOrder(r.txid, null);
+                                ignore _cancelOrder(null, r.txid, null);
                             };
                         };
                         case(#err(e)){
@@ -4411,7 +4411,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
 
     // Canceling an order in an order book
-    private func _cancelOrder(_txid: Txid, _side: ?OrderBook.OrderSide) : SagaTM.Toid{
+    private func _cancelOrder(_soid: ?Nat, _txid: Txid, _side: ?OrderBook.OrderSide) : SagaTM.Toid{
+        // update-231226: Fixed the issue that pending order records could not be deleted.
         if (_isPending(_txid)){
             let saga = _getSaga();
             let toid = saga.create("cancel_by_grid", #Forward, ?_txid, null);
@@ -4422,10 +4423,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             return toid;
         }else{
-            switch(STO.getSoidByTxid(icdex_stOrderTxids, _txid)){
-                case(?soid){
-                    icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid, _txid); 
+            switch(STO.getSoidByTxid(icdex_stOrderTxids, _txid), _soid){
+                case(?soid1, _){
+                    icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid1, _txid); 
                     icdex_stOrderTxids := STO.removeSTOTxids(icdex_stOrderTxids, _txid);
+                };
+                case(_, ?soid2){
+                    icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid2, _txid); 
                 };
                 case(_){};
             };
@@ -4495,10 +4499,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         };
                         case(#GridOrder(v)){ 
                             let (data, status, ordersTriggered, ordersToBeCancel) = STO.goTrigger(icdex_stOrderRecords, balances, price, unitSize, _soid, sto); 
+                            icdex_stOrderRecords := data; // update-231226: Fix the issue of invalid deletion
                             for (item in ordersToBeCancel.vals()){
-                                ignore _cancelOrder(item.0, item.1);
+                                ignore _cancelOrder(?_soid, item.0, item.1);
                             };
-                            icdex_stOrderRecords := data;
                             return (status, ordersTriggered);
                         };
                         case(#IcebergOrder(v)){ 
@@ -4658,14 +4662,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             // ProOrder
             var pendingPOList = List.nil<STO.Soid>();
             var poCount : Nat = 0;
-            if (Option.isSome(_soid)){
-                let thisSoid = Option.get(_soid, 0);
-                let (status, preOpenOrders) = _stoTrigger(thisSoid);
-                openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
-                if (status != #Running){
-                    icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
-                };
-            }else if (not(sto_isWorking)){ // global lock
+            // if (Option.isSome(_soid)){ // update-231226: De-prioritize
+            //     let thisSoid = Option.get(_soid, 0);
+            //     let (status, preOpenOrders) = _stoTrigger(thisSoid);
+            //     openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
+            //     if (status != #Running){
+            //         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
+            //     };
+            // }else 
+            if (not(sto_isWorking)){ // global lock
                 sto_isWorking := true;
                 for (soid in List.toArray(icdex_activeProOrderList).vals()){
                     poCount += 1;
@@ -4733,7 +4738,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         switch(STO.getSoidByTxid(icdex_stOrderTxids, _txid)){
             case(?soid){
                 icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid, _txid); 
-                icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, soid, _price);
                 icdex_stOrderTxids := STO.removeSTOTxids(icdex_stOrderTxids, _txid);
             };
             case(_){};
@@ -4750,22 +4754,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 let saga = _getSaga();
                 for ((optTxid, price, quantity) in sto.pendingOrders.buy.vals()){
                     switch(optTxid){
-                        case(?txid){ ignore _cancelOrder(txid, ?#Buy); };
+                        case(?txid){ ignore _cancelOrder(?_soid, txid, ?#Buy); };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Buy, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
                 for ((optTxid, price, quantity) in sto.pendingOrders.sell.vals()){
                     switch(optTxid){
-                        case(?txid){ ignore _cancelOrder(txid, ?#Sell); };
+                        case(?txid){ ignore _cancelOrder(?_soid, txid, ?#Sell); };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Sell, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
+                icdex_stOrderRecords := STO.removeGridPrices(icdex_stOrderRecords, _soid);
                 await* _ictcSagaRun(0, false);
             };
             case(_){};
@@ -5010,25 +5013,24 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 for ((optTxid, price, quantity) in sto.pendingOrders.buy.vals()){
                     switch(optTxid){
                         case(?txid){
-                            ignore _cancelOrder(txid, ?#Buy);
+                            ignore _cancelOrder(?_soid, txid, ?#Buy);
                         };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Buy, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
                 for ((optTxid, price, quantity) in sto.pendingOrders.sell.vals()){
                     switch(optTxid){
                         case(?txid){
-                            ignore _cancelOrder(txid, ?#Sell);
+                            ignore _cancelOrder(?_soid, txid, ?#Sell);
                         };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Sell, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
+                icdex_stOrderRecords := STO.removeGridPrices(icdex_stOrderRecords, _soid);
                 // update
                 var soid : Nat = 0;
                 var status: STO.STStatus = #Running;
@@ -5086,9 +5088,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         icdex_stOrderRecords := STO.remove(icdex_stOrderRecords, _soid);
                         icdex_userProOrderList := STO.removeUserPOList(icdex_userProOrderList, account, _soid);
                     };
-                    if (status == #Running and enableStrategyOrders){
-                        await _hook_stoWorktop(?_soid, null);
-                    };
+                    // if (status == #Running and enableStrategyOrders){
+                    //     await _hook_stoWorktop(?_soid, null);
+                    // };
                 };
                 await* _ictcSagaRun(0, false);
                 return soid;
