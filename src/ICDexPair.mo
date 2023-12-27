@@ -3033,7 +3033,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var _order: OrderPrice = {quantity=#Sell(0); price=0;};
         var _orderType: OrderType = #MKT;
         if (_token == _token0Canister()){
-            _order := {quantity=#Sell(_value); price=0;};
+            _order := {quantity=#Sell(_value / setting.UNIT_SIZE * setting.UNIT_SIZE); price=0;};
         } else if (_token == _token1Canister()){
             _order := {quantity=#Buy((0, _value)); price=0;};
         };
@@ -3079,7 +3079,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var _order: OrderPrice = {quantity=#Sell(0); price=limitPrice;};
         var _orderType: OrderType = #MKT;
         if (_token == _token0Canister()){
-            _order := {quantity=#Sell(_value); price = _order.price;};
+            _order := {quantity=#Sell(_value / setting.UNIT_SIZE * setting.UNIT_SIZE); price = _order.price;};
         } else if (_token == _token1Canister()){
             _order := {quantity=#Buy((0, _value)); price = _order.price;};
         };
