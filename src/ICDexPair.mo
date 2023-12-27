@@ -438,6 +438,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private let version_: Text = "0.12.19";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
+    private let minCyclesBalance: Nat = 100_000_000_000; // 0.1 T
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
     private stable var pause: Bool = false;
@@ -623,11 +624,19 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func _checkAsyncMessageLimit() : Bool{
         return _asyncMessageSize() < 390; /*config*/
     };
+    // cycles limit
+    private func _checkCycles(): Bool{
+        return Cycles.balance() > minCyclesBalance;
+    };
     // Checks access restrictions with `_checkAsyncMessageLimit()` and `_checkTPSLimit()` and logs current access. Used to prevent DOS attacks.
     private func _checkOverload(_caller: ?AccountId) : async* (){
         if (not(_checkAsyncMessageLimit()) or not(_checkTPSLimit())){
             countRejections += 1; 
             throw Error.reject("405: IC network is busy, please try again later."); 
+        };
+        if (not(_checkCycles())){
+            countRejections += 1; 
+            throw Error.reject("418: The balance of canister's cycles is insufficient, increase the balance as soon as possible."); 
         };
         _visitLog(Option.get(_caller, Tools.principalToAccountBlob(Principal.fromActor(this), null)));
     };
@@ -4599,7 +4608,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     // place an order again.
     // - The triggers of the strategy do not guarantee that the order will be placed successfully or that it will be filled immediately, and 
     // there may be multiple uncertainties.
-    // - /// - When it is busy, the trigger price may have a deviation of about 0.5%, and the system will ignore multiple triggers within 10 seconds 
+    // - When it is busy, the trigger price may have a deviation of about 0.5%, and the system will ignore multiple triggers within 10 seconds 
     // and trigger only once.
     private func _hook_stoWorktop(_soid: ?STO.Soid, _side: ?OrderBook.OrderSide) : async (){
         let price = icdex_lastPrice.price;
