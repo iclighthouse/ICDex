@@ -483,7 +483,7 @@ module {
             let min = Nat.sub(Nat.min(vFirst, vLast), hSpread);
             let max = Nat.max(vFirst, vLast) + hSpread;
             return (_price >= min and _price <= max) or Option.isSome(Array.find(_pendingOrders, func (t: (?Txid, Price, Nat)): Bool{
-                _price >= Nat.sub(Nat.max(t.1, 1), 1) and _price <= t.1 + 1;
+                _price >= Nat.sub(Nat.max(t.1, hSpread/2), hSpread/2) and _price <= t.1 + hSpread/2;
             }));
         };
         return false;
