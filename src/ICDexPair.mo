@@ -4234,6 +4234,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     private var sto_lastWorkPrice: Nat = 0; 
     private var sto_lastWorkTime: Timestamp = 0; 
+    private var sto_lastWorkTime2: Timestamp = 0; 
     private var sto_isWorking: Bool = false; 
     private var sto_lastGridOrders: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = []; // for debug
     // Whether to enable strategic orders for trading pair
@@ -4670,8 +4671,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             //         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
             //     };
             // }else 
-            if (not(sto_isWorking)){ // global lock
+            if (not(sto_isWorking) or _now() >= sto_lastWorkTime2 + 15 * 60){ // global lock
                 sto_isWorking := true;
+                sto_lastWorkTime2 := _now();
                 for (soid in List.toArray(icdex_activeProOrderList).vals()){
                     poCount += 1;
                     let (status, preOpenOrders) = _stoTrigger(soid);
@@ -4684,6 +4686,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     if (poCount == 10 or poCount % 50 == 0){
                         await _awaitFunc(); // Prevents insufficient number of available execution instructions
                     };
+                    sto_lastWorkTime2 := _now();
                 };
                 sto_isWorking := false;
                 icdex_activeProOrderList := pendingPOList;
