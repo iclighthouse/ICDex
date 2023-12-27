@@ -474,13 +474,14 @@ module {
     };
 
     /// GridOrder: Determines whether a grid price exists within the current active grid price range.
-    public func isExistingPrice(_prices: [Price], _price: Price, _pendingOrders: [(?Txid, Price, Nat)]) : Bool{
+    public func isExistingPrice(_prices: [Price], _price: Price, _pendingOrders: [(?Txid, Price, Nat)], _spreadSetting: STO.GridOrderSetting) : Bool{
         // update-231226: fix a issue that will be over-ordered under special circumstances. Solution: Modified filtering policy.
         if (_prices.size() > 0){
-            let vFirst = Nat.max(_prices[0], 1); // > 0
-            let vLast = Nat.max(_prices[Nat.sub(_prices.size(),1)], 1); // > 0
-            let min = Nat.sub(Nat.min(vFirst, vLast), 1);
-            let max = Nat.max(vFirst, vLast) + 1;
+            let hSpread = getSpread(#upward, _spreadSetting.spread, _price) / 2;
+            let vFirst = Nat.max(_prices[0], hSpread); // > 0
+            let vLast = Nat.max(_prices[Nat.sub(_prices.size(),1)], hSpread); // > 0
+            let min = Nat.sub(Nat.min(vFirst, vLast), hSpread);
+            let max = Nat.max(vFirst, vLast) + hSpread;
             return (_price >= min and _price <= max) or Option.isSome(Array.find(_pendingOrders, func (t: (?Txid, Price, Nat)): Bool{
                 _price >= Nat.sub(Nat.max(t.1, 1), 1) and _price <= t.1 + 1;
             }));
@@ -1135,7 +1136,7 @@ module {
                         insufficientBalance := true;
                     };
                     if (quantity >= _unitSize*10 and toBeLockedValue0 + quantity <= balances.token0.available and 
-                    not(isExistingPrice(grid.gridPrices.sell, gridPrice, sto.pendingOrders.sell))){
+                    not(isExistingPrice(grid.gridPrices.sell, gridPrice, sto.pendingOrders.sell, grid.setting))){
                         res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                         data := putPendingOrder(data, _soid, #Sell, (null, gridPrice, quantity));
                         toBeLockedValue0 += quantity;
@@ -1153,7 +1154,7 @@ module {
                         insufficientBalance := true;
                     };
                     if (quantity >= _unitSize*10 and amount > 0 and toBeLockedValue1 + amount <= balances.token1.available and 
-                    not(isExistingPrice(grid.gridPrices.buy, gridPrice, sto.pendingOrders.buy))){
+                    not(isExistingPrice(grid.gridPrices.buy, gridPrice, sto.pendingOrders.buy, grid.setting))){
                         res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                         data := putPendingOrder(data, _soid, #Buy, (null, gridPrice, quantity));
                         toBeLockedValue1 += amount;
