@@ -1265,6 +1265,9 @@ module {
                 var insufficientBalance : Bool = false;
                 // trigger
                 var trigger: Bool = true;
+                if (_now() < sto.triggerTime + 60){ // Minimum interval is 60 seconds
+                    trigger := false;
+                };
                 if (vwap.setting.order.side == #Buy and thisPrice > vwap.setting.order.priceLimit){
                     trigger := false;
                 }else if (vwap.setting.order.side == #Sell and thisPrice < vwap.setting.order.priceLimit){

@@ -4903,13 +4903,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(#VWAP(arg)){
                 let amountPerTrigger = (switch(arg.amountPerTrigger){case(#Token0(v)){ v }; case(#Token1(v)){ v / icdex_lastPrice.price * setting.UNIT_SIZE }});
-                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10)){
+                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10 and arg.order.priceSpread <= icdex_lastPrice.price / 2)){
                     throw Error.reject("453: Arguments unavailable."); 
                 };
             };
             case(#TWAP(arg)){
                 let amountPerTrigger = (switch(arg.amountPerTrigger){case(#Token0(v)){ v }; case(#Token1(v)){ v / icdex_lastPrice.price * setting.UNIT_SIZE }});
-                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10)){
+                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10 and arg.order.priceSpread <= icdex_lastPrice.price / 2 and arg.triggerInterval >= 60)){
                     throw Error.reject("453: Arguments unavailable."); 
                 };
             };
