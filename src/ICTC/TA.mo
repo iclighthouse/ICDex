@@ -20,7 +20,7 @@ import Principal "mo:base/Principal";
 import Time "mo:base/Time";
 import TrieMap "mo:base/TrieMap";
 import TATypes "TATypes";
-import TaskHash "TaskHash";
+// import TaskHash "TaskHash";
 import Nat64 "mo:base/Nat64";
 import Binary "mo:icl/Binary";
 import ICRC1 "mo:icl/ICRC1";
@@ -28,7 +28,7 @@ import Error "mo:base/Error";
 // import Call "mo:base/ExperimentalInternetComputer";
 
 module {
-    public let Version: Nat = 8;
+    public let Version: Nat = 9;
     public type Domain = CallType.Domain;
     public type Status = CallType.Status;
     public type CallType = CallType.CallType;
@@ -425,7 +425,7 @@ module {
             var receipt: ?CallType.Receipt = null;
             var ttids: [Ttid] = Option.get(_ttids, []);
             actuationThreads += 1;
-            while (count < (if (ttids.size() == 0){ limitNum }else{ size * 10 }) and callCount < size * 5 and Option.isSome(Deque.peekFront(tasks))){
+            while (count < (if (ttids.size() == 0){ limitNum }else{ limitNum * 10 }) and callCount < size * 5 and Option.isSome(Deque.peekFront(tasks))){
                 lastActuationTime := Time.now();
                 switch(Deque.popFront(tasks)){
                     case(?((ttid, task_), deque)){
@@ -464,6 +464,7 @@ module {
                                 result := (#Error, null, ?{code = Error.code(e); message = Error.message(e); });
                                 countAsyncMessage -= Nat.min(2, countAsyncMessage); 
                             };
+                            lastActuationTime := Time.now();
                             var callbackStatus: ?Status = null;
                             var status: Status = result.0;
                             var errorMsg: ?CallType.Err = result.2;
@@ -479,6 +480,7 @@ module {
                                             status := #Error;
                                             errorMsg := ?{code = Error.code(e); message = Error.message(e); };
                                         };
+                                        lastActuationTime := Time.now();
                                     };
                                     case(_){
                                         switch(taskCallback){
@@ -494,6 +496,7 @@ module {
                                                     errorMsg := ?{code = Error.code(e); message = Error.message(e); };
                                                     countAsyncMessage -= Nat.min(2, countAsyncMessage);
                                                 };
+                                                lastActuationTime := Time.now();
                                             };
                                             case(_){};
                                         };
@@ -534,6 +537,9 @@ module {
         };
         public func getTaskPool() : [(Ttid, Task)]{
             return _toArray();
+        };
+        public func getSize() : Nat{
+            return _size();
         };
         public func actuations() : {actuationThreads: Nat; lastActuationTime: Time.Time; countAsyncMessage: Nat}{
             return {actuationThreads = actuationThreads; lastActuationTime = lastActuationTime; countAsyncMessage = countAsyncMessage };

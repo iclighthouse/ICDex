@@ -352,6 +352,7 @@
 /// ## 6 API
 ///
 
+import Prim "mo:⛔";
 import Array "mo:base/Array";
 import Binary "mo:icl/Binary";
 import Blob "mo:base/Blob";
@@ -435,9 +436,11 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.18";
+    private let version_: Text = "0.12.20";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
+    private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
+    private let maxMemory: Nat = 1500*1000*1000; // 1.5G
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
     private stable var pause: Bool = false;
@@ -522,6 +525,32 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /*
     * System pressure control functions
     */
+    // Manages canister memory growth
+    private func _checkMemory(): (){
+        let defaultDuration = 90 * 24 * 3600 * ns_;
+        let memmory = Prim.rts_memory_size();
+        if (memmory > maxMemory){ // Blocking
+            pause := true;
+            mode := #DisabledTrading;
+            pairOpeningTime := 0;
+        }else if (memmory > maxMemory * 9 / 10){ // Critical
+            if (drc205.getConfig().MAX_CACHE_TIME > defaultDuration / 3){
+                ignore drc205.config({ EN_DEBUG = null; MAX_CACHE_TIME = ?(defaultDuration / 3); MAX_CACHE_NUMBER_PER = null; MAX_STORAGE_TRIES = null; });
+            };
+            if (ExpirationDuration > defaultDuration / 3){
+                ExpirationDuration := defaultDuration / 3;
+            };
+            _getSaga().clear(?(defaultDuration / 6), false);
+        }else if (memmory > maxMemory * 2 / 3){ // Medium
+            if (drc205.getConfig().MAX_CACHE_TIME > defaultDuration * 2 / 3){
+                ignore drc205.config({ EN_DEBUG = null; MAX_CACHE_TIME = ?(defaultDuration * 2 / 3); MAX_CACHE_NUMBER_PER = null; MAX_STORAGE_TRIES = null; });
+            };
+            if (ExpirationDuration > defaultDuration * 2 / 3){
+                ExpirationDuration := defaultDuration * 2 / 3;
+            };
+            _getSaga().clear(?(defaultDuration / 3), false);
+        };
+    };
     // ICTC status check. If more than 5 (if debug is 10) transactions are blocked, the trading pair will be suspended.
     private func _checkICTCError() : (){
         let count = _getSaga().getBlockingOrders().size();
@@ -623,12 +652,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func _checkAsyncMessageLimit() : Bool{
         return _asyncMessageSize() < 390; /*config*/
     };
+    // cycles limit
+    private func _checkCycles(): Bool{
+        return Cycles.balance() > minCyclesBalance;
+    };
     // Checks access restrictions with `_checkAsyncMessageLimit()` and `_checkTPSLimit()` and logs current access. Used to prevent DOS attacks.
     private func _checkOverload(_caller: ?AccountId) : async* (){
         if (not(_checkAsyncMessageLimit()) or not(_checkTPSLimit())){
             countRejections += 1; 
             throw Error.reject("405: IC network is busy, please try again later."); 
         };
+        if (not(_checkCycles())){
+            countRejections += 1; 
+            throw Error.reject("418: The balance of canister's cycles is insufficient, increase the balance as soon as possible."); 
+        };
+        _checkMemory();
         _visitLog(Option.get(_caller, Tools.principalToAccountBlob(Principal.fromActor(this), null)));
     };
     // Check the maximum number of orders the trader is allowed to have in PENDING status.
@@ -2869,7 +2907,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 break brk;
             };
         };
-        let change24h = (price - prePrice) / prePrice;
+        let change24h = (if (prePrice == 0.0){ 0.0 }else{ (price - prePrice) / prePrice });
         return {price = price; change24h = change24h; vol24h = vol24h;};
     };
 
@@ -3024,7 +3062,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var _order: OrderPrice = {quantity=#Sell(0); price=0;};
         var _orderType: OrderType = #MKT;
         if (_token == _token0Canister()){
-            _order := {quantity=#Sell(_value); price=0;};
+            _order := {quantity=#Sell(_value / setting.UNIT_SIZE * setting.UNIT_SIZE); price=0;};
         } else if (_token == _token1Canister()){
             _order := {quantity=#Buy((0, _value)); price=0;};
         };
@@ -3070,7 +3108,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var _order: OrderPrice = {quantity=#Sell(0); price=limitPrice;};
         var _orderType: OrderType = #MKT;
         if (_token == _token0Canister()){
-            _order := {quantity=#Sell(_value); price = _order.price;};
+            _order := {quantity=#Sell(_value / setting.UNIT_SIZE * setting.UNIT_SIZE); price = _order.price;};
         } else if (_token == _token1Canister()){
             _order := {quantity=#Buy((0, _value)); price = _order.price;};
         };
@@ -4234,6 +4272,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     private var sto_lastWorkPrice: Nat = 0; 
     private var sto_lastWorkTime: Timestamp = 0; 
+    private var sto_lastWorkTime2: Timestamp = 0; 
     private var sto_isWorking: Bool = false; 
     private var sto_lastGridOrders: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = []; // for debug
     // Whether to enable strategic orders for trading pair
@@ -4393,7 +4432,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                                 };
                                 icdex_stOrderRecords := STO.updateIcebergOrder(icdex_stOrderRecords, soid, null, ?r.txid); // for IcebergOrder
                             }else{
-                                ignore _cancelOrder(r.txid, null);
+                                ignore _cancelOrder(null, r.txid, null);
                             };
                         };
                         case(#err(e)){
@@ -4411,7 +4450,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
 
     // Canceling an order in an order book
-    private func _cancelOrder(_txid: Txid, _side: ?OrderBook.OrderSide) : SagaTM.Toid{
+    private func _cancelOrder(_soid: ?Nat, _txid: Txid, _side: ?OrderBook.OrderSide) : SagaTM.Toid{
+        // update-231226: Fixed the issue that pending order records could not be deleted.
         if (_isPending(_txid)){
             let saga = _getSaga();
             let toid = saga.create("cancel_by_grid", #Forward, ?_txid, null);
@@ -4422,10 +4462,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             return toid;
         }else{
-            switch(STO.getSoidByTxid(icdex_stOrderTxids, _txid)){
-                case(?soid){
-                    icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid, _txid); 
+            switch(STO.getSoidByTxid(icdex_stOrderTxids, _txid), _soid){
+                case(?soid1, _){
+                    icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid1, _txid); 
                     icdex_stOrderTxids := STO.removeSTOTxids(icdex_stOrderTxids, _txid);
+                };
+                case(_, ?soid2){
+                    icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid2, _txid); 
                 };
                 case(_){};
             };
@@ -4495,10 +4538,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         };
                         case(#GridOrder(v)){ 
                             let (data, status, ordersTriggered, ordersToBeCancel) = STO.goTrigger(icdex_stOrderRecords, balances, price, unitSize, _soid, sto); 
+                            icdex_stOrderRecords := data; // update-231226: Fix the issue of invalid deletion
                             for (item in ordersToBeCancel.vals()){
-                                ignore _cancelOrder(item.0, item.1);
+                                ignore _cancelOrder(?_soid, item.0, item.1);
                             };
-                            icdex_stOrderRecords := data;
                             return (status, ordersTriggered);
                         };
                         case(#IcebergOrder(v)){ 
@@ -4594,7 +4637,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     // place an order again.
     // - The triggers of the strategy do not guarantee that the order will be placed successfully or that it will be filled immediately, and 
     // there may be multiple uncertainties.
-    // - /// - When it is busy, the trigger price may have a deviation of about 0.5%, and the system will ignore multiple triggers within 10 seconds 
+    // - When it is busy, the trigger price may have a deviation of about 0.5%, and the system will ignore multiple triggers within 10 seconds 
     // and trigger only once.
     private func _hook_stoWorktop(_soid: ?STO.Soid, _side: ?OrderBook.OrderSide) : async (){
         let price = icdex_lastPrice.price;
@@ -4658,15 +4701,17 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             // ProOrder
             var pendingPOList = List.nil<STO.Soid>();
             var poCount : Nat = 0;
-            if (Option.isSome(_soid)){
-                let thisSoid = Option.get(_soid, 0);
-                let (status, preOpenOrders) = _stoTrigger(thisSoid);
-                openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
-                if (status != #Running){
-                    icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
-                };
-            }else if (not(sto_isWorking)){ // global lock
+            // if (Option.isSome(_soid)){ // update-231226: De-prioritize
+            //     let thisSoid = Option.get(_soid, 0);
+            //     let (status, preOpenOrders) = _stoTrigger(thisSoid);
+            //     openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
+            //     if (status != #Running){
+            //         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
+            //     };
+            // }else 
+            if (not(sto_isWorking) or _now() >= sto_lastWorkTime2 + 15 * 60){ // global lock
                 sto_isWorking := true;
+                sto_lastWorkTime2 := _now();
                 for (soid in List.toArray(icdex_activeProOrderList).vals()){
                     poCount += 1;
                     let (status, preOpenOrders) = _stoTrigger(soid);
@@ -4679,6 +4724,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     if (poCount == 10 or poCount % 50 == 0){
                         await _awaitFunc(); // Prevents insufficient number of available execution instructions
                     };
+                    sto_lastWorkTime2 := _now();
                 };
                 sto_isWorking := false;
                 icdex_activeProOrderList := pendingPOList;
@@ -4733,7 +4779,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         switch(STO.getSoidByTxid(icdex_stOrderTxids, _txid)){
             case(?soid){
                 icdex_stOrderRecords := STO.removePendingOrder(icdex_stOrderRecords, soid, _txid); 
-                icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, soid, _price);
                 icdex_stOrderTxids := STO.removeSTOTxids(icdex_stOrderTxids, _txid);
             };
             case(_){};
@@ -4750,22 +4795,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 let saga = _getSaga();
                 for ((optTxid, price, quantity) in sto.pendingOrders.buy.vals()){
                     switch(optTxid){
-                        case(?txid){ ignore _cancelOrder(txid, ?#Buy); };
+                        case(?txid){ ignore _cancelOrder(?_soid, txid, ?#Buy); };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Buy, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
                 for ((optTxid, price, quantity) in sto.pendingOrders.sell.vals()){
                     switch(optTxid){
-                        case(?txid){ ignore _cancelOrder(txid, ?#Sell); };
+                        case(?txid){ ignore _cancelOrder(?_soid, txid, ?#Sell); };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Sell, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
+                icdex_stOrderRecords := STO.removeGridPrices(icdex_stOrderRecords, _soid);
                 await* _ictcSagaRun(0, false);
             };
             case(_){};
@@ -4859,13 +4903,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(#VWAP(arg)){
                 let amountPerTrigger = (switch(arg.amountPerTrigger){case(#Token0(v)){ v }; case(#Token1(v)){ v / icdex_lastPrice.price * setting.UNIT_SIZE }});
-                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10)){
+                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10 and arg.order.priceSpread <= icdex_lastPrice.price / 2)){
                     throw Error.reject("453: Arguments unavailable."); 
                 };
             };
             case(#TWAP(arg)){
                 let amountPerTrigger = (switch(arg.amountPerTrigger){case(#Token0(v)){ v }; case(#Token1(v)){ v / icdex_lastPrice.price * setting.UNIT_SIZE }});
-                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10)){
+                if (not(arg.startingTime < arg.endTime and arg.endTime > _now() and amountPerTrigger >= setting.UNIT_SIZE * 10 and arg.order.priceSpread <= icdex_lastPrice.price / 2 and arg.triggerInterval >= 60)){
                     throw Error.reject("453: Arguments unavailable."); 
                 };
             };
@@ -5010,25 +5054,24 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 for ((optTxid, price, quantity) in sto.pendingOrders.buy.vals()){
                     switch(optTxid){
                         case(?txid){
-                            ignore _cancelOrder(txid, ?#Buy);
+                            ignore _cancelOrder(?_soid, txid, ?#Buy);
                         };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Buy, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
                 for ((optTxid, price, quantity) in sto.pendingOrders.sell.vals()){
                     switch(optTxid){
                         case(?txid){
-                            ignore _cancelOrder(txid, ?#Sell);
+                            ignore _cancelOrder(?_soid, txid, ?#Sell);
                         };
                         case(_){
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, _soid, #Sell, price);
-                            icdex_stOrderRecords := STO.removeGridPrice(icdex_stOrderRecords, _soid, price);
                         };
                     };
                 };
+                icdex_stOrderRecords := STO.removeGridPrices(icdex_stOrderRecords, _soid);
                 // update
                 var soid : Nat = 0;
                 var status: STO.STStatus = #Running;
@@ -5086,9 +5129,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         icdex_stOrderRecords := STO.remove(icdex_stOrderRecords, _soid);
                         icdex_userProOrderList := STO.removeUserPOList(icdex_userProOrderList, account, _soid);
                     };
-                    if (status == #Running and enableStrategyOrders){
-                        await _hook_stoWorktop(?_soid, null);
-                    };
+                    // if (status == #Running and enableStrategyOrders){
+                    //     await _hook_stoWorktop(?_soid, null);
+                    // };
                 };
                 await* _ictcSagaRun(0, false);
                 return soid;
