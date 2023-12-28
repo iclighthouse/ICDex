@@ -201,7 +201,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.17";
+    private let version_: Text = "0.12.18";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -250,7 +250,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     private stable var lastMonitorTime: Nat = 0;
     private stable var hotPairs : List.List<Principal> = List.nil(); // The more popular pairs, they may take up more memory and need to be cleaned up.
     private let canisterCyclesInit : Nat = if (icdex_debug) {200_000_000_000} else {2_000_000_000_000}; // Initialized Cycles amount when creating a trading pair.
-    private let pairMaxMemory: Nat = 2*1000*1000*1000; // When the trading pair memory exceeds this value it signals risk.
+    // private let pairMaxMemory: Nat = 2*1000*1000*1000; // When the trading pair memory exceeds this value it signals risk.
 
     private func keyp(t: Principal) : Trie.Key<Principal> { return { key = t; hash = Principal.hash(t) }; };
     private func keyn(t: Nat) : Trie.Key<Nat> { return { key = t; hash = Tools.natHash(t) }; };
@@ -2504,31 +2504,32 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 lastMonitorTime := _now();
             }catch(e){};
             for ((canisterId, totalCycles) in Trie.iter(cyclesMonitor)){
-                if (totalCycles >= canisterCyclesInit * 10 and Option.isNull(List.find(hotPairs, func(t: Principal): Bool{ t == canisterId }))){
-                    try{ 
-                        let canisterStatus = await* CyclesMonitor.get_canister_status(canisterId);
-                        if (canisterStatus.memory_size > pairMaxMemory){
-                            let pair: ICDexPrivate.Self = actor(Principal.toText(canisterId));
-                            ignore await pair.config({
-                                UNIT_SIZE = null;
-                                ICP_FEE = null;
-                                TRADING_FEE = null;
-                                MAKER_BONUS_RATE = null;
-                                MAX_TPS = null; 
-                                MAX_PENDINGS = null;
-                                STORAGE_INTERVAL = null; // seconds
-                                ICTC_RUN_INTERVAL = null; // seconds
-                                ORDER_EXPIRATION_DURATION = ?(2 * 30 * 24 * 3600) // seconds
-                            });
-                            ignore await pair.drc205_config({
-                                EN_DEBUG = null;
-                                MAX_CACHE_TIME = ?(2 * 30 * 24 * 3600 * 1_000_000_000);
-                                MAX_CACHE_NUMBER_PER = ?600;
-                                MAX_STORAGE_TRIES = null;
-                            });
-                            hotPairs := List.push(canisterId, hotPairs);
-                        };
-                    }catch(e){};
+                if (totalCycles >= canisterCyclesInit * 20 and Option.isNull(List.find(hotPairs, func(t: Principal): Bool{ t == canisterId }))){
+                    hotPairs := List.push(canisterId, hotPairs);
+                    // try{ 
+                    //     let canisterStatus = await* CyclesMonitor.get_canister_status(canisterId);
+                    //     if (canisterStatus.memory_size > pairMaxMemory){
+                    //         let pair: ICDexPrivate.Self = actor(Principal.toText(canisterId));
+                    //         ignore await pair.config({
+                    //             UNIT_SIZE = null;
+                    //             ICP_FEE = null;
+                    //             TRADING_FEE = null;
+                    //             MAKER_BONUS_RATE = null;
+                    //             MAX_TPS = null; 
+                    //             MAX_PENDINGS = null;
+                    //             STORAGE_INTERVAL = null; // seconds
+                    //             ICTC_RUN_INTERVAL = null; // seconds
+                    //             ORDER_EXPIRATION_DURATION = ?(2 * 30 * 24 * 3600) // seconds
+                    //         });
+                    //         ignore await pair.drc205_config({
+                    //             EN_DEBUG = null;
+                    //             MAX_CACHE_TIME = ?(2 * 30 * 24 * 3600 * 1_000_000_000);
+                    //             MAX_CACHE_NUMBER_PER = ?600;
+                    //             MAX_STORAGE_TRIES = null;
+                    //         });
+                    //         hotPairs := List.push(canisterId, hotPairs);
+                    //     };
+                    // }catch(e){};
                 };
             };
             for (canisterId in List.toArray(hotPairs).vals()){

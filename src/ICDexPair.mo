@@ -352,6 +352,7 @@
 /// ## 6 API
 ///
 
+import Prim "mo:⛔";
 import Array "mo:base/Array";
 import Binary "mo:icl/Binary";
 import Blob "mo:base/Blob";
@@ -435,10 +436,11 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.19";
+    private let version_: Text = "0.12.20";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
-    private let minCyclesBalance: Nat = 100_000_000_000; // 0.1 T
+    private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
+    private let maxMemory: Nat = 1500*1000*1000; // 1.5G
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
     private stable var pause: Bool = false;
@@ -523,6 +525,32 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /*
     * System pressure control functions
     */
+    // Manages canister memory growth
+    private func _checkMemory(): (){
+        let defaultDuration = 90 * 24 * 3600 * ns_;
+        let memmory = Prim.rts_memory_size();
+        if (memmory > maxMemory){ // Blocking
+            pause := true;
+            mode := #DisabledTrading;
+            pairOpeningTime := 0;
+        }else if (memmory > maxMemory * 9 / 10){ // Critical
+            if (drc205.getConfig().MAX_CACHE_TIME > defaultDuration / 3){
+                ignore drc205.config({ EN_DEBUG = null; MAX_CACHE_TIME = ?(defaultDuration / 3); MAX_CACHE_NUMBER_PER = null; MAX_STORAGE_TRIES = null; });
+            };
+            if (ExpirationDuration > defaultDuration / 3){
+                ExpirationDuration := defaultDuration / 3;
+            };
+            _getSaga().clear(?(defaultDuration / 6), false);
+        }else if (memmory > maxMemory * 2 / 3){ // Medium
+            if (drc205.getConfig().MAX_CACHE_TIME > defaultDuration * 2 / 3){
+                ignore drc205.config({ EN_DEBUG = null; MAX_CACHE_TIME = ?(defaultDuration * 2 / 3); MAX_CACHE_NUMBER_PER = null; MAX_STORAGE_TRIES = null; });
+            };
+            if (ExpirationDuration > defaultDuration * 2 / 3){
+                ExpirationDuration := defaultDuration * 2 / 3;
+            };
+            _getSaga().clear(?(defaultDuration / 3), false);
+        };
+    };
     // ICTC status check. If more than 5 (if debug is 10) transactions are blocked, the trading pair will be suspended.
     private func _checkICTCError() : (){
         let count = _getSaga().getBlockingOrders().size();
@@ -638,6 +666,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             countRejections += 1; 
             throw Error.reject("418: The balance of canister's cycles is insufficient, increase the balance as soon as possible."); 
         };
+        _checkMemory();
         _visitLog(Option.get(_caller, Tools.principalToAccountBlob(Principal.fromActor(this), null)));
     };
     // Check the maximum number of orders the trader is allowed to have in PENDING status.
@@ -2878,7 +2907,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 break brk;
             };
         };
-        let change24h = (price - prePrice) / prePrice;
+        let change24h = (if (prePrice == 0.0){ 0.0 }else{ (price - prePrice) / prePrice });
         return {price = price; change24h = change24h; vol24h = vol24h;};
     };
 
