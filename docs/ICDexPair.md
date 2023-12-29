@@ -221,7 +221,7 @@ listing on ICDex, which is authorized by owner (DAO) and configured by the Funde
 created through owner (DAO) can initiate IDO.
 - Configure: 
     - Open IDO: Owner (DAO) calls IDO_setFunder() method of the trading pair to open IDO, set the participation threshold, specify 
-    Funder, and set the opening time of the trading pair.
+    Funder.
     - Funder Configuration: Funder calls the IDO_config() method for configuration, and the configuration items include IDO time, 
     whitelist, tiered supply rules, and participation limits.
 - Tiered supply rules:
