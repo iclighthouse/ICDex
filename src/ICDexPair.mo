@@ -222,7 +222,7 @@
 /// created through owner (DAO) can initiate IDO.
 /// - Configure: 
 ///     - Open IDO: Owner (DAO) calls IDO_setFunder() method of the trading pair to open IDO, set the participation threshold, specify 
-///     Funder, and set the opening time of the trading pair.
+///     Funder.
 ///     - Funder Configuration: Funder calls the IDO_config() method for configuration, and the configuration items include IDO time, 
 ///     whitelist, tiered supply rules, and participation limits.
 /// - Tiered supply rules:
@@ -436,7 +436,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.20";
+    private let version_: Text = "0.12.21";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -2356,7 +2356,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     tempLockedAmount += v;
                 };
             }catch(e){
-                throw Error.reject("408: Insufficient token balance. " # Error.message(e));
+                throw Error.reject("408: Insufficient token balance. If you are trading with PoolMode, you should deposit an additional fee of token. " # Error.message(e));
             };
         };
         // from: pool -> to: pool / TxAccount
@@ -2416,7 +2416,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (txBalance > valueFromTxBalance + _fee and not(_isFallbacking(_txid))){ // Fix fallback conflict
             _putFallbacking(_txid);
             let saga = _getSaga();
-            let toid = saga.create("fallback_pretrade", #Backward, ?_txid, null);
+            let toid = saga.create("fallback_pretrade", #Backward, ?_txid, ?(func (_toName: Text, _toid: Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
+                if (_status == #Done or _status == #Recovered){
+                    switch(_data){
+                        case(?txid){ _removeFallbacking(txid) };
+                        case(_){};
+                    };
+                };
+            }));
             ignore _sendToken(false, _side, toid, _txid, [], [_icrc1Account], [Nat.sub(txBalance, valueFromTxBalance)], ?_txid, null);
             saga.close(toid);
             return ([toid], tempLockedAmount);
@@ -2735,6 +2742,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         }catch(e){
             _moveToFailedOrder(txid, lockedAmount0, lockedAmount1);
             try{
+                if (logToids.size() > 0) await* _ictcSagaRun(0, false);
                 let r = await* _fallback(icrc1Account, txid, null);
             }catch(e){};
             return #err({code=#InsufficientBalance; message=Error.message(e);});
@@ -2747,6 +2755,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         )){
             _moveToFailedOrder(txid, lockedAmount0, lockedAmount1);
             try{
+                if (logToids.size() > 0) await* _ictcSagaRun(0, false);
                 let r = await* _fallback(icrc1Account, txid, null);
             }catch(e){};
             return #err({code=#UndefinedError; message="403: The order failed because the price did not meet the limit price you specified.";});
@@ -2755,6 +2764,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         )){
             _moveToFailedOrder(txid, lockedAmount0, lockedAmount1);
             try{
+                if (logToids.size() > 0) await* _ictcSagaRun(0, false);
                 let r = await* _fallback(icrc1Account, txid, null);
             }catch(e){};
             return #err({code=#UndefinedError; message="409: Insufficient liquidity and the order was canceled.";});
@@ -5725,14 +5735,16 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         switch(_openingTime){
             case(?(t)){ 
                 pairOpeningTime := t; 
-                IDOSetting_ := {
-                    IDOEnabled = IDOSetting_.IDOEnabled;
-                    IDOWhitelistEnabled = IDOSetting_.IDOWhitelistEnabled;
-                    IDOLimitPerAccount = IDOSetting_.IDOLimitPerAccount;
-                    IDOOpeningTime = t;
-                    IDOClosingTime = IDOSetting_.IDOClosingTime;
-                    IDOTotalSupply = IDOSetting_.IDOTotalSupply;
-                    IDOSupplies = IDOSetting_.IDOSupplies;
+                if (Time.now() < IDOSetting_.IDOClosingTime){ // fix: The value is no longer modified after the IDO ends.
+                    IDOSetting_ := {
+                        IDOEnabled = IDOSetting_.IDOEnabled;
+                        IDOWhitelistEnabled = IDOSetting_.IDOWhitelistEnabled;
+                        IDOLimitPerAccount = IDOSetting_.IDOLimitPerAccount;
+                        IDOOpeningTime = t;
+                        IDOClosingTime = IDOSetting_.IDOClosingTime;
+                        IDOTotalSupply = IDOSetting_.IDOTotalSupply;
+                        IDOSupplies = IDOSetting_.IDOSupplies;
+                    };
                 };
             };
             case(_){ pairOpeningTime := 0; };

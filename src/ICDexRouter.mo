@@ -697,6 +697,27 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         return res;
     };
 
+    /// Upgrade all ICDexPairs.  
+    public shared(msg) func updateAll(_version: Text) : async {total: Nat; success: Nat; failures: [Principal]}{ 
+        assert(_onlyOwner(msg.caller));
+        assert(wasm.size() > 0);
+        assert(_version == wasmVersion);
+        var total : Nat = 0;
+        var success : Nat = 0;
+        var failures: [Principal] = [];
+        for ((canisterId, info) in Trie.iter(pairs)){
+            total += 1;
+            try{
+                let res = await* _update(canisterId, wasm, #upgrade);
+                ignore _putEvent(#upgradePairWasm({ pair = canisterId; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+                success += 1;
+            }catch(e){
+                failures := Tools.arrayAppend(failures, [canisterId]);
+            };
+        };
+        return {total = total; success = success; failures = failures};
+    };
+
     /// Rollback to previous version (the last version that was saved).  
     /// Note: Operate with caution.
     public shared(msg) func rollback(_pair: Principal): async (canister: ?PairCanister){
@@ -1064,6 +1085,30 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             ignore _putEvent(#pairStart({ pair = _app; message = ?"Pair is opened by DAO."}), ?Tools.principalToAccountBlob(msg.caller, null));
         };
         return res;
+    };
+
+    /// Suspend (true) or open (false) all trading pairs. 
+    public shared(msg) func pair_pauseAll(_pause: Bool) : async {total: Nat; success: Nat; failures: [Principal]}{ 
+        assert(_onlyOwner(msg.caller));
+        var total : Nat = 0;
+        var success : Nat = 0;
+        var failures: [Principal] = [];
+        for ((canisterId, info) in Trie.iter(pairs)){
+            total += 1;
+            let pair: ICDexPrivate.Self = actor(Principal.toText(canisterId));
+            try{
+                let res = await pair.setPause(_pause, null);
+                if (_pause){
+                    ignore _putEvent(#pairSuspend({ pair = canisterId;  message = ?"Pair is suspended by DAO."}), ?Tools.principalToAccountBlob(msg.caller, null));
+                }else{
+                    ignore _putEvent(#pairStart({ pair = canisterId; message = ?"Pair is opened by DAO."}), ?Tools.principalToAccountBlob(msg.caller, null));
+                };
+                success += 1;
+            }catch(e){
+                failures := Tools.arrayAppend(failures, [canisterId]);
+            };
+        };
+        return {total = total; success = success; failures = failures};
     };
 
     /// Open IDO of a trading pair and configure parameters
@@ -2221,6 +2266,42 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let res = await* _maker_update(_pair, _maker, maker_wasm, #upgrade, { name = _name });
         ignore _putEvent(#upgradeMaker({ version = _version; pair = _pair; maker = _maker; name = _name; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
         return res;
+    };
+
+    /// Upgrade all ICDexMakers.  
+    public shared(msg) func maker_updateAll(_version: Text, _updatePrivateMakers: Bool) : async {total: Nat; success: Nat; failures: [(Principal, Principal)]}{ 
+        assert(_onlyOwner(msg.caller));
+        assert(_version == maker_wasmVersion);
+        var total : Nat = 0;
+        var success : Nat = 0;
+        var failures: [(Principal, Principal)] = [];
+        for ((pair, makers) in Trie.iter(maker_publicCanisters)){
+            for ((maker, creator) in makers.vals()){
+                total += 1;
+                try{
+                    let res = await* _maker_update(pair, maker, maker_wasm, #upgrade, { name = null });
+                    ignore _putEvent(#upgradeMaker({ version = _version; pair = pair; maker = maker; name = null; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+                    success += 1;
+                }catch(e){
+                    failures := Tools.arrayAppend(failures, [(pair, maker)]);
+                };
+            };
+        };
+        if (_updatePrivateMakers){
+            for ((pair, makers) in Trie.iter(maker_privateCanisters)){
+                for ((maker, creator) in makers.vals()){
+                    total += 1;
+                    try{
+                        let res = await* _maker_update(pair, maker, maker_wasm, #upgrade, { name = null });
+                        ignore _putEvent(#upgradeMaker({ version = _version; pair = pair; maker = maker; name = null; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+                        success += 1;
+                    }catch(e){
+                        failures := Tools.arrayAppend(failures, [(pair, maker)]);
+                    };
+                };
+            };
+        };
+        return {total = total; success = success; failures = failures};
     };
 
     /// Rollback an ICDexMaker canister.
