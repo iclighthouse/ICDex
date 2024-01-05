@@ -705,11 +705,15 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         var success : Nat = 0;
         var failures: [Principal] = [];
         for ((canisterId, info) in Trie.iter(pairs)){
-            total += 1;
             try{
-                let res = await* _update(canisterId, wasm, #upgrade);
-                ignore _putEvent(#upgradePairWasm({ pair = canisterId; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
-                success += 1;
+                let pair: ICDexTypes.Self = actor(Principal.toText(canisterId));
+                let version = await pair.version();
+                if (version != _version){
+                    total += 1;
+                    let res = await* _update(canisterId, wasm, #upgrade);
+                    ignore _putEvent(#upgradePairWasm({ pair = canisterId; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+                    success += 1;
+                };
             }catch(e){
                 failures := Tools.arrayAppend(failures, [canisterId]);
             };
@@ -2286,14 +2290,18 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         var success : Nat = 0;
         var failures: [(Principal, Principal)] = [];
         for ((pair, makers) in Trie.iter(maker_publicCanisters)){
-            for ((maker, creator) in makers.vals()){
-                total += 1;
+            for ((canisterId, creator) in makers.vals()){
                 try{
-                    let res = await* _maker_update(pair, maker, maker_wasm, #upgrade, { name = null });
-                    ignore _putEvent(#upgradeMaker({ version = _version; pair = pair; maker = maker; name = null; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
-                    success += 1;
+                    let maker: Maker.Self = actor(Principal.toText(canisterId));
+                    let version = (await maker.info()).version;
+                    if (version != _version){
+                        total += 1;
+                        let res = await* _maker_update(pair, canisterId, maker_wasm, #upgrade, { name = null });
+                        ignore _putEvent(#upgradeMaker({ version = _version; pair = pair; maker = canisterId; name = null; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+                        success += 1;
+                    };
                 }catch(e){
-                    failures := Tools.arrayAppend(failures, [(pair, maker)]);
+                    failures := Tools.arrayAppend(failures, [(pair, canisterId)]);
                 };
             };
         };
