@@ -6,8 +6,7 @@
 
 ## Overview
 
-ICDexRouter is a trading pair factory that is responsible for creating and managing ICDexPair, 
-and also for creating and managing ICDexMaker.
+ICDexRouter is a factory that is responsible for creating and managing ICDexPair, and also for creating and managing ICDexMaker.
 
 ## 1 Concepts
 
@@ -15,22 +14,20 @@ and also for creating and managing ICDexMaker.
 
 Owner is the controller of the ICDexRouter, the initial value is creator, which can be modified to DAO canister for decentralization.
 
-### System Token
+### System Token (Eco-Token, ICL)
 
-Utility token (ICL) in the ICDex economic model, which is used to purchase certain services in the ecosystem. ICL is also governance 
-token, which is used to govern the ICDex system.
+System Token is ICDex's economic incentive token, i.e. ICL, a governance and utility token.
 
-### ICDexPair (Trading Pair)
+### ICDexPair (Trading Pair, TP)
 
-ICDexPair is an ICDex pair contract (canister), a pair is deployed in a separate canister, managed by ICDexRouter. A pair is 
-deployed in a separate canister, which is managed by ICDexRouter. For example, the pair "AAA/BBB", AAA means base token and BBB 
-means quote token.
+ICDexPair, Trading Pair (TP), is deployed in a separate canister, managed by ICDexRouter. For example, the TP "AAA/BBB", 
+AAA means base token and BBB eans quote token.
 
-### ICDexMaker (Public Maker & Private Maker)
+### ICDexMaker (Orderbook Automated Market Maker, OAMM)
 
-ICDexMaker is ICDex's Automated Market Maker contract (Canister) that provides liquidity to a trading pair. An Automated Market 
-Maker is deployed in a separate canister that is managed by ICDexRouter.  
-ICDexMaker simulates the effect of Uniswap AMM using grid strategy orders. It includes Public Maker and Private Maker:
+ICDexMaker is Orderbook Automated Market Maker (OAMM) canister that provides liquidity to a trading pair. An OAMM is deployed 
+in a separate canister that is managed by ICDexRouter.  OAMM simulates the effect of Uniswap AMM using grid strategy orders. 
+It includes Public Maker and Private Maker:
 - Public Maker is the public market making pool to which any user (LP) can add liquidity.
 - Private Maker is a private market making pool to which only the creator (LP) can add liquidity.
 
@@ -204,6 +201,13 @@ Arguments:
 Returns:
 - canister: ?PairCanister. Trading pair canister-id. Returns null if the upgrade was unsuccessful.
 
+## Function `updateAll`
+``` motoko no-repl
+func updateAll(_version : Text) : async { total : Nat; success : Nat; failures : [Principal] }
+```
+
+Upgrade all ICDexPairs.  
+
 ## Function `rollback`
 ``` motoko no-repl
 func rollback(_pair : Principal) : async (canister : ?PairCanister)
@@ -337,6 +341,20 @@ func pair_pause(_app : Principal, _pause : Bool, _openingTime : ?Time.Time) : as
 ```
 
 Suspend (true) or open (false) a trading pair. If `_openingTime` is specified, it means that the pair will be opened automatically after that time.
+
+## Function `pair_pauseAll`
+``` motoko no-repl
+func pair_pauseAll(_pause : Bool) : async { total : Nat; success : Nat; failures : [Principal] }
+```
+
+Suspend (true) or open (false) all trading pairs. 
+
+## Function `pair_setAuctionMode`
+``` motoko no-repl
+func pair_setAuctionMode(_app : Principal, _enable : Bool, _funder : ?AccountId) : async (Bool, AccountId)
+```
+
+Enable/disable Auction Mode
 
 ## Function `pair_IDOSetFunder`
 ``` motoko no-repl
@@ -687,6 +705,13 @@ Arguments:
 
 Returns:
 - canister: ?Principal. Automated Market Maker canister-id. Returns null if the upgrade was unsuccessful.
+
+## Function `maker_updateAll`
+``` motoko no-repl
+func maker_updateAll(_version : Text, _updatePrivateMakers : Bool) : async { total : Nat; success : Nat; failures : [(Principal, Principal)] }
+```
+
+Upgrade all ICDexMakers.  
 
 ## Function `maker_rollback`
 ``` motoko no-repl

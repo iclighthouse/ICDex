@@ -13,8 +13,10 @@ ICDexPair is created by the ICDexRouter, its controller is by default the ICDexR
 ## 1 Concepts
 
 ### Order Book and Matching Engine
-
-https://github.com/iclighthouse/ICDex/blob/main/OrderBook.md 
+The basic function of the Order Book is to match buyers and sellers in the market. The order book is the mechanism used by 
+the majority of electronic exchanges today, both in the financial and the cryptocurrency markets. The book has two sides, 
+asks and bids. Asks are sometimes called offers. Asks consists of orders from other traders offering to sell an asset. Bids 
+are orders from traders offering to buy an asset.
 
 ### Accounts and Roles
 
@@ -63,7 +65,6 @@ When the order is filled, the funds are transferred from the Pool to the target 
 If a trader has "Keeping balance in TraderAccount" enabled, then when he trades, the funds in that TraderAccount will be used by default., 
 and the received tokens will be deposited into this TraderAccount by default. All the assets in the trader's TraderAccount are kept in 
 PoolAccount, and the trader can deposit funds into his TraderAccount or withdraw funds from his TraderAccount.
-
 ### Base Token (token0) and Quote Token (token1)
 
 A trading pair is the quotation of two different cryptocurrencies, with the value of one token (cryptocurrency) being quoted 
@@ -75,29 +76,33 @@ The human-readable representation of the balance is converted in the UI by the f
 
 ### DebitToken and CreditToken
 
-When adding token0 to purchase token1, we call token0 a DebitToken and token1 a CreditToken. Similarly, when adding token1 to buy token0, 
-we call token0 a CreditToken and token1 a DebitToken.
+In an MKT order, When adding token0 to purchase token1, we call token0 a DebitToken and token1 a CreditToken. Similarly, 
+when adding token1 to buy token0, we call token0 a CreditToken and token1 a DebitToken.
+
+### Token Amount
+Unless otherwise specified, the units used to represent the number of tokens in a trading pair are SMALLEST UNITS.
 
 ### UNIT_SIZE and Price
 
-- UNIT_SIZE: It is the base number of quotes in the trading pair and the minimum quantity to be used when placing an order. The quantity of 
-the order placed must be an integer multiple of UNIT_SIZE.
-- Price: How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
-- Human-readable price: `Price * (10 ** token0Decimals) / (10 ** token1Decimals) / UNIT_SIZE`
+- UNIT_SIZE: It is the base number of quotes in the trading pair and the minimum quantity (token0) to be used when placing an order. 
+The quantity (token0) of the order placed must be an integer multiple of UNIT_SIZE.
+- Price: The amount of token1 (smallest units) is required to purchase UNIT_SIZE token0 (smallest units).
+- Human-readable price: Translate to a human-readable representation of the price, using the token's decimals.
+`Human-readable price = Price * (10 ** token0Decimals) / (10 ** token1Decimals) / UNIT_SIZE`
 
 ### Nonce
 
-The ICDex trading function uses the nonce mechanism, where each account has a nonce value in a trading pair, which by default is 0. 
-When the trader creates a new order, his current nonce value will be bound to the order, and then `nonce + 1` as the next available value.
-The trader can create an order without filling in the nonce, the system will automatically take the value and increment it. If a trader 
-specifies a nonce value when creating an order, the value must be a currently available value for the account in the pair, it cannot be 
-a used value, nor can it be an excessively large value, otherwise an error will be reported.
+ICDexPair uses the nonce mechanism, where each account has a nonce value in a trading pair, which by default is 0. When the trader 
+creates a new order, his current nonce value will be used to the order, and then `nonce + 1` as the next available value. The trader 
+can create an order without filling in the nonce, the trading pair will automatically take the value and increment it. If a trader 
+specifies a nonce value when opening an order, the value must be a currently available value for the account in the pair, it cannot 
+be a used value, nor can it be an excessively large value, otherwise an error will be reported.
 
 ### Strategy Order
 
-Strategy Orders are also known as Algorithmic Orders. The trader configures the parameters according to the strategy rules of the trading 
-pair, and when the market price meets the conditions, the trading pair will automatically place orders for the trader. Strategy Order is 
-divided into Pro-Order and Stop-Loss-Order.
+Strategy Orders are also known as Algorithmic Orders. The trader configures the parameters according to the strategy rules of the 
+trading pair, and when the market price meets the conditions, the trading pair will automatically place trade orders for the trader. 
+Strategy Orders is divided into Pro-Order and Stop-Limit-Order (Stop-Loss-Order).
 - Pro-Order: Grid, Iceberg, VWAP and TWAP orders have been implemented.
 - Stop-Loss-Order: Stop-loss conditional orders have been implemented.
 Clearly indicate:  
@@ -126,18 +131,21 @@ The fees collected by ICDex, after deducting Vip-maker incentives, network gas, 
 is a DAO who decides on their use, e.g., destruction, repurchase, etc.  
 - Maker-fee: When an order is filled, the maker pays a commission rate which is currently 0% by default, a negative value means that the 
 maker receives a commission.
-- Taker-fee: When an order is filled, taker pays a fee based on the amount of the filled order, and its rate is currently 0.5% by default.
+- Taker-fee: When an order is filled, taker pays a fee based on the filled amount, and fee rate is currently 0.5% by default.
 - Vip-maker rebate: When an order is filled, if the maker's role is as a Vip-maker, then he can get a specified percentage of the commission 
 paid by the taker as a reward, which may vary from Vip-maker to Vip-maker.
 - Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled. 
 No cancellation fee is paid for strategic orders.
 - Strategic order
-    - Pro-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (poFee1), this fee is free for vip-makers; when triggering new trade and filling 
-    it, charge the amount of token (token0 or token1) received by the pro-trader `token_amount * fee_ratio` (poFee2) is charged as the 
-    pro-trading fee.
-    - StopLoss-Order: When configuring a strategy, a fixed amount of ICL is charged as a fee (sloFee1); when triggering new trade and 
-    filling it, charge the amount of token (token0 or token1) received by the pro-trader `token_amount * fee_ratio` (sloFee2) is charged 
-    as the pro-trading fee.
+    - Pro-Order: 
+    When configuring a pro-order strategy, traders are charged a fixed amount of ICL as a fee (poFee1) and the fee for updating the 
+    strategy is poFee1 * 5%. Vip-maker is not be charged poFee1. When the strategy is triggered and the new trade order is closed, the 
+    trader is charged the amount of tokens (token0 or token1) he receives multiplied by the rate (poFee2) as a pro-trade fee.
+    - StopLoss-Order: 
+    When configuring a stop-loss-order strategy, traders are charged a fixed amount of ICL as a fee (sloFee1) and the fee for 
+    updating the strategy is sloFee1 * 5%. Vip-maker is not be charged sloFee1. When the strategy is triggered and the new trade order 
+    is closed, the trader is charged the amount of tokens (token0 or token1) he receives multiplied by the rate (sloFee2) as a 
+    stop-loss-trade fee.
 
 ## 3 Core functionality
 
@@ -564,6 +572,13 @@ Arguments:
 
 Results:
 - res: TrieList<Txid, TradingOrder>. 
+
+## Function `volsAll`
+``` motoko no-repl
+func volsAll(_page : ?ListPage, _size : ?ListSize) : async TrieList<AccountId, Vol>
+```
+
+Resturns volume for all users
 
 ## Function `status`
 ``` motoko no-repl
@@ -1203,6 +1218,20 @@ func debug_gridOrders() : async [(STO.Soid, STO.ICRC1Account, OrderPrice)]
 ```
 
 debug: Returns the current grid-orders
+
+## Function `setAuctionMode`
+``` motoko no-repl
+func setAuctionMode(_enable : Bool, _funder : ?AccountId) : async (Bool, AccountId)
+```
+
+Enable/disable Auction Mode
+
+## Function `getAuctionMode`
+``` motoko no-repl
+func getAuctionMode() : async (Bool, AccountId)
+```
+
+Returns whether auction mode is enabled and its funder
 
 ## Function `ta_setReferrer`
 ``` motoko no-repl

@@ -276,6 +276,13 @@ func getUnitNetValues() : async { shareUnitSize : Nat; data : [UnitNetValue] }
 
 Returns NAV values.
 
+## Function `accountSharesAll`
+``` motoko no-repl
+func accountSharesAll(_page : ?ICEvents.ListPage, _size : ?ICEvents.ListSize) : async TrieList<AccountId, (Nat, ShareWeighted)>
+```
+
+Resturns the amount of pool shares for all users.
+
 ## Function `info`
 ``` motoko no-repl
 func info() : async { version : Text; name : Text; paused : Bool; initialized : Bool; sysTransactionLock : Bool; visibility : {#Public; #Private}; creator : AccountId; withdrawalFee : Float; poolThreshold : Amount; volFactor : Nat; gridSoid : ?Nat; shareDecimals : Nat8; pairInfo : { pairPrincipal : Principal; pairUnitSize : Nat; token0 : (Principal, Text, ICDex.TokenStd); token1 : (Principal, Text, ICDex.TokenStd) }; gridSetting : { gridLowerLimit : Price; gridUpperLimit : Price; gridSpread : Price } }
