@@ -49,6 +49,7 @@ module {
         getConfig : shared query() -> async DexSetting;
         config : shared (_config: DexConfig) -> async Bool;
         setPause : shared (_pause: Bool, _openingTime: ?Int) -> async Bool;
+        setAuctionMode : shared (_enable: Bool, _funder: ?AccountId) -> async (Bool, AccountId);
         info : shared query () -> async {
             name: Text;
             version: Text;

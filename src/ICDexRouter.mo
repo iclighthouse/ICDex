@@ -7,8 +7,7 @@
 ///
 /// ## Overview
 ///
-/// ICDexRouter is a trading pair factory that is responsible for creating and managing ICDexPair, 
-/// and also for creating and managing ICDexMaker.
+/// ICDexRouter is a factory that is responsible for creating and managing ICDexPair, and also for creating and managing ICDexMaker.
 ///
 /// ## 1 Concepts
 /// 
@@ -16,22 +15,20 @@
 ///
 /// Owner is the controller of the ICDexRouter, the initial value is creator, which can be modified to DAO canister for decentralization.
 ///
-/// ### System Token
+/// ### System Token (Eco-Token, ICL)
 ///
-/// Utility token (ICL) in the ICDex economic model, which is used to purchase certain services in the ecosystem. ICL is also governance 
-/// token, which is used to govern the ICDex system.
+/// System Token is ICDex's economic incentive token, i.e. ICL, a governance and utility token.
 ///
-/// ### ICDexPair (Trading Pair)
+/// ### ICDexPair (Trading Pair, TP)
 ///
-/// ICDexPair is an ICDex pair contract (canister), a pair is deployed in a separate canister, managed by ICDexRouter. A pair is 
-/// deployed in a separate canister, which is managed by ICDexRouter. For example, the pair "AAA/BBB", AAA means base token and BBB 
-/// means quote token.
+/// ICDexPair, Trading Pair (TP), is deployed in a separate canister, managed by ICDexRouter. For example, the TP "AAA/BBB", 
+/// AAA means base token and BBB eans quote token.
 ///
-/// ### ICDexMaker (Public Maker & Private Maker)
+/// ### ICDexMaker (Orderbook Automated Market Maker, OAMM)
 ///
-/// ICDexMaker is ICDex's Automated Market Maker contract (Canister) that provides liquidity to a trading pair. An Automated Market 
-/// Maker is deployed in a separate canister that is managed by ICDexRouter.  
-/// ICDexMaker simulates the effect of Uniswap AMM using grid strategy orders. It includes Public Maker and Private Maker:
+/// ICDexMaker is Orderbook Automated Market Maker (OAMM) canister that provides liquidity to a trading pair. An OAMM is deployed 
+/// in a separate canister that is managed by ICDexRouter.  OAMM simulates the effect of Uniswap AMM using grid strategy orders. 
+/// It includes Public Maker and Private Maker:
 /// - Public Maker is the public market making pool to which any user (LP) can add liquidity.
 /// - Private Maker is a private market making pool to which only the creator (LP) can add liquidity.
 ///
@@ -201,7 +198,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.18";
+    private let version_: Text = "0.12.20";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -246,10 +243,11 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     private stable var icEvents : ICEvents.ICEvents<Event> = Trie.empty(); // Event records
     private stable var icAccountEvents : ICEvents.AccountEvents = Trie.empty(); // Relationship index table for accounts and events
     // Monitor
-    private stable var cyclesMonitor: CyclesMonitor.MonitoredCanisters = Trie.empty(); // List of canisters with monitored status
+    private stable var cyclesMonitor: CyclesMonitor.MonitoredCanisters = Trie.empty(); // (For upgrade) List of canisters with monitored status
     private stable var lastMonitorTime: Nat = 0;
     private stable var hotPairs : List.List<Principal> = List.nil(); // The more popular pairs, they may take up more memory and need to be cleaned up.
     private let canisterCyclesInit : Nat = if (icdex_debug) {200_000_000_000} else {2_000_000_000_000}; // Initialized Cycles amount when creating a trading pair.
+    private let monitor = CyclesMonitor.CyclesMonitor(canisterCyclesInit, canisterCyclesInit * 50, 1_000_000_000); // CyclesMonitor object
     // private let pairMaxMemory: Nat = 2*1000*1000*1000; // When the trading pair memory exceeds this value it signals risk.
 
     private func keyp(t: Principal) : Trie.Key<Principal> { return { key = t; hash = Principal.hash(t) }; };
@@ -488,7 +486,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 (token1Principal, token1Symbol, token1Std), 
                 pairCanister);
         }catch(e){};
-        cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, pairCanister);
+        // cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, pairCanister);
+        await* monitor.putCanister(pairCanister);
         return pairCanister;
     };
 
@@ -1032,7 +1031,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         try{ // Manager external directory listings, if it fails it has no effect on ICDex.
             await router.removeByDex(_pairCanister);
         }catch(e){};
-        cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _pairCanister);
+        // cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _pairCanister);
+        monitor.removeCanister(_pairCanister);
         ignore _putEvent(#removePairFromList({ pair = _pairCanister;}), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
@@ -1109,6 +1109,15 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             };
         };
         return {total = total; success = success; failures = failures};
+    };
+
+    /// Enable/disable Auction Mode
+    public shared(msg) func pair_setAuctionMode(_app: Principal, _enable: Bool, _funder: ?AccountId) : async (Bool, AccountId){
+        assert(_onlyOwner(msg.caller));
+        let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
+        let res = await pair.setAuctionMode(_enable, _funder);
+        ignore _putEvent(#pairSetAuctionMode({ pair = _app; result = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
 
     /// Open IDO of a trading pair and configure parameters
@@ -2173,7 +2182,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             } = actor(Principal.toText(makerCanister));
             ignore await maker.approveToPair(sysToken, #icrc1, 2 ** 255);
 
-            cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
+            // cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
+            await* monitor.putCanister(makerCanister);
             ignore _putEvent(#createMaker({ version = maker_wasmVersion; arg = _arg; makerCanisterId = makerCanister }), ?Tools.principalToAccountBlob(msg.caller, null));
             return makerCanister;
         }catch(e){
@@ -2346,7 +2356,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         ignore await makerActor.setPause(false);
         _removePublicMaker(_pair, _maker);
         _removePrivateMaker(_pair, _maker);
-        cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _maker);
+        // cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _maker);
+        monitor.removeCanister(_maker);
         ignore _putEvent(#removeMaker({ pair = _pair; maker = _maker; }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
     
@@ -2502,18 +2513,20 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Put a canister-id into Cycles Monitor.
     public shared(msg) func monitor_put(_canisterId: Principal): async (){
         assert(_onlyOwner(msg.caller));
-        cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, _canisterId);
+        // cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, _canisterId);
+        await* monitor.putCanister(_canisterId);
     };
 
     /// Remove a canister-id from Cycles Monitor.
     public shared(msg) func monitor_remove(_canisterId: Principal): async (){
         assert(_onlyOwner(msg.caller));
-        cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _canisterId);
+        // cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _canisterId);
+        monitor.removeCanister(_canisterId);
     };
 
     /// Returns the list of canister-ids in Cycles Monitor.
     public query func monitor_canisters(): async [(Principal, Nat)]{
-        return Iter.toArray(Trie.iter(cyclesMonitor));
+        return Iter.toArray(Trie.iter(monitor.getCanisters()));
     };
 
     /// Returns a canister's caniter_status information.
@@ -2525,17 +2538,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Perform a monitoring. Typically, monitoring is implemented in a timer.
     public shared(msg) func debug_monitor(): async (){
         assert(_onlyOwner(msg.caller));
-        if (Trie.size(cyclesMonitor) == 0){
-            for ((canisterId, value) in Trie.iter(cyclesMonitor)){
-                try{
-                    cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, canisterId);
-                }catch(e){};
-            };
-        };
-        let monitor = await* CyclesMonitor.monitor(Principal.fromActor(this), cyclesMonitor, canisterCyclesInit, canisterCyclesInit * 50, 500_000_000);
-        if (Trie.size(cyclesMonitor) == Trie.size(monitor)){
-            cyclesMonitor := monitor;
-        };
+        await monitor.run(Principal.fromActor(this));
     };
 
     /* =======================
@@ -2578,39 +2581,12 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     private func timerLoop() : async (){
         if (_now() > lastMonitorTime + 6 * 3600){
             try{ 
-                let monitor = await* CyclesMonitor.monitor(Principal.fromActor(this), cyclesMonitor, canisterCyclesInit, canisterCyclesInit * 50, 0);
-                if (Trie.size(cyclesMonitor) == Trie.size(monitor)){
-                    cyclesMonitor := monitor;
-                };
                 lastMonitorTime := _now();
+                await monitor.run(Principal.fromActor(this));
             }catch(e){};
-            for ((canisterId, totalCycles) in Trie.iter(cyclesMonitor)){
+            for ((canisterId, totalCycles) in Trie.iter(monitor.getCanisters())){
                 if (totalCycles >= canisterCyclesInit * 20 and Option.isNull(List.find(hotPairs, func(t: Principal): Bool{ t == canisterId }))){
                     hotPairs := List.push(canisterId, hotPairs);
-                    // try{ 
-                    //     let canisterStatus = await* CyclesMonitor.get_canister_status(canisterId);
-                    //     if (canisterStatus.memory_size > pairMaxMemory){
-                    //         let pair: ICDexPrivate.Self = actor(Principal.toText(canisterId));
-                    //         ignore await pair.config({
-                    //             UNIT_SIZE = null;
-                    //             ICP_FEE = null;
-                    //             TRADING_FEE = null;
-                    //             MAKER_BONUS_RATE = null;
-                    //             MAX_TPS = null; 
-                    //             MAX_PENDINGS = null;
-                    //             STORAGE_INTERVAL = null; // seconds
-                    //             ICTC_RUN_INTERVAL = null; // seconds
-                    //             ORDER_EXPIRATION_DURATION = ?(2 * 30 * 24 * 3600) // seconds
-                    //         });
-                    //         ignore await pair.drc205_config({
-                    //             EN_DEBUG = null;
-                    //             MAX_CACHE_TIME = ?(2 * 30 * 24 * 3600 * 1_000_000_000);
-                    //             MAX_CACHE_NUMBER_PER = ?600;
-                    //             MAX_STORAGE_TRIES = null;
-                    //         });
-                    //         hotPairs := List.push(canisterId, hotPairs);
-                    //     };
-                    // }catch(e){};
                 };
             };
             for (canisterId in List.toArray(hotPairs).vals()){
@@ -2642,9 +2618,12 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
       Upgrade
     ========================= */
     system func preupgrade() {
+        cyclesMonitor := monitor.getCanisters();
         Timer.cancelTimer(timerId);
     };
     system func postupgrade() {
+        monitor.setCanisters(cyclesMonitor);
+        cyclesMonitor := Trie.empty();
         timerId := Timer.recurringTimer(#seconds(3*3600), timerLoop); //  /*config*/
     };
 

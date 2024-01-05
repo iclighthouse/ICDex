@@ -260,7 +260,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.8";
+    private let version_: Text = "0.4.9";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1790,6 +1790,16 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             shareUnitSize = shareUnitSize; 
             data = Tools.slice(List.toArray(unitNetValues), 0, ?2000);
         };
+    };
+
+    /// Resturns the amount of pool shares for all users.
+    public query func accountSharesAll(_page: ?ICEvents.ListPage, _size: ?ICEvents.ListSize): async TrieList<AccountId, (Nat, ShareWeighted)>{
+        var trie = Trie.mapFilter<AccountId, (Nat, ShareWeighted), (Nat, ShareWeighted)>(accountShares, func (k: AccountId, v: (Nat, ShareWeighted)): ?(Nat, ShareWeighted){
+            ?_getAccountShares(k)
+        });
+        let page = Option.get(_page, 1);
+        let size = Option.get(_size, 100);
+        return trieItems<AccountId, (Nat, ShareWeighted)>(trie, page, size);
     };
 
     /// Returns ICDexMaker information.

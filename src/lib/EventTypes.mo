@@ -52,6 +52,7 @@ module {
         #pairSuspend: { pair: Principal; message: ?Text };
         #pairChangeOwner: { pair: Principal; newOwner: Principal};
         #pairConfig: { pair: Principal; setting: ?Pair.DexConfig; drc205config: ?DRC205.Config };
+        #pairSetAuctionMode: { pair: Principal; result: (Bool, AccountId) };
         #pairSetUpgradeMode: { pair: Principal; mode: {#Base; #All} };
         #pairSetOrderFail: { pair: Principal; txidHex: Text; refundToken0: Amount; refundToken1: Amount };
         #pairEnableStratOrder: { pair: Principal; arg: {#Enable; #Disable} };
