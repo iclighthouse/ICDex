@@ -135,6 +135,7 @@ maker receives a commission.
 - Vip-maker rebate: When an order is filled, if the maker's role is as a Vip-maker, then he can get a specified percentage of the commission 
 paid by the taker as a reward, which may vary from Vip-maker to Vip-maker.
 - Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled. 
+This fee is limited to a range from `token fee * 2` to `token fee * 1000`.
 No cancellation fee is paid for strategic orders.
 - Strategic order
     - Pro-Order: 
@@ -225,8 +226,7 @@ order is canceled, it executes _hook_cancel().
 ### IDO
 
 IDO (Initial DEX Offering), is a mechanism for tokens to be sold to traders or specific parties at the beginning of the token's 
-listing on ICDex, which is authorized by owner (DAO) and configured by the Funder of the base token. Note that only trading pairs 
-created through owner (DAO) can initiate IDO.
+listing on ICDex, which is authorized by owner (DAO) and configured by the Funder of the base token. 
 - Configure: 
     - Open IDO: Owner (DAO) calls IDO_setFunder() method of the trading pair to open IDO, set the participation threshold, specify 
     Funder.

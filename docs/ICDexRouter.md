@@ -135,7 +135,7 @@ sufficient Cycles balance or ICP balance.
 
 ## Function `pubCreate`
 ``` motoko no-repl
-func pubCreate(_token0 : Principal, _token1 : Principal) : async (canister : PairCanister)
+func pubCreate(_token0 : Principal, _token1 : Principal, _openingTimeNS : Time.Time) : async (canister : PairCanister)
 ```
 
 Publicly create a trading pair by paying creatingPairFee.
@@ -143,6 +143,7 @@ Publicly create a trading pair by paying creatingPairFee.
 Arguments:
 - token0: Principal. Base token canister-id.
 - token1: Principal. Quote token canister-id.
+- openingTimeNS: Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
 
 Returns:
 - canister: PairCanister. Trading pair canister-id.
@@ -172,7 +173,7 @@ Returns the current version of ICDexPair wasm.
 
 ## Function `create`
 ``` motoko no-repl
-func create(_token0 : Principal, _token1 : Principal, _unitSize : ?Nat64, _initCycles : ?Nat) : async (canister : PairCanister)
+func create(_token0 : Principal, _token1 : Principal, _openingTimeNS : Time.Time, _unitSize : ?Nat64, _initCycles : ?Nat) : async (canister : PairCanister)
 ```
 
 Create a new trading pair by governance.
@@ -180,6 +181,7 @@ Create a new trading pair by governance.
 Arguments:
 - token0: Principal. Base token canister-id.
 - token1: Principal. Quote token canister-id.
+- openingTimeNS: Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
 - unitSize: ?Nat64. Smallest units of base token when placing an order, the order's quantity must be an integer 
 multiple of UnitSize. See the ICDexPair documentation.
 - initCycles: ?Nat. The initial Cycles amount added to the new canister.

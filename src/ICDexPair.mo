@@ -135,7 +135,8 @@
 /// - Taker-fee: When an order is filled, taker pays a fee based on the filled amount, and fee rate is currently 0.5% by default.
 /// - Vip-maker rebate: When an order is filled, if the maker's role is as a Vip-maker, then he can get a specified percentage of the commission 
 /// paid by the taker as a reward, which may vary from Vip-maker to Vip-maker.
-/// - Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled. 
+/// - Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled, 
+/// This fee is limited to a range from `token fee * 2` to `token fee * 1000`.
 /// No cancellation fee is paid for strategic orders.
 /// - Strategic order
 ///     - Pro-Order: 
@@ -226,8 +227,7 @@
 /// ### IDO
 ///
 /// IDO (Initial DEX Offering), is a mechanism for tokens to be sold to traders or specific parties at the beginning of the token's 
-/// listing on ICDex, which is authorized by owner (DAO) and configured by the Funder of the base token. Note that only trading pairs 
-/// created through owner (DAO) can initiate IDO.
+/// listing on ICDex, which is authorized by owner (DAO) and configured by the Funder of the base token. 
 /// - Configure: 
 ///     - Open IDO: Owner (DAO) calls IDO_setFunder() method of the trading pair to open IDO, set the participation threshold, specify 
 ///     Funder.
@@ -444,7 +444,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.22";
+    private let version_: Text = "0.12.24";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -1790,12 +1790,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     }else{
                         switch(Trie.get(icdex_orders, keyb(txid), Blob.equal)){
                             case(?(order)){
-                                let saga = _getSaga();
-                                let toid = saga.create("cancel", #Forward, ?txid, null);
-                                let ttids = _cancel(toid, txid, ?OrderBook.side(order.orderPrice));
-                                saga.close(toid);
-                                if (ttids.size() == 0){
-                                    ignore saga.doneEmpty(toid);
+                                if (order.status != #Closed and order.status != #Cancelled){ // 240106: This change does not affect the trading functionality, and is to avoid creating empty ICTC transactions.
+                                    let saga = _getSaga();
+                                    let toid = saga.create("cancel", #Forward, ?txid, null);
+                                    let ttids = _cancel(toid, txid, ?OrderBook.side(order.orderPrice));
+                                    saga.close(toid);
+                                    if (ttids.size() == 0){
+                                        ignore saga.doneEmpty(toid);
+                                    };
                                 };
                             };
                             case(_){};
@@ -1975,7 +1977,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var icdexFee: Nat = 0;
         var gas = _getFee0();
         if (_isToken1) { gas := _getFee1(); };
-        var cancelFee = Nat.max(_value * _getTradingFee() / 5 / 1_000_000, gas*2); // charge TradingFee*20%
+        var cancelFee = Nat.min(Nat.max(_value * _getTradingFee() / 5 / 1_000_000, gas*2), gas*1000); // charge TradingFee*20%, limit gas*2 ~ gas*1000
         if (cancelFee > amount){
             icdexFee := amount;
             amount := 0;
@@ -2792,8 +2794,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             status := #Closed;
         }else{ // #Pending
             _pushSortedTxids(txid, expiration);
-            ignore _addPendingOrder(account, txid);
         };
+        ignore _addPendingOrder(account, txid); // 240106: This change does not affect the trading functionality, and is for the front-end to better read state changes.
         // 3. update data
         let saga = _getSaga();
         var toid : Nat = 0;
