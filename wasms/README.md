@@ -1,8 +1,8 @@
 # ICDex Wasm
 
 - ICDexPair Wasm
-    - Module hash: 30d75d7b62b533bf5e7862c0039d1fe9b96106ad93712d3ab20352627bd79064
-    - Version: 0.12.22
+    - Module hash: 06daa8d1cd71b7a6ddc87afb0544181de4b3f4665415b53e85948c52c519578b
+    - Version: 0.12.24
     - DFX version: 0.15.0 (moc 0.9.7)
     - Build: {
         "args": "--compacting-gc"

@@ -198,7 +198,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.20";
+    private let version_: Text = "0.12.21";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -571,11 +571,13 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Arguments:
     /// - token0: Principal. Base token canister-id.
     /// - token1: Principal. Quote token canister-id.
+    /// - openingTimeNS: Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
     /// 
     /// Returns:
     /// - canister: PairCanister. Trading pair canister-id.
-    public shared(msg) func pubCreate(_token0: Principal, _token1: Principal): async (canister: PairCanister){
+    public shared(msg) func pubCreate(_token0: Principal, _token1: Principal, _openingTimeNS: Time.Time): async (canister: PairCanister){
         assert(not(_isExistedByToken(_token0, _token1)));
+        assert(_openingTimeNS > Time.now());
         let token: ICRC1.Self = actor(Principal.toText(sysToken));
         let arg: ICRC1.TransferFromArgs = {
             spender_subaccount = null; // *
@@ -593,9 +595,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 try{
                     let canisterId = await* _create(_token0, _token1, null, null);
                     let pairActor: ICDexPrivate.Self = actor(Principal.toText(canisterId));
-                    ignore await pairActor.setPause(false, null);
+                    ignore await pairActor.setPause(false, ?_openingTimeNS);
                     ignore _putEvent(#createPairByUser({ token0 = _token0; token1 = _token1; pairCanisterId = canisterId }), ?Tools.principalToAccountBlob(msg.caller, null));
-                    ignore _putEvent(#pairStart({ pair = canisterId; message = ?"Pair is launched." }), ?Tools.principalToAccountBlob(Principal.fromActor(this), null));
+                    ignore _putEvent(#pairStart({ pair = canisterId; message = ?("The pair will be launched at timestamp (nanoseconds) "# Int.toText(_openingTimeNS)) }), ?Tools.principalToAccountBlob(Principal.fromActor(this), null));
                     return canisterId;
                 }catch(e){
                     if (creatingPairFee > sysTokenFee){
@@ -666,15 +668,19 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Arguments:
     /// - token0: Principal. Base token canister-id.
     /// - token1: Principal. Quote token canister-id.
+    /// - openingTimeNS: Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
     /// - unitSize: ?Nat64. Smallest units of base token when placing an order, the order's quantity must be an integer 
     /// multiple of UnitSize. See the ICDexPair documentation.
     /// - initCycles: ?Nat. The initial Cycles amount added to the new canister.
     /// 
     /// Returns:
     /// - canister: PairCanister. Trading pair canister-id.
-    public shared(msg) func create(_token0: Principal, _token1: Principal, _unitSize: ?Nat64, _initCycles: ?Nat): async (canister: PairCanister){
+    public shared(msg) func create(_token0: Principal, _token1: Principal, _openingTimeNS: Time.Time, _unitSize: ?Nat64, _initCycles: ?Nat): async (canister: PairCanister){
         assert(_onlyOwner(msg.caller));
+        assert(_openingTimeNS > Time.now());
         let canisterId = await* _create(_token0, _token1, _unitSize, _initCycles);
+        let pairActor: ICDexPrivate.Self = actor(Principal.toText(canisterId));
+        ignore await pairActor.setPause(false, ?_openingTimeNS);
         ignore _putEvent(#createPair({ token0 = _token0; token1 = _token1; unitSize = _unitSize; initCycles = _initCycles; pairCanisterId = canisterId }), ?Tools.principalToAccountBlob(msg.caller, null));
         return canisterId;
     };
