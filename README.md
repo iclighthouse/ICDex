@@ -45,6 +45,7 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
 - args:
     - token0: Principal // base token canister-id
     - token1: Principal // quote token canister-id
+    - openingTimeNS: Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
     - unitSize: ?Nat64 // (optional) UNIT_SIZE: It is the base number of quotes in the trading pair and the minimum quantity to be used when placing an order. The quantity of the order placed must be an integer multiple of UNIT_SIZE. E.g., 1000000
     - initCycles: ?Nat // (optional) The amount of cycles added for the newly created trading pair.
 - returns:
