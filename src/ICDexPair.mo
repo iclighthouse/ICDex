@@ -444,7 +444,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.24";
+    private let version_: Text = "0.12.25";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -5610,6 +5610,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         assert(icdex_totalVol.value1 == 0);
         assert(Trie.size(icdex_orders) == 0);
         assert(Time.now() + 24*3600*ns_ < pairOpeningTime or pairOpeningTime == 0);
+        assert(_setting.IDOClosingTime > Time.now());
         var supply: Nat = 0;
         for (s in _setting.IDOSupplies.vals()){
             supply += s.supply;
@@ -6688,8 +6689,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func timerLoop() : async (){
         _clear();
         _expire();
-        await* _ictcSagaRun(0, false);
-        await* _callDrc205Store(true, false);
+        ignore _getSaga().doneEmpty(0);
+        try{ await* _ictcSagaRun(0, false) }catch(e){};
+        try{ await* _callDrc205Store(true, false) }catch(e){};
+        try{ await _hook_stoWorktop(null, null) }catch(e){};
         // try{ /*Competitions*/
         //     await* _compSettle(activeRound);
         //     compInSettlement := false;

@@ -42,6 +42,7 @@ ICDexMaker; NFT holders of #NEPTUNE have the permission to bind a Vip-maker role
 ### Deploy ICDexRouter
 args:
 - initDAO: Principal.  // Owner (DAO) principal
+- isDebug: Bool
 
 ### (optional) Config ICDexRouter
 - call sys_config()

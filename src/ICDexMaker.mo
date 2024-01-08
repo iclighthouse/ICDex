@@ -260,7 +260,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.9";
+    private let version_: Text = "0.4.10";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1326,6 +1326,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         var list = unitNetValues;
         var startToken0 : Int = 0;
         var startToken1 : Int = 0;
+        var startPrice : Int = _nowPrice; // 240108: The purpose is to get a more accurate valuation.
         var preTs: Timestamp = now;
         var preToken0: Int = _nowToken0;
         var preToken1: Int = _nowToken1;
@@ -1346,6 +1347,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                         let partial: Int = 100 * Int.sub(start, unit.ts) / Int.sub(preTs, unit.ts);
                         startToken0 := unit.token0 + Int.sub(preToken0, unit.token0) * partial / 100;
                         startToken1 := unit.token1 + Int.sub(preToken1, unit.token1) * partial / 100;
+                        startPrice := unit.price + Int.sub(prePrice, unit.price) * partial / 100;
                     };
                 };
                 case(_){ isCompleted := true; };
@@ -1356,8 +1358,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         }else{
             let nowValue0 = _nowToken0 + pairUnitSize * _nowToken1 / _nowPrice;
             let nowValue1 = _nowToken0 * _nowPrice / pairUnitSize + _nowToken1;
-            let startValue0 = startToken0 + pairUnitSize * startToken1 / prePrice;
-            let startValue1 = startToken0 * prePrice / pairUnitSize + startToken1;
+            let startValue0 = startToken0 + pairUnitSize * startToken1 / startPrice;
+            let startValue1 = startToken0 * startPrice / pairUnitSize + startToken1;
             return {
                 token0 = Float.fromInt(nowValue0 - startValue0) / Float.fromInt(startValue0) * Float.fromInt(year) / Float.fromInt(_period);
                 token1 = Float.fromInt(nowValue1 - startValue1) / Float.fromInt(startValue1) * Float.fromInt(year) / Float.fromInt(_period);

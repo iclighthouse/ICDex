@@ -1,8 +1,8 @@
 # ICDex Wasm
 
 - ICDexPair Wasm
-    - Module hash: 06daa8d1cd71b7a6ddc87afb0544181de4b3f4665415b53e85948c52c519578b
-    - Version: 0.12.24
+    - Module hash: 2cbaf623ced768faedeea4a5ce26cce93bf067bf38200d84157b8faa28424b23
+    - Version: 0.12.25
     - DFX version: 0.15.0 (moc 0.9.7)
     - Build: {
         "args": "--compacting-gc"
@@ -10,8 +10,8 @@
     - Wasm tool: ic-wasm 0.7.0, Command `$ ic-wasm ICDexPair.wasm -o ICDexPair.wasm metadata candid:service -f Pair.did -v public`
 
 - ICDexMaker Wasm
-    - Module hash: 17b648f8831c13646747cc25f5b27bec3ddfe5eda05a932c97594f5ce945f9ba
-    - Version: 0.4.9
+    - Module hash: e5eebe5356b0ac132abcb6965644402d72756460d55c6d94ff86ab53affd95d3
+    - Version: 0.4.10
     - DFX version: 0.15.0 (moc 0.9.7)
     - Build: {
         "args": "--compacting-gc", 

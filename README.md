@@ -12,6 +12,7 @@ OrderBook: https://github.com/iclighthouse/ICDex/blob/main/OrderBook.md
 ### 1. Deploy ICDexRouter
 - args:
     - initDAO: Principal.  // Owner (DAO) principal
+    - isDebug: Bool
 
 ### 2. (optional) Config ICDexRouter
 - call sys_config()

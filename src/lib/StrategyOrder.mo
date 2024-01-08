@@ -725,7 +725,7 @@ module {
         if (_price >= midPrice){
             price := midPrice;
             spread := getSpread(#upward, _setting.spread, price);
-            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit){
+            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
                 if (price + spread >= _price + spread){
                     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [price + spread]);
                 };
@@ -735,26 +735,26 @@ module {
                 price := price + spread;
                 spread := getSpread(#upward, _setting.spread, price);
             };
-            if (gridPrice_sell.size() == 0 and _price < upperLimit){
-                midPrice := price;
-                gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
-            };
+            // if (gridPrice_sell.size() == 0 and _price < upperLimit){
+            //     midPrice := price;
+            //     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
+            // };
             price := midPrice;
             spread := getSpread(#downward, _setting.spread, price);
-            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) >= lowerLimit){
+            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
                 if (Nat.sub(price, spread) <= Nat.sub(_price, spread)){
                     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [Nat.sub(price, spread)]);
                 };
                 price := Nat.sub(price, spread);
                 spread := getSpread(#downward, _setting.spread, price);
             };
-            if (gridPrice_buy.size() == 0 and _price > lowerLimit){
-                gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
-            };
+            // if (gridPrice_buy.size() == 0 and _price > lowerLimit){
+            //     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
+            // };
         }else{
             price := midPrice;
             spread := getSpread(#downward, _setting.spread, price);
-            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) >= lowerLimit){
+            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
                 if (Nat.sub(price, spread) <= Nat.sub(_price, spread)){
                     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [Nat.sub(price, spread)]);
                 };
@@ -764,22 +764,22 @@ module {
                 price := Nat.sub(price, spread);
                 spread := getSpread(#downward, _setting.spread, price);
             };
-            if (gridPrice_buy.size() == 0 and _price > lowerLimit){
-                midPrice := price;
-                gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
-            };
+            // if (gridPrice_buy.size() == 0 and _price > lowerLimit){
+            //     midPrice := price;
+            //     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
+            // };
             price := midPrice;
             spread := getSpread(#upward, _setting.spread, price);
-            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit){
+            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
                 if (price + spread >= _price + spread){
                     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [price + spread]);
                 };
                 price := price + spread;
                 spread := getSpread(#upward, _setting.spread, price);
             };
-            if (gridPrice_sell.size() == 0 and _price < upperLimit){
-                gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
-            };
+            // if (gridPrice_sell.size() == 0 and _price < upperLimit){
+            //     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
+            // };
         };
         return {midPrice = ?midPrice; sell = gridPrice_sell; buy = gridPrice_buy};
     };
@@ -1164,9 +1164,9 @@ module {
                     // };
                 };
                 // update data
+                data := updateGridOrder(data, _soid, null, ?prices); // 240108: Solve the issue of not updating `Prices` on boundaries.
                 if (res.size() > 0){
                     data := updateTriggerTime(data, _soid);
-                    data := updateGridOrder(data, _soid, null, ?prices);
                 }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
                     return (data, #Stopped, res, ordersToBeCancel);
                 };
