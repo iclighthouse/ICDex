@@ -104,13 +104,13 @@ Strategy Orders are also known as Algorithmic Orders. The trader configures the 
 trading pair, and when the market price meets the conditions, the trading pair will automatically place trade orders for the trader. 
 Strategy Orders is divided into Pro-Order and Stop-Limit-Order (Stop-Loss-Order).
 - Pro-Order: Grid, Iceberg, VWAP and TWAP orders have been implemented.
-- Stop-Loss-Order: Stop-loss conditional orders have been implemented.
+- Stop-Limit-Order: Stop-loss conditional orders have been implemented.
 Clearly indicate:  
 A `Strategy order` is a strategy rule configuration that does not place a trade order into the order book until it is triggered. 
 A `Trade order` is a real order in the order book and is what is normally referred to as a `Trade`.
 
 Finance reference: (Note: There are some differences in the implementation details of ICDex)
-- Stop-loss Order: https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/stop-loss-order/
+- Stop-limit Order: https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/stop-loss-order/
 - Grid Order: https://www.binance.com/en/support/faq/what-is-spot-grid-trading-and-how-does-it-work-d5f441e8ab544a5b98241e00efb3a4ab
 - Iceberg Order: https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/iceberg-order/
 - VWAP Order: https://en.wikipedia.org/wiki/Volume-weighted_average_price
@@ -142,11 +142,11 @@ No cancellation fee is paid for strategic orders.
     When configuring a pro-order strategy, traders are charged a fixed amount of ICL as a fee (poFee1) and the fee for updating the 
     strategy is poFee1 * 5%. Vip-maker is not be charged poFee1. When the strategy is triggered and the new trade order is closed, the 
     trader is charged the amount of tokens (token0 or token1) he receives multiplied by the rate (poFee2) as a pro-trade fee.
-    - StopLoss-Order: 
-    When configuring a stop-loss-order strategy, traders are charged a fixed amount of ICL as a fee (sloFee1) and the fee for 
+    - Stop-Limit-Order: 
+    When configuring a stop-limit-order strategy, traders are charged a fixed amount of ICL as a fee (sloFee1) and the fee for 
     updating the strategy is sloFee1 * 5%. Vip-maker is not be charged sloFee1. When the strategy is triggered and the new trade order 
     is closed, the trader is charged the amount of tokens (token0 or token1) he receives multiplied by the rate (sloFee2) as a 
-    stop-loss-trade fee.
+    stop-limit-trade fee.
 
 ## 3 Core functionality
 
@@ -206,7 +206,7 @@ sending funds from PoolAccount to Trader's Wallet while decreasing the available
 
 ### Strategy Order
 
-The Strategy Order function is a strategy manager for pro-traders. Strategy Order includes pro-order and stop-loss-order.  
+The Strategy Order function is a strategy manager for pro-traders. Strategy Order includes pro-order and stop-limit-order.  
 The strategy order lifecycle is divided into two segments: 
 1) Configure a strategy: Pro-trader selects a strategy type, configures the strategy parameters and starts a strategy.
 2) Trigger Order: When the latest price of the trading pair changes and meets the conditions of the strategy order, the Strategy Manager 

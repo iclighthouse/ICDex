@@ -83,7 +83,7 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
     name: Text; // Name. e.g. "AAA_BBB AMM-1"
     lowerLimit: Nat; // Lower price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
     upperLimit: Nat; // Upper price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
-    spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
+    spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%. It will create 2 grid strategies, the second strategy has a spreadRate that is 5 times this value.
     threshold: Nat; // token1 (smallest units). e.g. 1_000_000_000_000. After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
     volFactor: Nat; // LP liquidity limit = LP's trading volume * volFactor.  e.g. 2
     creator: ?AccountId; // Specify the creator.
@@ -115,9 +115,9 @@ https://github.com/iclighthouse/ICDex/tree/main/docs
 
 - ICDexRouter (Testnet)
     - Canister-id: pymhy-xyaaa-aaaak-act7a-cai
-    - Module hash: 312be3790818dd9afcddcdba84827b9a04dd48f19d00fd43753f72043f4579bb
-    - Version: 0.12.22
-    - DFX version: 0.15.0 (moc 0.9.7)
+    - Module hash: d9a95324d14c491e15af0e27eccbc70060114fa50314751122625d1bfd5461c5
+    - Version: 0.12.23
+    - DFX version: 0.15.3 (moc 0.10.3)
     - Build: {
         "args": "--compacting-gc"
     }

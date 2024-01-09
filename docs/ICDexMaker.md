@@ -8,7 +8,10 @@
 
 ICDexMaker is ICDex's Automated Market Maker contract (Canister) that provides liquidity to a trading pair. An Automated 
 Market Maker is deployed in a separate canister that is managed by ICDexRouter.  
-ICDexMaker simulates the effect of Uniswap AMM using grid strategy orders. It includes Public Maker and Private Maker:
+ICDexMaker simulates the effect of Uniswap AMM using grid strategy orders. It will create two grid strategies, e.g. if 
+the first grid strategy has a grid spread = 1%, then the second grid strategy will have a grid spread of 5% which is 
+5 times that of the first.
+It includes Public Maker and Private Maker:
 - Public Maker is the public market making pool to which any user (LP) can add liquidity.
 - Private Maker is a private market making pool to which only the creator (LP) can add liquidity.
 Note: The #NEPTUNE NFT holder can bind the ICDexMaker canister-id to a vip-maker on ICDexRouter, then this ICDexMaker can 
@@ -285,7 +288,7 @@ Resturns the amount of pool shares for all users.
 
 ## Function `info`
 ``` motoko no-repl
-func info() : async { version : Text; name : Text; paused : Bool; initialized : Bool; sysTransactionLock : Bool; visibility : {#Public; #Private}; creator : AccountId; withdrawalFee : Float; poolThreshold : Amount; volFactor : Nat; gridSoid : ?Nat; shareDecimals : Nat8; pairInfo : { pairPrincipal : Principal; pairUnitSize : Nat; token0 : (Principal, Text, ICDex.TokenStd); token1 : (Principal, Text, ICDex.TokenStd) }; gridSetting : { gridLowerLimit : Price; gridUpperLimit : Price; gridSpread : Price } }
+func info() : async { version : Text; name : Text; paused : Bool; initialized : Bool; sysTransactionLock : Bool; visibility : {#Public; #Private}; creator : AccountId; withdrawalFee : Float; poolThreshold : Amount; volFactor : Nat; gridSoid : [?Nat]; shareDecimals : Nat8; pairInfo : { pairPrincipal : Principal; pairUnitSize : Nat; token0 : (Principal, Text, ICDex.TokenStd); token1 : (Principal, Text, ICDex.TokenStd) }; gridSetting : { gridLowerLimit : Price; gridUpperLimit : Price; gridSpread : Price } }
 ```
 
 Returns ICDexMaker information.
@@ -351,14 +354,14 @@ Deposit from ICDexMaker local account to TraderAccount in trading pair. This ope
 
 ## Function `deleteGridOrder`
 ``` motoko no-repl
-func deleteGridOrder() : async ()
+func deleteGridOrder(_gridOrder : {#First; #Second}) : async ()
 ```
 
 Deletes the grid order for ICDexMaker.
 
 ## Function `createGridOrder`
 ``` motoko no-repl
-func createGridOrder() : async ()
+func createGridOrder(_gridOrder : {#First; #Second}) : async ()
 ```
 
 Creates a grid order for ICDexMaker.
