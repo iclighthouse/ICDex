@@ -448,12 +448,12 @@ module {
     };
 
     /// GridOrder: Returns trade orders with a PENDING status outside the specified grid price range as invalid orders.
-    public func getInvalidOrders(_orders: [(?Txid, Price, Nat)], _side: {#Buy; #Sell}, _thresholdFirst: Price, _thresholdLast: Price) : [(?Txid, Price, Nat)]{
+    public func getInvalidOrders(_orders: [(?Txid, Price, Nat)], _side: {#Buy; #Sell}, _setting: GridSetting, _thresholdPrice: Price) : [(?Txid, Price, Nat)]{
         var res: [(?Txid, Price, Nat)] = [];
         switch(_side){
             case(#Buy){
-                let valueMin = Nat.sub(Nat.max(_thresholdLast,1), 1);
-                // let valueMax = _thresholdFirst + 1;
+                let spread = getSpread(#downward, _setting.spread, _thresholdPrice) * 3 / 2;
+                let valueMin = Nat.sub(Nat.max(_thresholdPrice, spread), spread);
                 for((optTxid, price, quantity) in _orders.vals()){
                     if (price < valueMin/* or price > valueMax*/){
                         res := OB.arrayAppend(res, [(optTxid, price, quantity)]);
@@ -461,8 +461,8 @@ module {
                 };
             };
             case(#Sell){
-                // let valueMin = Nat.sub(Nat.max(_thresholdFirst,1), 1);
-                let valueMax = _thresholdLast + 1;
+                let spread = getSpread(#upward, _setting.spread, _thresholdPrice) * 3 / 2;
+                let valueMax = _thresholdPrice + spread;
                 for((optTxid, price, quantity) in _orders.vals()){
                     if (/*price < valueMin or */price > valueMax){
                         res := OB.arrayAppend(res, [(optTxid, price, quantity)]);
@@ -712,7 +712,7 @@ module {
     };
 
     /// GridOrder: Returns the currently active grid prices for a grid order strategy.
-    public func getGridPrices(_setting: GridSetting, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
+    public func getGridPrices(_setting: GridSetting, _sto: STOrder, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
         let initPrice = _setting.initPrice;
         let sideSize = _setting.gridCountPerSide;
         let lowerLimit = Option.get(_lowerLimit, _setting.lowerLimit);
@@ -726,11 +726,11 @@ module {
             price := midPrice;
             spread := getSpread(#upward, _setting.spread, price);
             while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
-                if (price + spread >= _price + spread){
+                if (price + spread > _price){ // >= _price + spread
                     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [price + spread]);
                 };
-                if (gridPrice_sell.size() == 1 and price > midPrice + spread){
-                    midPrice := Nat.sub(price, spread);
+                if (gridPrice_sell.size() == 1 and price > midPrice and not(isExistingPrice(/*gridPrice_sell,*/ price, _sto.pendingOrders.sell, _setting))){
+                    midPrice := price;
                 };
                 price := price + spread;
                 spread := getSpread(#upward, _setting.spread, price);
@@ -755,11 +755,11 @@ module {
             price := midPrice;
             spread := getSpread(#downward, _setting.spread, price);
             while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
-                if (Nat.sub(price, spread) <= Nat.sub(_price, spread)){
+                if (Nat.sub(price, spread) < _price){ // <= Nat.sub(_price, spread)
                     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [Nat.sub(price, spread)]);
                 };
-                if (gridPrice_buy.size() == 1 and midPrice > price + spread){
-                    midPrice := price + spread;
+                if (gridPrice_buy.size() == 1 and price < midPrice and not(isExistingPrice(/*gridPrice_buy,*/ price, _sto.pendingOrders.buy, _setting))){
+                    midPrice := price;
                 };
                 price := Nat.sub(price, spread);
                 spread := getSpread(#downward, _setting.spread, price);
@@ -790,7 +790,7 @@ module {
             case(?(po)){
                 switch(po.strategy){
                     case(#GridOrder(grid)){
-                        return getGridPrices(grid.setting, _price, _midPrice, _lowerLimit, _upperLimit);
+                        return getGridPrices(grid.setting, po, _price, _midPrice, _lowerLimit, _upperLimit);
                     };
                     case(_){};
                 };
@@ -1092,11 +1092,11 @@ module {
         switch(sto.strategy){
             case(#GridOrder(grid)){
                 // prices : {midPrice: ?Price; sell: [Price]; buy: [Price]}
-                let prices = getGridPrices(grid.setting, price, grid.gridPrices.midPrice, null, null);
+                let prices = getGridPrices(grid.setting, sto, price, grid.gridPrices.midPrice, null, null);
                 var insufficientBalance : Bool = false;
                 // cancel
                 if (prices.buy.size() > 0){
-                    let invalidOrders = getInvalidOrders(sto.pendingOrders.buy, #Buy, prices.buy[0], prices.buy[Nat.sub(prices.buy.size(),1)]);
+                    let invalidOrders = getInvalidOrders(sto.pendingOrders.buy, #Buy, grid.setting, prices.buy[Nat.sub(prices.buy.size(),1)]);
                     for ((optTxid, price, quantity) in invalidOrders.vals()){
                         switch(optTxid){
                             case(?txid){
@@ -1111,7 +1111,7 @@ module {
                     };
                 };
                 if (prices.sell.size() > 0){
-                    let invalidOrders = getInvalidOrders(sto.pendingOrders.sell, #Sell, prices.sell[0], prices.sell[Nat.sub(prices.sell.size(),1)]);
+                    let invalidOrders = getInvalidOrders(sto.pendingOrders.sell, #Sell, grid.setting, prices.sell[Nat.sub(prices.sell.size(),1)]);
                     for ((optTxid, price, quantity) in invalidOrders.vals()){
                         switch(optTxid){
                             case(?txid){
