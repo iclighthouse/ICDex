@@ -78,14 +78,15 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
 - args: 
 ```
 {
-    pair: Principal; // Trading pair cansiter-id
-    allow: {#Public; #Private}; // Public or Private
-    name: Text; // name, e.g. "AAA_BBB DeMM-1"
-    lowerLimit: Nat; // Price (How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).)
-    upperLimit: Nat; // Price
-    spreadRate: Nat; // ppm. e.g. 10_000 means 0.01
-    threshold: Nat; // e.g. 1_000_000_000_000 token1, After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
-    volFactor: Nat; // e.g. 2
+    pair: Principal; // Trading pair caniser-id.
+    allow: {#Public; #Private}; // Visibility. #Public / #Private.
+    name: Text; // Name. e.g. "AAA_BBB AMM-1"
+    lowerLimit: Nat; // Lower price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
+    upperLimit: Nat; // Upper price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
+    spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
+    threshold: Nat; // token1 (smallest units). e.g. 1_000_000_000_000. After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
+    volFactor: Nat; // LP liquidity limit = LP's trading volume * volFactor.  e.g. 2
+    creator: ?AccountId; // Specify the creator.
 }
 ```
 #### Step 2. Preparing requirements for creating a grid order (with at least one requirement)
@@ -114,8 +115,8 @@ https://github.com/iclighthouse/ICDex/tree/main/docs
 
 - ICDexRouter (Testnet)
     - Canister-id: pymhy-xyaaa-aaaak-act7a-cai
-    - Module hash: 12276010bf5b7bcee72ed5fcf22446555bfb1af679d96cf54a3c5a2bc6be50c7
-    - Version: 0.12.21
+    - Module hash: 312be3790818dd9afcddcdba84827b9a04dd48f19d00fd43753f72043f4579bb
+    - Version: 0.12.22
     - DFX version: 0.15.0 (moc 0.9.7)
     - Build: {
         "args": "--compacting-gc"

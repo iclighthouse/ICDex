@@ -650,7 +650,7 @@ Returns all private automated market makers.
 
 ## Function `maker_create`
 ``` motoko no-repl
-func maker_create(_arg : { pair : Principal; allow : {#Public; #Private}; name : Text; lowerLimit : Nat; upperLimit : Nat; spreadRate : Nat; threshold : Nat; volFactor : Nat }) : async (canister : Principal)
+func maker_create(_arg : { pair : Principal; allow : {#Public; #Private}; name : Text; lowerLimit : Nat; upperLimit : Nat; spreadRate : Nat; threshold : Nat; volFactor : Nat; creator : ?AccountId }) : async (canister : Principal)
 ```
 
 Create a new Automated Market Maker (ICDexMaker).  
@@ -670,6 +670,7 @@ Arguments:
     spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
     threshold: Nat; // token1 (smallest units). e.g. 1_000_000_000_000. After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
     volFactor: Nat; // LP liquidity limit = LP's trading volume * volFactor.  e.g. 2
+    creator: ?AccountId; // Specify the creator.
 }
 ```
 

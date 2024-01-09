@@ -134,7 +134,7 @@ maker receives a commission.
 - Taker-fee: When an order is filled, taker pays a fee based on the filled amount, and fee rate is currently 0.5% by default.
 - Vip-maker rebate: When an order is filled, if the maker's role is as a Vip-maker, then he can get a specified percentage of the commission 
 paid by the taker as a reward, which may vary from Vip-maker to Vip-maker.
-- Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled. 
+- Cancelling-fee: An order canceled within 1 hour of placing it will be charged a fee (Taker_fee * 20%) if nothing is filled, 
 This fee is limited to a range from `token fee * 2` to `token fee * 1000`.
 No cancellation fee is paid for strategic orders.
 - Strategic order

@@ -199,7 +199,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.21";
+    private let version_: Text = "0.12.22";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -2085,6 +2085,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     ///     spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
     ///     threshold: Nat; // token1 (smallest units). e.g. 1_000_000_000_000. After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
     ///     volFactor: Nat; // LP liquidity limit = LP's trading volume * volFactor.  e.g. 2
+    ///     creator: ?AccountId; // Specify the creator.
     /// }
     /// ```
     /// 
@@ -2099,6 +2100,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             spreadRate: Nat; // e.g. 10_000, it means 1%.
             threshold: Nat; // e.g. 1_000_000_000_000
             volFactor: Nat; // e.g. 2
+            creator: ?AccountId;
         }): async (canister: Principal){
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
         assert(_onlyNFTHolder(accountId, null, ?#NEPTUNE) or _onlyNFTHolder(accountId, null, ?#URANUS) or _onlyNFTHolder(accountId, null, ?#SATURN) or _onlyOwner(msg.caller));
@@ -2139,7 +2141,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             let canister = await ic.create_canister({ settings = null });
             let makerCanister = canister.canister_id;
             let args: [Nat8] = Blob.toArray(to_candid({
-                creator = accountId;
+                creator = Option.get(_arg.creator, accountId);
                 allow = _arg.allow;
                 pair = _arg.pair;
                 unitSize = unitSize;

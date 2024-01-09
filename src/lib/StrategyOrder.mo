@@ -1127,26 +1127,31 @@ module {
                 };
                 // pre-order
                 var toBeLockedValue0: Nat = 0;
+                var tempTotalBalance0_sell: Nat = balances.token0.available + balances.token0.locked;
+                var tempTotalBalance1_sell: Nat = balances.token1.available + balances.token1.locked;
                 var toBeLockedValue1: Nat = 0;
+                var tempTotalBalance0_buy: Nat = balances.token0.available + balances.token0.locked;
+                var tempTotalBalance1_buy: Nat = balances.token1.available + balances.token1.locked;
                 for(gridPrice in prices.sell.vals()){
-                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, balance0, balance1, #Sell, _unitSize*10);
+                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, tempTotalBalance0_sell, tempTotalBalance1_sell, #Sell, _unitSize*10);
                     let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
                     let quantity = OB.quantity(orderPrice);
                     if (toBeLockedValue0 + quantity > balances.token0.available){
                         insufficientBalance := true;
                     };
-                    if (quantity >= _unitSize*10 and toBeLockedValue0 + quantity <= balances.token0.available and 
+                    if (quantity >= _unitSize*10 and quantity > 0 and toBeLockedValue0 + quantity <= balances.token0.available and 
                     not(isExistingPrice(grid.gridPrices.sell, gridPrice, sto.pendingOrders.sell, grid.setting))){
                         res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                         data := putPendingOrder(data, _soid, #Sell, (null, gridPrice, quantity));
                         toBeLockedValue0 += quantity;
                     };
-                    // if (pendingValue0 + quantity <= balance0){
-                    //     pendingValue0 += quantity;
-                    // };
+                    if (quantity <= tempTotalBalance0_sell){ // 240109: In order to calculate more accurately
+                        tempTotalBalance0_sell -= quantity;
+                        tempTotalBalance1_sell += quantity * gridPrice / _unitSize;
+                    };
                 };
                 for(gridPrice in prices.buy.vals()){
-                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, balance0, balance1, #Buy, _unitSize*10);
+                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, tempTotalBalance0_buy, tempTotalBalance1_buy, #Buy, _unitSize*10);
                     let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
                     let quantity = OB.quantity(orderPrice);
                     let amount = OB.amount(orderPrice);
@@ -1159,9 +1164,10 @@ module {
                         data := putPendingOrder(data, _soid, #Buy, (null, gridPrice, quantity));
                         toBeLockedValue1 += amount;
                     };
-                    // if (pendingValue1 + amount <= balance1){
-                    //     pendingValue1 += amount;
-                    // };
+                    if (amount <= tempTotalBalance1_buy){ // 240109: In order to calculate more accurately
+                        tempTotalBalance1_buy -= amount;
+                        tempTotalBalance0_buy += quantity;
+                    };
                 };
                 // update data
                 data := updateGridOrder(data, _soid, null, ?prices); // 240108: Solve the issue of not updating `Prices` on boundaries.
