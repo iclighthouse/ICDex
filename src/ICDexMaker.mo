@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.0";
+    private let version_: Text = "0.5.1";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -303,10 +303,10 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     // Grid strategy parameters
     private stable var gridLowerLimit: Price = Nat.max(initArgs.lowerLimit, 1); // Lowest grid price
     private stable var gridUpperLimit: Price = initArgs.upperLimit; // Highest grid price
-    private stable var gridSpread: Nat = Nat.max(initArgs.spreadRate, 10_000); // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
+    private stable var gridSpread: Nat = Nat.max(initArgs.spreadRate, 1_000); // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
     private stable var gridSoid : ?Nat = null; // If the grid order has been successfully created, save the strategy id.
     private stable var gridOrderDeleted : Bool = false; // Grid order is deleted by DAO.
-    private stable var gridSpread2: Nat = Nat.min(Nat.max(initArgs.spreadRate, 10_000) * 5, 250_000); // The second grid order takes a 5x grid spread, with a maximum value of 25%.
+    private stable var gridSpread2: Nat = Nat.min(gridSpread * 5, 250_000); // The second grid order takes a 5x grid spread, with a maximum value of 25%.
     private stable var gridSoid2 : ?Nat = null; 
     private stable var gridOrderDeleted2 : Bool = false; 
     // Events
