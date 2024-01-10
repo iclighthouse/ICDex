@@ -561,7 +561,7 @@ type IDOSetting =
    IDOLimitPerAccount: Amount;
    IDOOpeningTime: Time;
    IDOSupplies: vec record {
-                      price: float64;
+                      price: nat;
                       supply: Amount;
                     };
    IDOTotalSupply: record {

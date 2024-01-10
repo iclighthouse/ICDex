@@ -42,6 +42,7 @@ ICDexMaker; NFT holders of #NEPTUNE have the permission to bind a Vip-maker role
 ### Deploy ICDexRouter
 args:
 - initDAO: Principal.  // Owner (DAO) principal
+- isDebug: Bool
 
 ### (optional) Config ICDexRouter
 - call sys_config()
@@ -649,7 +650,7 @@ Returns all private automated market makers.
 
 ## Function `maker_create`
 ``` motoko no-repl
-func maker_create(_arg : { pair : Principal; allow : {#Public; #Private}; name : Text; lowerLimit : Nat; upperLimit : Nat; spreadRate : Nat; threshold : Nat; volFactor : Nat }) : async (canister : Principal)
+func maker_create(_arg : { pair : Principal; allow : {#Public; #Private}; name : Text; lowerLimit : Nat; upperLimit : Nat; spreadRate : Nat; threshold : Nat; volFactor : Nat; creator : ?AccountId }) : async (canister : Principal)
 ```
 
 Create a new Automated Market Maker (ICDexMaker).  
@@ -666,9 +667,10 @@ Arguments:
     name: Text; // Name. e.g. "AAA_BBB AMM-1"
     lowerLimit: Nat; // Lower price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
     upperLimit: Nat; // Upper price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
-    spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
+    spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%. It will create 2 grid strategies, the second strategy has a spreadRate that is 5 times this value.
     threshold: Nat; // token1 (smallest units). e.g. 1_000_000_000_000. After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
     volFactor: Nat; // LP liquidity limit = LP's trading volume * volFactor.  e.g. 2
+    creator: ?AccountId; // Specify the creator.
 }
 ```
 

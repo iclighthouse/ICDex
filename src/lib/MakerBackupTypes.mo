@@ -58,6 +58,8 @@ module {
             poolShareWeighted: Maker.ShareWeighted;
             gridSoid : ?Nat;
             gridOrderDeleted : Bool;
+            gridSoid2 : ?Nat;
+            gridOrderDeleted2 : Bool;
             blockIndex : Nat;
             firstBlockIndex : Nat;
             ictc_admins: [Principal];

@@ -12,6 +12,7 @@ OrderBook: https://github.com/iclighthouse/ICDex/blob/main/OrderBook.md
 ### 1. Deploy ICDexRouter
 - args:
     - initDAO: Principal.  // Owner (DAO) principal
+    - isDebug: Bool
 
 ### 2. (optional) Config ICDexRouter
 - call sys_config()
@@ -44,6 +45,7 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
 - args:
     - token0: Principal // base token canister-id
     - token1: Principal // quote token canister-id
+    - openingTimeNS: Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
     - unitSize: ?Nat64 // (optional) UNIT_SIZE: It is the base number of quotes in the trading pair and the minimum quantity to be used when placing an order. The quantity of the order placed must be an integer multiple of UNIT_SIZE. E.g., 1000000
     - initCycles: ?Nat // (optional) The amount of cycles added for the newly created trading pair.
 - returns:
@@ -76,14 +78,15 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
 - args: 
 ```
 {
-    pair: Principal; // Trading pair cansiter-id
-    allow: {#Public; #Private}; // Public or Private
-    name: Text; // name, e.g. "AAA_BBB DeMM-1"
-    lowerLimit: Nat; // Price (How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).)
-    upperLimit: Nat; // Price
-    spreadRate: Nat; // ppm. e.g. 10_000 means 0.01
-    threshold: Nat; // e.g. 1_000_000_000_000 token1, After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
-    volFactor: Nat; // e.g. 2
+    pair: Principal; // Trading pair caniser-id.
+    allow: {#Public; #Private}; // Visibility. #Public / #Private.
+    name: Text; // Name. e.g. "AAA_BBB AMM-1"
+    lowerLimit: Nat; // Lower price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
+    upperLimit: Nat; // Upper price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
+    spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%. It will create 2 grid strategies, the second strategy has a spreadRate that is 5 times this value.
+    threshold: Nat; // token1 (smallest units). e.g. 1_000_000_000_000. After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
+    volFactor: Nat; // LP liquidity limit = LP's trading volume * volFactor.  e.g. 2
+    creator: ?AccountId; // Specify the creator.
 }
 ```
 #### Step 2. Preparing requirements for creating a grid order (with at least one requirement)
@@ -112,9 +115,9 @@ https://github.com/iclighthouse/ICDex/tree/main/docs
 
 - ICDexRouter (Testnet)
     - Canister-id: pymhy-xyaaa-aaaak-act7a-cai
-    - Module hash: 12276010bf5b7bcee72ed5fcf22446555bfb1af679d96cf54a3c5a2bc6be50c7
-    - Version: 0.12.21
-    - DFX version: 0.15.0 (moc 0.9.7)
+    - Module hash: d9a95324d14c491e15af0e27eccbc70060114fa50314751122625d1bfd5461c5
+    - Version: 0.12.23
+    - DFX version: 0.15.3 (moc 0.10.3)
     - Build: {
         "args": "--compacting-gc"
     }

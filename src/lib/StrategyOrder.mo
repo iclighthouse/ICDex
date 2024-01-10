@@ -448,12 +448,12 @@ module {
     };
 
     /// GridOrder: Returns trade orders with a PENDING status outside the specified grid price range as invalid orders.
-    public func getInvalidOrders(_orders: [(?Txid, Price, Nat)], _side: {#Buy; #Sell}, _thresholdFirst: Price, _thresholdLast: Price) : [(?Txid, Price, Nat)]{
+    public func getInvalidOrders(_orders: [(?Txid, Price, Nat)], _side: {#Buy; #Sell}, _setting: GridSetting, _thresholdPrice: Price) : [(?Txid, Price, Nat)]{
         var res: [(?Txid, Price, Nat)] = [];
         switch(_side){
             case(#Buy){
-                let valueMin = Nat.sub(Nat.max(_thresholdLast,1), 1);
-                // let valueMax = _thresholdFirst + 1;
+                let spread = getSpread(#downward, _setting.spread, _thresholdPrice) * 3 / 2;
+                let valueMin = Nat.sub(Nat.max(_thresholdPrice, spread), spread);
                 for((optTxid, price, quantity) in _orders.vals()){
                     if (price < valueMin/* or price > valueMax*/){
                         res := OB.arrayAppend(res, [(optTxid, price, quantity)]);
@@ -461,8 +461,8 @@ module {
                 };
             };
             case(#Sell){
-                // let valueMin = Nat.sub(Nat.max(_thresholdFirst,1), 1);
-                let valueMax = _thresholdLast + 1;
+                let spread = getSpread(#upward, _setting.spread, _thresholdPrice) * 3 / 2;
+                let valueMax = _thresholdPrice + spread;
                 for((optTxid, price, quantity) in _orders.vals()){
                     if (/*price < valueMin or */price > valueMax){
                         res := OB.arrayAppend(res, [(optTxid, price, quantity)]);
@@ -474,19 +474,19 @@ module {
     };
 
     /// GridOrder: Determines whether a grid price exists within the current active grid price range.
-    public func isExistingPrice(_prices: [Price], _price: Price, _pendingOrders: [(?Txid, Price, Nat)], _spreadSetting: STO.GridOrderSetting) : Bool{
+    public func isExistingPrice(/*_prices: [Price],*/ _price: Price, _pendingOrders: [(?Txid, Price, Nat)], _spreadSetting: STO.GridOrderSetting) : Bool{
         // update-231226: fix a issue that will be over-ordered under special circumstances. Solution: Modified filtering policy.
-        if (_prices.size() > 0){
+        // if (_prices.size() > 0){
             let hSpread = getSpread(#upward, _spreadSetting.spread, _price) / 2;
-            let vFirst = Nat.max(_prices[0], hSpread); // > 0
-            let vLast = Nat.max(_prices[Nat.sub(_prices.size(),1)], hSpread); // > 0
-            let min = Nat.sub(Nat.min(vFirst, vLast), hSpread);
-            let max = Nat.max(vFirst, vLast) + hSpread;
-            return (_price >= min and _price <= max) or Option.isSome(Array.find(_pendingOrders, func (t: (?Txid, Price, Nat)): Bool{
+            // let vFirst = Nat.max(_prices[0], hSpread); // > 0
+            // let vLast = Nat.max(_prices[Nat.sub(_prices.size(),1)], hSpread); // > 0
+            // let min = Nat.sub(Nat.min(vFirst, vLast), hSpread);
+            // let max = Nat.max(vFirst, vLast) + hSpread;
+            return Option.isSome(Array.find(_pendingOrders, func (t: (?Txid, Price, Nat)): Bool{
                 _price >= Nat.sub(Nat.max(t.1, hSpread/2), hSpread/2) and _price <= t.1 + hSpread/2;
             }));
-        };
-        return false;
+        // };
+        // return false;
     };
     
     /// Returns the number of pro-orders for a trader.
@@ -712,7 +712,7 @@ module {
     };
 
     /// GridOrder: Returns the currently active grid prices for a grid order strategy.
-    public func getGridPrices(_setting: GridSetting, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
+    public func getGridPrices(_setting: GridSetting, _sto: STOrder, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
         let initPrice = _setting.initPrice;
         let sideSize = _setting.gridCountPerSide;
         let lowerLimit = Option.get(_lowerLimit, _setting.lowerLimit);
@@ -725,61 +725,61 @@ module {
         if (_price >= midPrice){
             price := midPrice;
             spread := getSpread(#upward, _setting.spread, price);
-            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit){
-                if (price + spread >= _price + spread){
+            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
+                if (price + spread > _price){ // >= _price + spread
                     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [price + spread]);
                 };
-                if (gridPrice_sell.size() == 1){
+                if (gridPrice_sell.size() == 1 and price > midPrice and not(isExistingPrice(/*gridPrice_sell,*/ price, _sto.pendingOrders.sell, _setting))){
                     midPrice := price;
                 };
                 price := price + spread;
                 spread := getSpread(#upward, _setting.spread, price);
             };
-            if (gridPrice_sell.size() == 0 and _price < upperLimit){
-                midPrice := price;
-                gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
-            };
+            // if (gridPrice_sell.size() == 0 and _price < upperLimit){
+            //     midPrice := price;
+            //     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
+            // };
             price := midPrice;
             spread := getSpread(#downward, _setting.spread, price);
-            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) >= lowerLimit){
+            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
                 if (Nat.sub(price, spread) <= Nat.sub(_price, spread)){
                     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [Nat.sub(price, spread)]);
                 };
                 price := Nat.sub(price, spread);
                 spread := getSpread(#downward, _setting.spread, price);
             };
-            if (gridPrice_buy.size() == 0 and _price > lowerLimit){
-                gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
-            };
+            // if (gridPrice_buy.size() == 0 and _price > lowerLimit){
+            //     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
+            // };
         }else{
             price := midPrice;
             spread := getSpread(#downward, _setting.spread, price);
-            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) >= lowerLimit){
-                if (Nat.sub(price, spread) <= Nat.sub(_price, spread)){
+            while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
+                if (Nat.sub(price, spread) < _price){ // <= Nat.sub(_price, spread)
                     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [Nat.sub(price, spread)]);
                 };
-                if (gridPrice_buy.size() == 1){
+                if (gridPrice_buy.size() == 1 and price < midPrice and not(isExistingPrice(/*gridPrice_buy,*/ price, _sto.pendingOrders.buy, _setting))){
                     midPrice := price;
                 };
                 price := Nat.sub(price, spread);
                 spread := getSpread(#downward, _setting.spread, price);
             };
-            if (gridPrice_buy.size() == 0 and _price > lowerLimit){
-                midPrice := price;
-                gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
-            };
+            // if (gridPrice_buy.size() == 0 and _price > lowerLimit){
+            //     midPrice := price;
+            //     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [lowerLimit]);
+            // };
             price := midPrice;
             spread := getSpread(#upward, _setting.spread, price);
-            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit){
+            while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
                 if (price + spread >= _price + spread){
                     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [price + spread]);
                 };
                 price := price + spread;
                 spread := getSpread(#upward, _setting.spread, price);
             };
-            if (gridPrice_sell.size() == 0 and _price < upperLimit){
-                gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
-            };
+            // if (gridPrice_sell.size() == 0 and _price < upperLimit){
+            //     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [upperLimit]);
+            // };
         };
         return {midPrice = ?midPrice; sell = gridPrice_sell; buy = gridPrice_buy};
     };
@@ -790,7 +790,7 @@ module {
             case(?(po)){
                 switch(po.strategy){
                     case(#GridOrder(grid)){
-                        return getGridPrices(grid.setting, _price, _midPrice, _lowerLimit, _upperLimit);
+                        return getGridPrices(grid.setting, po, _price, _midPrice, _lowerLimit, _upperLimit);
                     };
                     case(_){};
                 };
@@ -1092,11 +1092,11 @@ module {
         switch(sto.strategy){
             case(#GridOrder(grid)){
                 // prices : {midPrice: ?Price; sell: [Price]; buy: [Price]}
-                let prices = getGridPrices(grid.setting, price, grid.gridPrices.midPrice, null, null);
+                let prices = getGridPrices(grid.setting, sto, price, grid.gridPrices.midPrice, null, null);
                 var insufficientBalance : Bool = false;
                 // cancel
                 if (prices.buy.size() > 0){
-                    let invalidOrders = getInvalidOrders(sto.pendingOrders.buy, #Buy, prices.buy[0], prices.buy[Nat.sub(prices.buy.size(),1)]);
+                    let invalidOrders = getInvalidOrders(sto.pendingOrders.buy, #Buy, grid.setting, prices.buy[Nat.sub(prices.buy.size(),1)]);
                     for ((optTxid, price, quantity) in invalidOrders.vals()){
                         switch(optTxid){
                             case(?txid){
@@ -1111,7 +1111,7 @@ module {
                     };
                 };
                 if (prices.sell.size() > 0){
-                    let invalidOrders = getInvalidOrders(sto.pendingOrders.sell, #Sell, prices.sell[0], prices.sell[Nat.sub(prices.sell.size(),1)]);
+                    let invalidOrders = getInvalidOrders(sto.pendingOrders.sell, #Sell, grid.setting, prices.sell[Nat.sub(prices.sell.size(),1)]);
                     for ((optTxid, price, quantity) in invalidOrders.vals()){
                         switch(optTxid){
                             case(?txid){
@@ -1127,26 +1127,31 @@ module {
                 };
                 // pre-order
                 var toBeLockedValue0: Nat = 0;
+                var tempTotalBalance0_sell: Nat = balances.token0.available + balances.token0.locked;
+                var tempTotalBalance1_sell: Nat = balances.token1.available + balances.token1.locked;
                 var toBeLockedValue1: Nat = 0;
+                var tempTotalBalance0_buy: Nat = balances.token0.available + balances.token0.locked;
+                var tempTotalBalance1_buy: Nat = balances.token1.available + balances.token1.locked;
                 for(gridPrice in prices.sell.vals()){
-                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, balance0, balance1, #Sell, _unitSize*10);
+                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, tempTotalBalance0_sell, tempTotalBalance1_sell, #Sell, _unitSize*10);
                     let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
                     let quantity = OB.quantity(orderPrice);
                     if (toBeLockedValue0 + quantity > balances.token0.available){
                         insufficientBalance := true;
                     };
-                    if (quantity >= _unitSize*10 and toBeLockedValue0 + quantity <= balances.token0.available and 
-                    not(isExistingPrice(grid.gridPrices.sell, gridPrice, sto.pendingOrders.sell, grid.setting))){
+                    if (quantity >= _unitSize*10 and quantity > 0 and toBeLockedValue0 + quantity <= balances.token0.available and 
+                    not(isExistingPrice(/*grid.gridPrices.sell,*/ gridPrice, sto.pendingOrders.sell, grid.setting))){
                         res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                         data := putPendingOrder(data, _soid, #Sell, (null, gridPrice, quantity));
                         toBeLockedValue0 += quantity;
                     };
-                    // if (pendingValue0 + quantity <= balance0){
-                    //     pendingValue0 += quantity;
-                    // };
+                    if (quantity <= tempTotalBalance0_sell){ // 240109: In order to calculate more accurately
+                        tempTotalBalance0_sell -= quantity;
+                        tempTotalBalance1_sell += quantity * gridPrice / _unitSize;
+                    };
                 };
                 for(gridPrice in prices.buy.vals()){
-                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, balance0, balance1, #Buy, _unitSize*10);
+                    let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, tempTotalBalance0_buy, tempTotalBalance1_buy, #Buy, _unitSize*10);
                     let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
                     let quantity = OB.quantity(orderPrice);
                     let amount = OB.amount(orderPrice);
@@ -1154,19 +1159,20 @@ module {
                         insufficientBalance := true;
                     };
                     if (quantity >= _unitSize*10 and amount > 0 and toBeLockedValue1 + amount <= balances.token1.available and 
-                    not(isExistingPrice(grid.gridPrices.buy, gridPrice, sto.pendingOrders.buy, grid.setting))){
+                    not(isExistingPrice(/*grid.gridPrices.buy,*/ gridPrice, sto.pendingOrders.buy, grid.setting))){
                         res := Tools.arrayAppend(res, [(_soid, sto.icrc1Account, orderPrice)]);
                         data := putPendingOrder(data, _soid, #Buy, (null, gridPrice, quantity));
                         toBeLockedValue1 += amount;
                     };
-                    // if (pendingValue1 + amount <= balance1){
-                    //     pendingValue1 += amount;
-                    // };
+                    if (amount <= tempTotalBalance1_buy){ // 240109: In order to calculate more accurately
+                        tempTotalBalance1_buy -= amount;
+                        tempTotalBalance0_buy += quantity;
+                    };
                 };
                 // update data
+                data := updateGridOrder(data, _soid, null, ?prices); // 240108: Solve the issue of not updating `Prices` on boundaries.
                 if (res.size() > 0){
                     data := updateTriggerTime(data, _soid);
-                    data := updateGridOrder(data, _soid, null, ?prices);
                 }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
                     return (data, #Stopped, res, ordersToBeCancel);
                 };

@@ -43,6 +43,7 @@
 /// ### Deploy ICDexRouter
 /// args:
 /// - initDAO: Principal.  // Owner (DAO) principal
+/// - isDebug: Bool
 ///
 /// ### (optional) Config ICDexRouter
 /// - call sys_config()
@@ -198,7 +199,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.21";
+    private let version_: Text = "0.12.23";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -2081,9 +2082,10 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     ///     name: Text; // Name. e.g. "AAA_BBB AMM-1"
     ///     lowerLimit: Nat; // Lower price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
     ///     upperLimit: Nat; // Upper price limit. How much token1 (smallest units) are needed to purchase UNIT_SIZE token0 (smallest units).
-    ///     spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
+    ///     spreadRate: Nat; // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%. It will create 2 grid strategies, the second strategy has a spreadRate that is 5 times this value.
     ///     threshold: Nat; // token1 (smallest units). e.g. 1_000_000_000_000. After the total liquidity exceeds this threshold, the LP adds liquidity up to a limit of volFactor times his trading volume.
     ///     volFactor: Nat; // LP liquidity limit = LP's trading volume * volFactor.  e.g. 2
+    ///     creator: ?AccountId; // Specify the creator.
     /// }
     /// ```
     /// 
@@ -2098,6 +2100,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             spreadRate: Nat; // e.g. 10_000, it means 1%.
             threshold: Nat; // e.g. 1_000_000_000_000
             volFactor: Nat; // e.g. 2
+            creator: ?AccountId;
         }): async (canister: Principal){
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
         assert(_onlyNFTHolder(accountId, null, ?#NEPTUNE) or _onlyNFTHolder(accountId, null, ?#URANUS) or _onlyNFTHolder(accountId, null, ?#SATURN) or _onlyOwner(msg.caller));
@@ -2138,7 +2141,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             let canister = await ic.create_canister({ settings = null });
             let makerCanister = canister.canister_id;
             let args: [Nat8] = Blob.toArray(to_candid({
-                creator = accountId;
+                creator = Option.get(_arg.creator, accountId);
                 allow = _arg.allow;
                 pair = _arg.pair;
                 unitSize = unitSize;
@@ -2365,7 +2368,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         assert(_onlyOwner(msg.caller) or (not(_isPublicMaker(_pair, _maker)) and _OnlyMakerCreator(_pair, _maker, accountId)));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
         let paused = await makerActor.setPause(true);
-        await makerActor.deleteGridOrder();
+        await makerActor.deleteGridOrder(#First);
+        await makerActor.deleteGridOrder(#Second);
         await makerActor.cancelAllOrders();
         ignore await makerActor.setPause(false);
         _removePublicMaker(_pair, _maker);
@@ -2452,18 +2456,18 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     };
 
     /// Deletes grid order from Automated Market Maker (ICDexMaker).
-    public shared(msg) func maker_deleteGridOrder(_maker: Principal) : async (){ 
+    public shared(msg) func maker_deleteGridOrder(_maker: Principal, _gridOrder: {#First; #Second}) : async (){ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.deleteGridOrder();
+        await makerActor.deleteGridOrder(_gridOrder);
         ignore _putEvent(#makerDeleteGridOrder({ maker = _maker; }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
     /// Creates a grid order for Automated Market Maker (ICDexMaker) on the trading pair.
-    public shared(msg) func maker_createGridOrder(_maker: Principal) : async (){ 
+    public shared(msg) func maker_createGridOrder(_maker: Principal, _gridOrder: {#First; #Second}) : async (){ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        await makerActor.createGridOrder();
+        await makerActor.createGridOrder(_gridOrder);
         ignore _putEvent(#makerCreateGridOrder({ maker = _maker; }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 

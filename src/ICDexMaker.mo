@@ -9,7 +9,10 @@
 ///
 /// ICDexMaker is ICDex's Automated Market Maker contract (Canister) that provides liquidity to a trading pair. An Automated 
 /// Market Maker is deployed in a separate canister that is managed by ICDexRouter.  
-/// ICDexMaker simulates the effect of Uniswap AMM using grid strategy orders. It includes Public Maker and Private Maker:
+/// ICDexMaker simulates the effect of Uniswap AMM using grid strategy orders. It will create two grid strategies, e.g. if 
+/// the first grid strategy has a grid spread = 1%, then the second grid strategy will have a grid spread of 5% which is 
+/// 5 times that of the first.
+/// It includes Public Maker and Private Maker:
 /// - Public Maker is the public market making pool to which any user (LP) can add liquidity.
 /// - Private Maker is a private market making pool to which only the creator (LP) can add liquidity.
 /// Note: The #NEPTUNE NFT holder can bind the ICDexMaker canister-id to a vip-maker on ICDexRouter, then this ICDexMaker can 
@@ -260,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.4.9";
+    private let version_: Text = "0.5.1";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -300,9 +303,12 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     // Grid strategy parameters
     private stable var gridLowerLimit: Price = Nat.max(initArgs.lowerLimit, 1); // Lowest grid price
     private stable var gridUpperLimit: Price = initArgs.upperLimit; // Highest grid price
-    private stable var gridSpread: Nat = Nat.max(initArgs.spreadRate, 100); // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
+    private stable var gridSpread: Nat = Nat.max(initArgs.spreadRate, 1_000); // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
     private stable var gridSoid : ?Nat = null; // If the grid order has been successfully created, save the strategy id.
     private stable var gridOrderDeleted : Bool = false; // Grid order is deleted by DAO.
+    private stable var gridSpread2: Nat = Nat.min(gridSpread * 5, 250_000); // The second grid order takes a 5x grid spread, with a maximum value of 25%.
+    private stable var gridSoid2 : ?Nat = null; 
+    private stable var gridOrderDeleted2 : Bool = false; 
     // Events
     private stable var blockIndex : ICEvents.BlockHeight = 0;
     private stable var firstBlockIndex : ICEvents.BlockHeight = 0;
@@ -902,36 +908,65 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Push a task of creating a grid order to ICTC
-    private func _ictcCreateGridOrder(_toid: Nat): (ttid: Nat){
+    private func _ictcCreateGridOrder(_gridOrder: {#First; #Second}, _toid: Nat): (ttid: Nat){
         let saga = _getSaga();
-        let task = _buildTask(null, pairPrincipal, #StratOrder(#sto_createProOrder(#GridOrder({
-                lowerLimit = gridLowerLimit;
-                upperLimit = gridUpperLimit;
-                spread = #Geom(gridSpread);
-                amount = #Percent(null);
-            }), null)), []);
-        let comp = _buildTask(null, pairPrincipal, #__skip, []);
-        // Assign soid to gridSoid when the task is completed
-        return saga.push(_toid, task, ?comp, ?(func(_toName: Text, _ttid: SagaTM.Ttid, _task: SagaTM.Task, _result: SagaTM.TaskResult) : async (){
-            switch(_result.0, _result.1, _result.2){
-                case(#Done, ?(#StratOrder(#sto_createProOrder(soid))), _){ gridSoid := ?soid };
-                case(_, _, _){};
-            };
-        }));
+        if (_gridOrder == #First){
+            let task = _buildTask(null, pairPrincipal, #StratOrder(#sto_createProOrder(#GridOrder({
+                    lowerLimit = gridLowerLimit;
+                    upperLimit = gridUpperLimit;
+                    spread = #Geom(gridSpread);
+                    amount = #Percent(null);
+                }), null)), []);
+            let comp = _buildTask(null, pairPrincipal, #__skip, []);
+            // Assign soid to gridSoid when the task is completed
+            return saga.push(_toid, task, ?comp, ?(func(_toName: Text, _ttid: SagaTM.Ttid, _task: SagaTM.Task, _result: SagaTM.TaskResult) : async (){
+                switch(_result.0, _result.1, _result.2){
+                    case(#Done, ?(#StratOrder(#sto_createProOrder(soid))), _){ gridSoid := ?soid };
+                    case(_, _, _){};
+                };
+            }));
+        }else{
+            let task = _buildTask(null, pairPrincipal, #StratOrder(#sto_createProOrder(#GridOrder({
+                    lowerLimit = gridLowerLimit;
+                    upperLimit = gridUpperLimit;
+                    spread = #Geom(gridSpread2);
+                    amount = #Percent(null);
+                }), null)), []);
+            let comp = _buildTask(null, pairPrincipal, #__skip, []);
+            // Assign soid to gridSoid when the task is completed
+            return saga.push(_toid, task, ?comp, ?(func(_toName: Text, _ttid: SagaTM.Ttid, _task: SagaTM.Task, _result: SagaTM.TaskResult) : async (){
+                switch(_result.0, _result.1, _result.2){
+                    case(#Done, ?(#StratOrder(#sto_createProOrder(soid))), _){ gridSoid2 := ?soid };
+                    case(_, _, _){};
+                };
+            }));
+        };
     };
 
     // Push a task of updating a grid order to ICTC
-    private func _ictcUpdateGridOrder(_toid: Nat, _status: STO.STStatus): (ttid: Nat){
+    private func _ictcUpdateGridOrder(_gridOrder: {#First; #Second}, _toid: Nat, _status: STO.STStatus): (ttid: Nat){
         let saga = _getSaga();
-        let task = _buildTask(null, pairPrincipal, #StratOrder(#sto_updateProOrder(Option.get(gridSoid, 0), #GridOrder({
-                lowerLimit = ?gridLowerLimit;
-                upperLimit = ?gridUpperLimit;
-                spread = ?#Geom(gridSpread);
-                amount = ?#Percent(null);
-                status = ?_status;
-            }), null)), []);
-        let comp = _buildTask(null, pairPrincipal, #__skip, []);
-        return saga.push(_toid, task, ?comp, null);
+        if (_gridOrder == #First){
+            let task = _buildTask(null, pairPrincipal, #StratOrder(#sto_updateProOrder(Option.get(gridSoid, 0), #GridOrder({
+                    lowerLimit = ?gridLowerLimit;
+                    upperLimit = ?gridUpperLimit;
+                    spread = ?#Geom(gridSpread);
+                    amount = ?#Percent(null);
+                    status = ?_status;
+                }), null)), []);
+            let comp = _buildTask(null, pairPrincipal, #__skip, []);
+            return saga.push(_toid, task, ?comp, null);
+        }else{
+            let task = _buildTask(null, pairPrincipal, #StratOrder(#sto_updateProOrder(Option.get(gridSoid2, 0), #GridOrder({
+                    lowerLimit = ?gridLowerLimit;
+                    upperLimit = ?gridUpperLimit;
+                    spread = ?#Geom(gridSpread2);
+                    amount = ?#Percent(null);
+                    status = ?_status;
+                }), null)), []);
+            let comp = _buildTask(null, pairPrincipal, #__skip, []);
+            return saga.push(_toid, task, ?comp, null);
+        };
     };
 
     // Fetch the volume of an account in a trading pair
@@ -1283,12 +1318,21 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         // grid order task
         if (_updateGrid){
             if (Option.isNull(gridSoid) and not(gridOrderDeleted)){
-                let ttid2 = _ictcCreateGridOrder(toid);
+                let ttid2 = _ictcCreateGridOrder(#First, toid);
                 ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
                 ttidSize += 1;
             }else if (not(gridOrderDeleted) and (_token0 > poolBalance.balance0 / 5 or _token1 > poolBalance.balance1 / 5)){
-                let ttid3 = _ictcUpdateGridOrder(toid, #Running);
+                let ttid3 = _ictcUpdateGridOrder(#First, toid, #Running);
                 ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_accountId);
+                ttidSize += 1;
+            };
+            if (Option.isNull(gridSoid2) and not(gridOrderDeleted2)){
+                let ttid4 = _ictcCreateGridOrder(#Second, toid);
+                ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
+                ttidSize += 1;
+            }else if (not(gridOrderDeleted2) and (_token0 > poolBalance.balance0 / 5 or _token1 > poolBalance.balance1 / 5)){
+                let ttid5 = _ictcUpdateGridOrder(#Second, toid, #Running);
+                ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_accountId);
                 ttidSize += 1;
             };
         };
@@ -1302,9 +1346,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
 
     // Pushes a transaction to ICTC to update the grid order, returning the transaction id.
     // update-231217: Change transaction #Forward to #Backward to enable automatic compensation on exceptions so that ICDexMaker is not suspended.
-    private func _updateGridOrder(_accountId: AccountId, _token0: Amount, _token1: Amount) : SagaTM.Toid{ // sysTransactionLock
-        return _depositToDex(_accountId, _token0, _token1, true);
-    };
+    // private func _updateGridOrder(_accountId: AccountId, _token0: Amount, _token1: Amount) : SagaTM.Toid{ // sysTransactionLock
+    //     return _depositToDex(_accountId, _token0, _token1, true);
+    // };
 
     // Updates the amount of liquidity an account has utilized.
     private func _updateAccountVolUsed(_accountId: AccountId, _addVol: Amount): (){ // Amount of token1
@@ -1326,6 +1370,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         var list = unitNetValues;
         var startToken0 : Int = 0;
         var startToken1 : Int = 0;
+        var startPrice : Int = _nowPrice; // 240108: The purpose is to get a more accurate valuation.
         var preTs: Timestamp = now;
         var preToken0: Int = _nowToken0;
         var preToken1: Int = _nowToken1;
@@ -1346,6 +1391,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                         let partial: Int = 100 * Int.sub(start, unit.ts) / Int.sub(preTs, unit.ts);
                         startToken0 := unit.token0 + Int.sub(preToken0, unit.token0) * partial / 100;
                         startToken1 := unit.token1 + Int.sub(preToken1, unit.token1) * partial / 100;
+                        startPrice := unit.price + Int.sub(prePrice, unit.price) * partial / 100;
                     };
                 };
                 case(_){ isCompleted := true; };
@@ -1356,8 +1402,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         }else{
             let nowValue0 = _nowToken0 + pairUnitSize * _nowToken1 / _nowPrice;
             let nowValue1 = _nowToken0 * _nowPrice / pairUnitSize + _nowToken1;
-            let startValue0 = startToken0 + pairUnitSize * startToken1 / prePrice;
-            let startValue1 = startToken0 * prePrice / pairUnitSize + startToken1;
+            let startValue0 = startToken0 + pairUnitSize * startToken1 / startPrice;
+            let startValue1 = startToken0 * startPrice / pairUnitSize + startToken1;
             return {
                 token0 = Float.fromInt(nowValue0 - startValue0) / Float.fromInt(startValue0) * Float.fromInt(year) / Float.fromInt(_period);
                 token1 = Float.fromInt(nowValue1 - startValue1) / Float.fromInt(startValue1) * Float.fromInt(year) / Float.fromInt(_period);
@@ -1630,8 +1676,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             if (poolLocalBalance.balance0 > poolBalance.balance0 * 10 / 100 or poolLocalBalance.balance1 > poolBalance.balance1 * 10 / 100){ 
                 let value0 = Nat.sub(Nat.max(poolLocalBalance.balance0, poolBalance.balance0 * 5 / 100), poolBalance.balance0 * 5 / 100); // fixed a bug
                 let value1 = Nat.sub(Nat.max(poolLocalBalance.balance1, poolBalance.balance1 * 5 / 100), poolBalance.balance1 * 5 / 100); // fixed a bug
-                if (not(gridOrderDeleted) and (value0 > token0Fee * 2 or value1 > token1Fee * 2)){
-                    let toid = _updateGridOrder(_account, value0, value1); // sysTransactionLock
+                if (not(gridOrderDeleted and gridOrderDeleted2) and (value0 > token0Fee * 2 or value1 > token1Fee * 2)){
+                    let toid = _depositToDex(_account, value0, value1, true); // sysTransactionLock
                     gridToid := toid;
                     toids := Tools.arrayAppend(toids, [toid]);
                 };
@@ -1706,10 +1752,13 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             throw Error.reject("401: The system transaction is locked, please try again later."); 
         };
         var values = _sharesToAmount(_shares);
+        var shouldRunGridOrder1: Bool = false;
+        var shouldRunGridOrder2: Bool = false;
         if (not(gridOrderDeleted) and (values.value0 > available0InPool or values.value1 > available1InPool)){
             let toid = saga.create("stop_gridOrder", #Backward, null, null); // Change transaction #Forward to #Backward
-            let ttid = _ictcUpdateGridOrder(toid, #Stopped);
+            let ttid = _ictcUpdateGridOrder(#First, toid, #Stopped);
             await* _ictcSagaRun(toid, true);
+            shouldRunGridOrder1 := true;
             try{
                 let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
                 available0InPool := v0;
@@ -1718,9 +1767,23 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 sysTransactionLock := false;
                 throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
             };
-            if (values.value0 > available0InPool or values.value1 > available1InPool){
-                throw Error.reject("414: The number of shares entered is not available."); 
+        };
+        if (not(gridOrderDeleted2) and (values.value0 > available0InPool or values.value1 > available1InPool)){
+            let toid = saga.create("stop_gridOrder2", #Backward, null, null); // Change transaction #Forward to #Backward
+            let ttid = _ictcUpdateGridOrder(#Second, toid, #Stopped);
+            await* _ictcSagaRun(toid, true);
+            shouldRunGridOrder2 := true;
+            try{
+                let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
+                available0InPool := v0;
+                available1InPool := v1;
+            }catch(e){
+                sysTransactionLock := false;
+                throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
             };
+        };
+        if (values.value0 > available0InPool or values.value1 > available1InPool){
+            throw Error.reject("414: The number of shares entered is not available. Try to reduce the number of shares."); 
         };
         // shares to amounts (Fee: 10 * tokenFee + 0.01% * Value)
         values := _sharesToAmount(_shares);
@@ -1757,9 +1820,13 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
             ignore _putEvent(#withdraw({account=_icrc1Account; token0=resValue0; token1=resValue1; toid=?toid}), ?_account);
             // update grid order
-            if (not(gridOrderDeleted) and (resValue0 > poolBalance.balance0 / 5 or resValue1 > poolBalance.balance1 / 5)){
-                let ttid2 = _ictcUpdateGridOrder(toid, #Running);
+            if (not(gridOrderDeleted) and (shouldRunGridOrder1 or resValue0 > poolBalance.balance0 / 5 or resValue1 > poolBalance.balance1 / 5)){
+                let ttid2 = _ictcUpdateGridOrder(#First, toid, #Running);
                 ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_account);
+            };
+            if (not(gridOrderDeleted2) and (shouldRunGridOrder2 or resValue0 > poolBalance.balance0 / 5 or resValue1 > poolBalance.balance1 / 5)){
+                let ttid2 = _ictcUpdateGridOrder(#Second, toid, #Running);
+                ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_account);
             };
             saga.close(toid);
             ignore _putEvent(#remove(#ok({account = _icrc1Account; shares = _shares; token0 = resValue0; token1 = resValue1; toid=?toid})), ?_account);
@@ -1814,7 +1881,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         withdrawalFee: Float;
         poolThreshold: Amount;
         volFactor: Nat; // token1
-        gridSoid: ?Nat;
+        gridSoid: [?Nat];
         shareDecimals: Nat8;
         pairInfo: {
             pairPrincipal: Principal;
@@ -1839,7 +1906,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             withdrawalFee = _natToFloat(withdrawalFee) / 1000000;
             poolThreshold = poolThreshold;
             volFactor = volFactor; // token1
-            gridSoid = gridSoid;
+            gridSoid = [gridSoid, gridSoid2];
             shareDecimals = shareDecimals;
             pairInfo = {
                 pairPrincipal = pairPrincipal;
@@ -2003,32 +2070,49 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     /// Deletes the grid order for ICDexMaker.
-    public shared(msg) func deleteGridOrder() : async (){
+    public shared(msg) func deleteGridOrder(_gridOrder: {#First; #Second}) : async (){
         assert(_onlyOwner(msg.caller) and paused);
-        if (not(gridOrderDeleted)){
-            let saga = _getSaga();
+        let saga = _getSaga();
+        if (_gridOrder == #First and not(gridOrderDeleted)){
             let toid = saga.create("delete_gridOrder", #Forward, null, null); 
-            let ttid1 = _ictcUpdateGridOrder(toid, #Deleted);
+            let ttid1 = _ictcUpdateGridOrder(_gridOrder, toid, #Deleted);
             saga.close(toid);
             ignore _putEvent(#deleteGridOrder({soid=gridSoid; toid=?toid}), null);
-            await* _ictcSagaRun(toid, true);
             gridOrderDeleted := true;
+            await* _ictcSagaRun(toid, true);
+        }else if (not(gridOrderDeleted2)){
+            let toid = saga.create("delete_gridOrder2", #Forward, null, null); 
+            let ttid1 = _ictcUpdateGridOrder(_gridOrder, toid, #Deleted);
+            saga.close(toid);
+            ignore _putEvent(#deleteGridOrder({soid=gridSoid2; toid=?toid}), null);
+            gridOrderDeleted2 := true;
+            await* _ictcSagaRun(toid, true);
         };
     };
 
     /// Creates a grid order for ICDexMaker.
-    public shared(msg) func createGridOrder() : async (){
+    public shared(msg) func createGridOrder(_gridOrder: {#First; #Second}) : async (){
         assert(_onlyOwner(msg.caller) and paused);
-        assert(Option.isNull(gridSoid) or gridOrderDeleted);
         let pair: ICDex.Self = actor(Principal.toText(pairPrincipal));
         await pair.accountConfig(#PoolMode, true, null);
         let saga = _getSaga();
-        let toid = saga.create("create_gridOrder", #Forward, null, null); 
-        let ttid1 = _ictcCreateGridOrder(toid);
-        saga.close(toid);
-        ignore _putEvent(#createGridOrder({toid=?toid}), null);
-        await* _ictcSagaRun(toid, true);
-        gridOrderDeleted := false;
+        if (_gridOrder == #First){
+            assert(Option.isNull(gridSoid) or gridOrderDeleted);
+            let toid = saga.create("create_gridOrder", #Forward, null, null); 
+            let ttid1 = _ictcCreateGridOrder(_gridOrder, toid);
+            saga.close(toid);
+            ignore _putEvent(#createGridOrder({toid=?toid}), null);
+            await* _ictcSagaRun(toid, true);
+            gridOrderDeleted := false;
+        }else{
+            assert(Option.isNull(gridSoid2) or gridOrderDeleted2);
+            let toid = saga.create("create_gridOrder2", #Forward, null, null); 
+            let ttid1 = _ictcCreateGridOrder(_gridOrder, toid);
+            saga.close(toid);
+            ignore _putEvent(#createGridOrder({toid=?toid}), null);
+            await* _ictcSagaRun(toid, true);
+            gridOrderDeleted2 := false;
+        };
     };
 
     /// Cancels all trade orders that the strategy order placed in the pair's order book.
@@ -2497,6 +2581,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                     poolShareWeighted = poolShareWeighted;
                     gridSoid = gridSoid;
                     gridOrderDeleted = gridOrderDeleted;
+                    gridSoid2 = gridSoid2;
+                    gridOrderDeleted2 = gridOrderDeleted2;
                     blockIndex = blockIndex;
                     firstBlockIndex = firstBlockIndex;
                     ictc_admins = ictc_admins;
@@ -2570,6 +2656,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 poolShareWeighted := data.poolShareWeighted;
                 gridSoid := data.gridSoid;
                 gridOrderDeleted := data.gridOrderDeleted;
+                gridSoid2 := data.gridSoid2;
+                gridOrderDeleted2 := data.gridOrderDeleted2;
                 blockIndex := data.blockIndex;
                 firstBlockIndex := data.firstBlockIndex;
                 ictc_admins := data.ictc_admins;

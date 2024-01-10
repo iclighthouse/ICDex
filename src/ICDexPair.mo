@@ -105,13 +105,13 @@
 /// trading pair, and when the market price meets the conditions, the trading pair will automatically place trade orders for the trader. 
 /// Strategy Orders is divided into Pro-Order and Stop-Limit-Order (Stop-Loss-Order).
 /// - Pro-Order: Grid, Iceberg, VWAP and TWAP orders have been implemented.
-/// - Stop-Loss-Order: Stop-loss conditional orders have been implemented.
+/// - Stop-Limit-Order: Stop-loss conditional orders have been implemented.
 /// Clearly indicate:  
 /// A `Strategy order` is a strategy rule configuration that does not place a trade order into the order book until it is triggered. 
 /// A `Trade order` is a real order in the order book and is what is normally referred to as a `Trade`.
 ///
 /// Finance reference: (Note: There are some differences in the implementation details of ICDex)
-/// - Stop-loss Order: https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/stop-loss-order/
+/// - Stop-limit Order: https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/stop-loss-order/
 /// - Grid Order: https://www.binance.com/en/support/faq/what-is-spot-grid-trading-and-how-does-it-work-d5f441e8ab544a5b98241e00efb3a4ab
 /// - Iceberg Order: https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/iceberg-order/
 /// - VWAP Order: https://en.wikipedia.org/wiki/Volume-weighted_average_price
@@ -143,11 +143,11 @@
 ///     When configuring a pro-order strategy, traders are charged a fixed amount of ICL as a fee (poFee1) and the fee for updating the 
 ///     strategy is poFee1 * 5%. Vip-maker is not be charged poFee1. When the strategy is triggered and the new trade order is closed, the 
 ///     trader is charged the amount of tokens (token0 or token1) he receives multiplied by the rate (poFee2) as a pro-trade fee.
-///     - StopLoss-Order: 
-///     When configuring a stop-loss-order strategy, traders are charged a fixed amount of ICL as a fee (sloFee1) and the fee for 
+///     - Stop-Limit-Order: 
+///     When configuring a stop-limit-order strategy, traders are charged a fixed amount of ICL as a fee (sloFee1) and the fee for 
 ///     updating the strategy is sloFee1 * 5%. Vip-maker is not be charged sloFee1. When the strategy is triggered and the new trade order 
 ///     is closed, the trader is charged the amount of tokens (token0 or token1) he receives multiplied by the rate (sloFee2) as a 
-///     stop-loss-trade fee.
+///     stop-limit-trade fee.
 ///
 /// ## 3 Core functionality
 /// 
@@ -207,7 +207,7 @@
 ///
 /// ### Strategy Order
 ///
-/// The Strategy Order function is a strategy manager for pro-traders. Strategy Order includes pro-order and stop-loss-order.  
+/// The Strategy Order function is a strategy manager for pro-traders. Strategy Order includes pro-order and stop-limit-order.  
 /// The strategy order lifecycle is divided into two segments: 
 /// 1) Configure a strategy: Pro-trader selects a strategy type, configures the strategy parameters and starts a strategy.
 /// 2) Trigger Order: When the latest price of the trading pair changes and meets the conditions of the strategy order, the Strategy Manager 
@@ -444,7 +444,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.24";
+    private let version_: Text = "0.12.33";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -4321,7 +4321,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         poFee2 = 0.0005; // When an order from pro-order is filled, token0/token1 will be charged proportionally as a fee.
         sloFee1 = 100_000_000; // ICL (smallest_units). Fixed costs when configuring the stop-loss-order strategy
         sloFee2 = 0.0005; // When an order from stop-loss-order is filled, token0/token1 will be charged proportionally as a fee.
-        gridMaxPerSide = 3; // Maximum number of grids on one side of the grid order. This configuration for vip-maker is multiplied by 2.
+        gridMaxPerSide = 4; // Maximum number of grids on one side of the grid order. This configuration for vip-maker is multiplied by 2.
         proCountMax = 5; // Maximum number of pro-orders allowed to be created per trader.
         stopLossCountMax = 10; // Maximum number of stop-loss-orders allowed to be created per trader.
     };
@@ -4680,7 +4680,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func _hook_stoWorktop(_soid: ?STO.Soid, _side: ?OrderBook.OrderSide) : async (){
         let price = icdex_lastPrice.price;
         var openingOrders: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
-        if (Option.isSome(_soid) or not(sto_isWorking) or _now() >= sto_lastWorkTime + 10 or price <= sto_lastWorkPrice*995/1000 or price >= sto_lastWorkPrice*1005/1000){
+        if (Option.isSome(_soid)){ 
+            let thisSoid = Option.get(_soid, 0);
+            let (status, preOpenOrders) = _stoTrigger(thisSoid);
+            openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
+            if (status != #Running){
+                icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
+            };
+        };
+        if (not(sto_isWorking) or _now() >= sto_lastWorkTime + 10 or price <= sto_lastWorkPrice*995/1000 or price >= sto_lastWorkPrice*1005/1000){
             sto_lastWorkPrice := price;
             sto_lastWorkTime := _now();
             // StopLossOrder
@@ -4739,14 +4747,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             // ProOrder
             var pendingPOList = List.nil<STO.Soid>();
             var poCount : Nat = 0;
-            // if (Option.isSome(_soid)){ // update-231226: De-prioritize
-            //     let thisSoid = Option.get(_soid, 0);
-            //     let (status, preOpenOrders) = _stoTrigger(thisSoid);
-            //     openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
-            //     if (status != #Running){
-            //         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
-            //     };
-            // }else 
             if (not(sto_isWorking) or _now() >= sto_lastWorkTime2 + 15 * 60){ // global lock
                 sto_isWorking := true;
                 sto_lastWorkTime2 := _now();
@@ -5167,9 +5167,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         icdex_stOrderRecords := STO.remove(icdex_stOrderRecords, _soid);
                         icdex_userProOrderList := STO.removeUserPOList(icdex_userProOrderList, account, _soid);
                     };
-                    // if (status == #Running and enableStrategyOrders){
-                    //     await _hook_stoWorktop(?_soid, null);
-                    // };
+                    if (status == #Running and enableStrategyOrders){
+                        await _hook_stoWorktop(?_soid, null);
+                    };
                 };
                 await* _ictcSagaRun(0, false);
                 return soid;
@@ -5291,7 +5291,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                                 icdex_userStopLossOrderList := STO.removeUserSLOList(icdex_userStopLossOrderList, account, _soid);
                             };
                             if (_status == #Running and enableStrategyOrders){
-                                await _hook_stoWorktop(?_soid, null);
+                                await _hook_stoWorktop(null, null);
                             };
                             await* _ictcSagaRun(0, false);
                         };
@@ -5412,7 +5412,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         IDOOpeningTime: Time.Time; // nanoseconds. IDO opening time.
         IDOClosingTime: Time.Time; // nanoseconds. IDO closing time.
         IDOTotalSupply: {IDOSupply: Amount/* smallest units token0 */; percentageOfTotal: Float/* range (0, 1.0] */;}; // IDO supply and percentage. e.g. {IDOSupply = 1000000000000000; percentageOfTotal = 0.10; }
-        IDOSupplies: [{price: Float/* how much smallest_units_token1 to buy 1 smallest_units_token0 */; supply: Amount/* smallest units */;}]; // Tiered supply rules e.g. [{price = 0.01; supply = 500000000000000;}]
+        IDOSupplies: [{price: Nat/* how much smallest_units_token1 to buy UNIT_SIZE smallest_units_token0 */; supply: Amount/* smallest units */;}]; // Tiered supply rules e.g. [{price = 1000000; supply = 500000000000000;}]
     };
     type IDORequirement = { // For non-whitelisted mode
         pairs: [{pair: Principal; token1ToUsdRatio: Float}]; // 1 smallest_units = ? USD(main_units, NOT smallest_units)
@@ -5458,8 +5458,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             return true;
         };
         if (_a == Tools.principalToAccountBlob(idoFunder, null) and _side == #Sell and _type == #LMT and Time.now() < pairOpeningTime){ // funder #LMT
-            return Option.isSome(Array.find(IDOSetting_.IDOSupplies, func (t: {price: Float; supply: Amount;}): Bool{
-                let price = _floatToNat(t.price * _natToFloat(setting.UNIT_SIZE));
+            return Option.isSome(Array.find(IDOSetting_.IDOSupplies, func (t: {price: Nat; supply: Amount;}): Bool{
+                let price = t.price;
                 let pendingOrders = _accountPendingOrders(?_a);
                 for ((txid, order) in Trie.iter(pendingOrders)){
                     if (order.orderPrice.price == _price){
@@ -5610,6 +5610,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         assert(icdex_totalVol.value1 == 0);
         assert(Trie.size(icdex_orders) == 0);
         assert(Time.now() + 24*3600*ns_ < pairOpeningTime or pairOpeningTime == 0);
+        assert(_setting.IDOClosingTime > Time.now());
         var supply: Nat = 0;
         for (s in _setting.IDOSupplies.vals()){
             supply += s.supply;
@@ -6688,8 +6689,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func timerLoop() : async (){
         _clear();
         _expire();
-        await* _ictcSagaRun(0, false);
-        await* _callDrc205Store(true, false);
+        ignore _getSaga().doneEmpty(0);
+        try{ await* _ictcSagaRun(0, false) }catch(e){};
+        try{ await* _callDrc205Store(true, false) }catch(e){};
+        try{ await _hook_stoWorktop(null, null) }catch(e){};
         // try{ /*Competitions*/
         //     await* _compSettle(activeRound);
         //     compInSettlement := false;
