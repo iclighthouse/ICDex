@@ -444,7 +444,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.33";
+    private let version_: Text = "0.12.37";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -599,12 +599,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
     // Checks whether the execution of the transactions related to the orders of the specified trader in ICTC is complete.
     private func _accountIctcDone(_a: AccountId): Bool{
-        for ((t, o) in Trie.iter(_accountPendingOrders(?_a))){
-            var toids: [Toid] = o.toids;
-            for ((a, toid, time) in List.toArray(List.filter(accountWithdrawToids, func (item: (AccountId, Toid, Time.Time)): Bool{ item.0 == _a })).vals()){
-                toids := Tools.arrayAppend(toids, [toid]);
+        var toids: [Toid] = [];
+        for ((a, toid, time) in List.toArray(List.filter(accountWithdrawToids, func (item: (AccountId, Toid, Time.Time)): Bool{ item.0 == _a })).vals()){
+            if (not(_ictcDone([toid]))){
+                return false;
             };
-            if (not(_ictcDone(toids))){
+        };
+        for ((t, o) in Trie.iter(_accountPendingOrders(?_a))){
+            if (not(_ictcDone(o.toids))){
                 return false;
             };
         };
@@ -4415,6 +4417,16 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
     };
 
+    private func _sumFilledAmount(_filleds: [OrderFilled]) : (Amount, Amount){
+        var value0: Nat = 0;
+        var value1: Nat = 0;
+        for (fill in _filleds.vals()){
+            value0 += switch(fill.token0Value){ case(#DebitRecord(v)){ v }; case(#CreditRecord(v)){ v }; case(_){ 0 } };
+            value1 += switch(fill.token1Value){ case(#DebitRecord(v)){ v }; case(#CreditRecord(v)){ v }; case(_){ 0 } };
+        };
+        return (value0, value1);
+    };
+
     // Attempt to place trade orders, trade order is abandoned if unsuccessful (will not be reordered)
     private func _openOrders(_args: [(STO.Soid, STO.ICRC1Account, OrderPrice)]): async* (){
         var count : Nat = 0;
@@ -4426,7 +4438,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             let balances = _getAccountBalance(account); // balances.token0.available;  balances.token1.available
             let side = OrderBook.side(orderPrice);
             let quantity = OrderBook.quantity(orderPrice);
-            let amount = OrderBook.amount(orderPrice);
+            var amount = OrderBook.amount(orderPrice); // #Sell order: amount = 0
+            if (amount == 0){
+                amount := quantity * orderPrice.price / setting.UNIT_SIZE;
+            };
             let (isExisting, optTxid) = STO.isPendingOrder(icdex_stOrderRecords, soid, side, orderPrice.price);
             if (isExisting and Option.isNull(optTxid) and ((side == #Sell and quantity <= balances.token0.available) or (side == #Buy and amount <= balances.token1.available))){
                 count += 1;
@@ -4452,19 +4467,22 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                                     // filled & closed
                                     icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, soid, side, orderPrice.price);
                                 };
+                                var filledQuantity: Amount = quantity;
+                                var filledAmount: Amount = amount;
                                 switch(Trie.get(icdex_orders, keyb(r.txid), Blob.equal)){
                                     case(?(order)){
-                                        let remainingQuantity = OrderBook.quantity(order.remaining);
-                                        let remainingAmount = OrderBook.amount(order.remaining);
-                                        let (stats_inAmount, stats_outAmount) = _orderFilledStats(side, Nat.sub(quantity, Nat.min(quantity, remainingQuantity)), Nat.sub(amount, Nat.min(amount, remainingAmount)));
-                                        icdex_stOrderRecords := STO.updateStats(icdex_stOrderRecords, soid, {orderCount = 1; errorCount = 0; totalInAmount = stats_inAmount; totalOutAmount = stats_outAmount;});
-                                        switch(STO.get(icdex_stOrderRecords, soid)){
-                                            case(?sto){
-                                                let (feeToken0, feeToken1) = _chargeSTOrderFee2(account, sto.stType, stats_inAmount.token0, stats_inAmount.token1);
-                                                _update(r.txid, null, null, null, null, ?{fee0 = feeToken0; fee1 = feeToken1}, null, null);
-                                            };
-                                            case(_){};
-                                        };
+                                        let (v0, v1) = _sumFilledAmount(order.filled);
+                                        filledQuantity := v0;
+                                        filledAmount := v1;
+                                    };
+                                    case(_){}; // Fully filled orders may be cleared from icdex_orders
+                                };
+                                let (stats_inAmount, stats_outAmount) = _orderFilledStats(side, filledQuantity, filledAmount);
+                                icdex_stOrderRecords := STO.updateStats(icdex_stOrderRecords, soid, {orderCount = 1; errorCount = 0; totalInAmount = stats_inAmount; totalOutAmount = stats_outAmount;});
+                                switch(STO.get(icdex_stOrderRecords, soid)){
+                                    case(?sto){
+                                        let (feeToken0, feeToken1) = _chargeSTOrderFee2(account, sto.stType, stats_inAmount.token0, stats_inAmount.token1);
+                                        _update(r.txid, null, null, null, null, ?{fee0 = feeToken0; fee1 = feeToken1}, null, null);
                                     };
                                     case(_){};
                                 };
@@ -4482,6 +4500,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, soid, side, orderPrice.price);
                     icdex_stOrderRecords := STO.updateStats(icdex_stOrderRecords, soid, {orderCount = 0; errorCount = 1; totalInAmount = {token0=0; token1=0}; totalOutAmount = {token0=0; token1=0};});
                 };
+            }else if (isExisting and Option.isNull(optTxid)){
+                icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, soid, side, orderPrice.price);
+                icdex_stOrderRecords := STO.updateStats(icdex_stOrderRecords, soid, {orderCount = 0; errorCount = 1; totalInAmount = {token0=0; token1=0}; totalOutAmount = {token0=0; token1=0};});
             };
         };
         await* _ictcSagaRun(0, false);  
