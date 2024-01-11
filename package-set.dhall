@@ -4,7 +4,7 @@ let upstream =
 [ { dependencies = [] : List Text
   , name = "base"
   , repo = "https://github.com/dfinity/motoko-base.git"
-  , version = "1bee37dbe5dbab1017b18ba0490b78f148196c8b"
+  , version = "7f9ea59fafbd0a2f12709cdc8b6771a9dea87cbd" -- updated to mo-0.10.3
   }
 , { dependencies = [ "base" ]
   , name = "crud"
@@ -44,7 +44,7 @@ let upstream =
 , { dependencies = [ "base" ]
   , name = "sha224"
   , repo = "https://github.com/flyq/motoko-sha224.git"
-  , version = "82e0aa1a77a8c0a2f98332b59ffc242d820e62cb"
+  , version = "95e271a0997c9219afd8e5a418ed487d2db84d3f" -- updated to Dec 23, 2023
   }
 , { dependencies = [ "base" ]
   , name = "splay"
@@ -59,7 +59,7 @@ let upstream =
 , { dependencies = [ "base" ]
   , name = "base32"
   , repo = "https://github.com/flyq/motoko-base32.git"
-  , version = "067ac54e288f4cd7302be1f400bcddcce70f7d77"
+  , version = "0d6011a074ad4da7ac6bb95f0dd6f63d08070c89" -- updated to Dec 23, 2023
   }
 , { dependencies = [ "base" ]
   , name = "adapton"

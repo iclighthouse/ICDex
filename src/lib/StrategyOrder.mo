@@ -1217,6 +1217,9 @@ module {
                     orderPrice := { quantity = orderQuantity; price = io.setting.order.price; };
                     quantity := OB.quantity(orderPrice);
                     amount := OB.amount(orderPrice);
+                    if (amount == 0){
+                        amount := quantity * orderPrice.price / _unitSize;
+                    };
                     if (OB.side(orderPrice) == #Buy and amount > balances.token1.available){
                         insufficientBalance := true;
                     }else if (OB.side(orderPrice) == #Sell and quantity > balances.token0.available){
@@ -1299,6 +1302,9 @@ module {
                     orderPrice := { quantity = orderQuantity; price = thisPrice; };
                     quantity := OB.quantity(orderPrice);
                     amount := OB.amount(orderPrice);
+                    if (amount == 0){
+                        amount := quantity * orderPrice.price / _unitSize;
+                    };
                     if (OB.side(orderPrice) == #Buy and amount > balances.token1.available){
                         insufficientBalance := true;
                     }else if (OB.side(orderPrice) == #Sell and quantity > balances.token0.available){
@@ -1375,6 +1381,9 @@ module {
                     orderPrice := { quantity = orderQuantity; price = thisPrice; };
                     quantity := OB.quantity(orderPrice);
                     amount := OB.amount(orderPrice);
+                    if (amount == 0){
+                        amount := quantity * orderPrice.price / _unitSize;
+                    };
                     if (OB.side(orderPrice) == #Buy and amount > balances.token1.available){
                         insufficientBalance := true;
                     }else if (OB.side(orderPrice) == #Sell and quantity > balances.token0.available){

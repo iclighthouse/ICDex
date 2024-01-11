@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.1";
+    private let version_: Text = "0.5.2";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1493,6 +1493,80 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         return false;
     };
 
+    // A reconstruction function for add() that checks parameters.
+    private func _checkParameters(_isInitAdd: Bool, _account: AccountId, _token0: Amount, _token1: Amount): async* (){
+        if (poolBalance.balance1 > poolThreshold){
+            var token1AmountLimit : Amount = 0;
+            let vol = (await* _fetchAccountVol(_account)).value1 * volFactor;
+            let volUsed = switch(Trie.get(accountVolUsed, keyb(_account), Blob.equal)){case(?(v)){ v }; case(_){ 0 }};
+            if (vol > volUsed){
+                token1AmountLimit := Nat.sub(vol, volUsed);
+            };
+            if (_token1 > token1AmountLimit){
+                throw Error.reject("410: This Market Making Pool limits the amount of liquidity you can add based on historical volume. The maximum amount of liquidity you can add is: "# Nat.toText(token1AmountLimit / (10**Nat8.toNat(token1Decimals)))# " " # token1Symbol);
+            };
+        };
+        // check amount
+        if (_isInitAdd and (_token0 < token0Fee * 100000 or _token1 < token1Fee * 100000)){
+            throw Error.reject("411: Unavailable amount. The token0 minimum amount is: "# Nat.toText(token0Fee * 100000) #", the token1 minimum amount is: "# Nat.toText(token1Fee * 100000) #".");
+        }else if (_token0 < token0Fee * 1000 or _token1 < token1Fee * 1000){
+            throw Error.reject("411: Unavailable amount. The token0 minimum amount is: "# Nat.toText(token0Fee * 1000) #", the token1 minimum amount is: "# Nat.toText(token1Fee * 1000) #".");
+        };
+        if (_isFallbacking(_account)){
+            throw Error.reject("416: The account is performing fallback.");
+        };
+    };
+
+    // A reconstruction function for remove() that gets the available balance of the pool.
+    private func _getAvailableBalances(_shares: Amount): async* (Amount, Amount, Bool, Bool){
+        let saga = _getSaga();
+        var available0InPool: Amount = 0;
+        var available1InPool: Amount = 0;
+        try{
+            let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
+            available0InPool := v0;
+            available1InPool := v1;
+        }catch(e){
+            sysTransactionLock := false;
+            throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+        };
+        if (sysTransactionLock){
+            throw Error.reject("401: The system transaction is locked, please try again later."); 
+        };
+        var values = _sharesToAmount(_shares);
+        var shouldRunGridOrder1: Bool = false;
+        var shouldRunGridOrder2: Bool = false;
+        if (not(gridOrderDeleted) and (values.value0 > available0InPool or values.value1 > available1InPool)){
+            let toid = saga.create("stop_gridOrder", #Backward, null, null); // Change transaction #Forward to #Backward
+            let ttid = _ictcUpdateGridOrder(#First, toid, #Stopped);
+            await* _ictcSagaRun(toid, true);
+            shouldRunGridOrder1 := true;
+            try{
+                let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
+                available0InPool := v0;
+                available1InPool := v1;
+            }catch(e){
+                sysTransactionLock := false;
+                throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+            };
+        };
+        if (not(gridOrderDeleted2) and (values.value0 > available0InPool or values.value1 > available1InPool)){
+            let toid = saga.create("stop_gridOrder2", #Backward, null, null); // Change transaction #Forward to #Backward
+            let ttid = _ictcUpdateGridOrder(#Second, toid, #Stopped);
+            await* _ictcSagaRun(toid, true);
+            shouldRunGridOrder2 := true;
+            try{
+                let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
+                available0InPool := v0;
+                available1InPool := v1;
+            }catch(e){
+                sysTransactionLock := false;
+                throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+            };
+        };
+        return (available0InPool, available1InPool, shouldRunGridOrder1, shouldRunGridOrder2);
+    };
+
     /* public functions */
 
     /// Deposit account when adding liquidity. 
@@ -1546,27 +1620,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             ignore await* _init();
         };
         let saga = _getSaga();
-        // get vol
-        if (poolBalance.balance1 > poolThreshold){
-            var token1AmountLimit : Amount = 0;
-            let vol = (await* _fetchAccountVol(_account)).value1 * volFactor;
-            let volUsed = switch(Trie.get(accountVolUsed, keyb(_account), Blob.equal)){case(?(v)){ v }; case(_){ 0 }};
-            if (vol > volUsed){
-                token1AmountLimit := Nat.sub(vol, volUsed);
-            };
-            if (_token1 > token1AmountLimit){
-                throw Error.reject("410: This Market Making Pool limits the amount of liquidity you can add based on historical volume. The maximum amount of liquidity you can add is: "# Nat.toText(token1AmountLimit / (10**Nat8.toNat(token1Decimals)))# " " # token1Symbol);
-            };
-        };
-        // check amount
-        if (isInitAdd and (_token0 < token0Fee * 100000 or _token1 < token1Fee * 100000)){
-            throw Error.reject("411: Unavailable amount. The token0 minimum amount is: "# Nat.toText(token0Fee * 100000) #", the token1 minimum amount is: "# Nat.toText(token1Fee * 100000) #".");
-        }else if (_token0 < token0Fee * 1000 or _token1 < token1Fee * 1000){
-            throw Error.reject("411: Unavailable amount. The token0 minimum amount is: "# Nat.toText(token0Fee * 1000) #", the token1 minimum amount is: "# Nat.toText(token1Fee * 1000) #".");
-        };
-        if (_isFallbacking(_account)){
-            throw Error.reject("416: The account is performing fallback.");
-        };
+        // check parameters
+        await* _checkParameters(isInitAdd, _account, _token0, _token1);
         // deposit
         var depositedToken0: Amount = 0;
         var depositedToken1: Amount = 0;
@@ -1737,71 +1792,43 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             throw Error.reject("417: The share entered must not be less than the minimum share "# Float.toText(_natToFloat(minShares) / _natToFloat(10 ** Nat8.toNat(shareDecimals))) #"."); 
         };
         let saga = _getSaga();
-        // get unit net value
-        var available0InPool: Amount = 0;
-        var available1InPool: Amount = 0;
-        try{
-            let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
-            available0InPool := v0;
-            available1InPool := v1;
-        }catch(e){
-            sysTransactionLock := false;
-            throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
-        };
-        if (sysTransactionLock){
-            throw Error.reject("401: The system transaction is locked, please try again later."); 
-        };
-        var values = _sharesToAmount(_shares);
-        var shouldRunGridOrder1: Bool = false;
-        var shouldRunGridOrder2: Bool = false;
-        if (not(gridOrderDeleted) and (values.value0 > available0InPool or values.value1 > available1InPool)){
-            let toid = saga.create("stop_gridOrder", #Backward, null, null); // Change transaction #Forward to #Backward
-            let ttid = _ictcUpdateGridOrder(#First, toid, #Stopped);
-            await* _ictcSagaRun(toid, true);
-            shouldRunGridOrder1 := true;
-            try{
-                let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
-                available0InPool := v0;
-                available1InPool := v1;
-            }catch(e){
-                sysTransactionLock := false;
-                throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+        // Reconstruction:
+            // get available balance 
+            let (available0InPool, available1InPool, shouldRunGridOrder1, shouldRunGridOrder2) = await* _getAvailableBalances(_shares);
+            // shares to amounts (Fee: 10 * tokenFee + 0.01% * Value)
+            var values = _sharesToAmount(_shares);
+            if (values.value0 > available0InPool or values.value1 > available1InPool){
+                throw Error.reject("414: The number of shares entered is not available. Try to reduce the number of shares."); 
             };
-        };
-        if (not(gridOrderDeleted2) and (values.value0 > available0InPool or values.value1 > available1InPool)){
-            let toid = saga.create("stop_gridOrder2", #Backward, null, null); // Change transaction #Forward to #Backward
-            let ttid = _ictcUpdateGridOrder(#Second, toid, #Stopped);
-            await* _ictcSagaRun(toid, true);
-            shouldRunGridOrder2 := true;
-            try{
-                let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
-                available0InPool := v0;
-                available1InPool := v1;
-            }catch(e){
-                sysTransactionLock := false;
-                throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+            // withdraw from Dex
+            if (values.value0 > poolLocalBalance.balance0 or values.value1 > poolLocalBalance.balance1){
+                let value0 = if (values.value0 > token0Fee){ Nat.max(Nat.min(Nat.sub(values.value0, token0Fee), Nat.sub(poolBalance.balance0, poolLocalBalance.balance0)), poolBalance.balance0 * 5 / 100) }else{ 0 };
+                let value1 = if (values.value1 > token1Fee){ Nat.max(Nat.min(Nat.sub(values.value1, token1Fee), Nat.sub(poolBalance.balance1, poolLocalBalance.balance1)), poolBalance.balance1 * 5 / 100) }else{ 0 };
+                if (value0 > 0 or value1 > 0){
+                    let (v0, v1) = await* _withdrawFromDex(value0, value1); // sysTransactionLock
+                    try{
+                        let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
+                    }catch(e){
+                        sysTransactionLock := false;
+                        throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+                    };
+                };
             };
-        };
-        if (values.value0 > available0InPool or values.value1 > available1InPool){
-            throw Error.reject("414: The number of shares entered is not available. Try to reduce the number of shares."); 
-        };
-        // shares to amounts (Fee: 10 * tokenFee + 0.01% * Value)
-        values := _sharesToAmount(_shares);
-        if (values.value0 > 10 * token0Fee + values.value0 * withdrawalFee / 1000000){
-            resValue0 := Nat.sub(values.value0, 10 * token0Fee + values.value0 * withdrawalFee / 1000000);
-        };
-        if (values.value1 > 10 * token1Fee + values.value1 * withdrawalFee / 1000000){
-            resValue1 := Nat.sub(values.value1, 10 * token1Fee + values.value1 * withdrawalFee / 1000000);
-        };
-        if (resValue0 == 0 and resValue1 == 0){
-            throw Error.reject("414: The number of shares entered is not available."); 
-        };
-        // withdraw from Dex
-        if (resValue0 + token0Fee > poolLocalBalance.balance0 or resValue1 + token1Fee > poolLocalBalance.balance1){
-            let value0 = if (resValue0 > 0){ Nat.max(Nat.min(resValue0 + token0Fee*2, Nat.sub(poolBalance.balance0, poolLocalBalance.balance0)), poolBalance.balance0 * 5 / 100) }else{ 0 };
-            let value1 = if (resValue1 > 0){ Nat.max(Nat.min(resValue1 + token1Fee*2, Nat.sub(poolBalance.balance1, poolLocalBalance.balance1)), poolBalance.balance1 * 5 / 100) }else{ 0 };
-            let (v0, v1) = await* _withdrawFromDex(value0, value1);
-        };
+            // check again
+            if (sysTransactionLock){
+                throw Error.reject("401: The system transaction is locked, please try again later."); 
+            };
+            values := _sharesToAmount(_shares);
+            if (values.value0 > 10 * token0Fee + values.value0 * withdrawalFee / 1000000){
+                resValue0 := Nat.sub(values.value0, 10 * token0Fee + values.value0 * withdrawalFee / 1000000);
+            };
+            if (values.value1 > 10 * token1Fee + values.value1 * withdrawalFee / 1000000){
+                resValue1 := Nat.sub(values.value1, 10 * token1Fee + values.value1 * withdrawalFee / 1000000);
+            };
+            if (resValue0 == 0 and resValue1 == 0){
+                throw Error.reject("414: The number of shares entered is not available."); 
+            };
+        // End: reconstruction
         sharesAvailable := _getAccountShares(_account).0;
         // Remove liquidity
         if ((resValue0 > 0 or resValue1 > 0) and _shares <= sharesAvailable){
@@ -1953,6 +1980,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         apy24h: {token0: Float; token1: Float};
         apy7d: {token0: Float; token1: Float};
     }{
+        if (sysTransactionLock){
+            throw Error.reject("401: The system transaction is locked, please try again later."); 
+        };
         let pair: ICDex.Self = actor(Principal.toText(pairPrincipal));
         let makerAccountId = _getThisAccount(Blob.fromArray(sa_zero));
         let dexBalance = await pair.safeAccountBalance(_accountIdToHex(makerAccountId));
