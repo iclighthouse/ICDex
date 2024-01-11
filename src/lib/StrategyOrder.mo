@@ -138,6 +138,17 @@ module {
     private func keyn(t: Nat) : Trie.Key<Nat> { return { key = t; hash = natHash(t) }; };
     private func keyb(t: Blob) : Trie.Key<Blob> { return { key = t; hash = Blob.hash(t) }; };
 
+    /// Returns rounded prices based on precision
+    public func priceRound(_price: Price, _precision: Nat) : Price{
+        var temp: Price = _price;
+        var precision: Nat = 1;
+        while(temp > _precision * 10){
+            temp /= 10;
+            precision *= 10;
+        };
+        return temp * precision;
+    };
+
     /// Returns the type of a strategy. 
     public func getSTType(_strategy: STStrategy) : STType{ // {#StopLossOrder; #GridOrder; #IcebergOrder; #VWAP; #TWAP }; 
         switch(_strategy){
@@ -726,13 +737,14 @@ module {
             price := midPrice;
             spread := getSpread(#upward, _setting.spread, price);
             while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
-                if (price + spread > _price){ // >= _price + spread
-                    gridPrice_sell := OB.arrayAppend(gridPrice_sell, [price + spread]);
+                let nextGridPrice = priceRound(price + spread, 100000);
+                if (nextGridPrice > _price){ // >= _price + spread
+                    gridPrice_sell := OB.arrayAppend(gridPrice_sell, [nextGridPrice]);
                 };
                 if (gridPrice_sell.size() == 1 and price > midPrice and not(isExistingPrice(/*gridPrice_sell,*/ price, _sto.pendingOrders.sell, _setting))){
                     midPrice := price;
                 };
-                price := price + spread;
+                price := nextGridPrice;
                 spread := getSpread(#upward, _setting.spread, price);
             };
             // if (gridPrice_sell.size() == 0 and _price < upperLimit){
@@ -742,10 +754,11 @@ module {
             price := midPrice;
             spread := getSpread(#downward, _setting.spread, price);
             while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
-                if (Nat.sub(price, spread) <= Nat.sub(_price, spread)){
-                    gridPrice_buy := OB.arrayAppend(gridPrice_buy, [Nat.sub(price, spread)]);
+                let nextGridPrice = priceRound(Nat.sub(price, spread), 100000);
+                if (nextGridPrice <= Nat.sub(_price, spread)){
+                    gridPrice_buy := OB.arrayAppend(gridPrice_buy, [nextGridPrice]);
                 };
-                price := Nat.sub(price, spread);
+                price := nextGridPrice;
                 spread := getSpread(#downward, _setting.spread, price);
             };
             // if (gridPrice_buy.size() == 0 and _price > lowerLimit){
@@ -755,13 +768,14 @@ module {
             price := midPrice;
             spread := getSpread(#downward, _setting.spread, price);
             while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
-                if (Nat.sub(price, spread) < _price){ // <= Nat.sub(_price, spread)
-                    gridPrice_buy := OB.arrayAppend(gridPrice_buy, [Nat.sub(price, spread)]);
+                let nextGridPrice = priceRound(Nat.sub(price, spread), 100000);
+                if (nextGridPrice < _price){ // <= Nat.sub(_price, spread)
+                    gridPrice_buy := OB.arrayAppend(gridPrice_buy, [nextGridPrice]);
                 };
                 if (gridPrice_buy.size() == 1 and price < midPrice and not(isExistingPrice(/*gridPrice_buy,*/ price, _sto.pendingOrders.buy, _setting))){
                     midPrice := price;
                 };
-                price := Nat.sub(price, spread);
+                price := nextGridPrice;
                 spread := getSpread(#downward, _setting.spread, price);
             };
             // if (gridPrice_buy.size() == 0 and _price > lowerLimit){
@@ -771,10 +785,11 @@ module {
             price := midPrice;
             spread := getSpread(#upward, _setting.spread, price);
             while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
-                if (price + spread >= _price + spread){
-                    gridPrice_sell := OB.arrayAppend(gridPrice_sell, [price + spread]);
+                let nextGridPrice = priceRound(price + spread, 100000);
+                if (nextGridPrice >= _price + spread){
+                    gridPrice_sell := OB.arrayAppend(gridPrice_sell, [nextGridPrice]);
                 };
-                price := price + spread;
+                price := nextGridPrice;
                 spread := getSpread(#upward, _setting.spread, price);
             };
             // if (gridPrice_sell.size() == 0 and _price < upperLimit){
