@@ -786,7 +786,7 @@ module {
             spread := getSpread(#upward, _setting.spread, price);
             while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
                 let nextGridPrice = priceRound(price + spread, 100000);
-                if (nextGridPrice >= _price + spread){
+                if (nextGridPrice >= priceRound(_price + spread, 100000)){
                     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [nextGridPrice]);
                 };
                 price := nextGridPrice;
