@@ -3,7 +3,7 @@
     "ICDexPair": {
       "main": "src/ICDexPair.mo",
       "type": "motoko",
-      "args" : "--compacting-gc"
+      "args" : "--incremental-gc"
     },
     "ICDexMaker": {
       "main": "src/ICDexMaker.mo",

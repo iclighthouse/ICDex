@@ -1,17 +1,17 @@
 # ICDex Wasm
 
 - ICDexPair Wasm
-    - Module hash: 08c054ec4ee768a88b51bf437e0d917464aec84ed8eb2017098aca770b7f93ca
-    - Version: 0.12.37
+    - Module hash: e33ffc62f93107ec624e8ef9ad93135c5f6e64df0eaf300c1bd32268458c8557
+    - Version: 0.12.38
     - DFX version: 0.15.3 (moc 0.10.3)
     - Build: {
-        "args": "--compacting-gc"
+        "args": "--incremental-gc"
     }
     - Wasm tool: ic-wasm 0.7.0, Command `$ ic-wasm ICDexPair.wasm -o ICDexPair.wasm metadata candid:service -f Pair.did -v public`
 
 - ICDexMaker Wasm
-    - Module hash: 9d1fff5a63acdeeabd0e0f216ea1b520745fd644f7328390a571b53d1472e7da
-    - Version: 0.5.2
+    - Module hash: 96ce5cf5d8ad4a5f7a631879384e1136c801999a2e5169738234ec1f14113fd1
+    - Version: 0.5.3
     - DFX version: 0.15.3 (moc 0.10.3)
     - Build: {
         "args": "--compacting-gc", 
