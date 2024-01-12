@@ -28,7 +28,7 @@ import Principal "mo:base/Principal";
 import STO "mo:icl/STOTypes";
 
 module {
-    public let Version: Nat = 6;
+    public let Version: Text = "2.0";
     public let ICCanister: Text = "aaaaa-aa";
     public let LedgerCanister: Text = "ryjl3-tyaaa-aaaaa-aaaba-cai";
     public let CFCanister: Text = "6nmrm-laaaa-aaaak-aacfq-cai";
