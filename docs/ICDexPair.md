@@ -383,12 +383,12 @@ Warning: This is a query function and direct adoption of the results returned by
     You need to use account and nonce to perform local calculations according to the generateTxid() method in DRC205 
     and verify the TxAccount address.
 
-## Function `trade`
+## Function `tradeCore`
 ``` motoko no-repl
-func trade(_order : OrderPrice, _orderType : OrderType, _expiration : ?PeriodNs, _nonce : ?Nonce, _sa : ?Sa, _data : ?Data) : async TradingResult
+func tradeCore(_order : OrderPrice, _orderType : OrderType, _expiration : ?PeriodNs, _nonce : ?Nonce, _sa : ?Sa, _data : ?Data, _brokerage : ?{ broker : Principal; rate : Float }, _quickly : ?Bool) : async TradingResult
 ```
 
-Generic trade method that do not support broker
+The core, and most versatile, trading function.
 
 Arguments:
 - orderPrice: OrderPrice. 
@@ -412,6 +412,8 @@ Arguments:
 - sa: ?Sa. Optionally specify the subaccount of the caller
 - data: ?Data. Optional Remark data, like memo.
 e.g. '(record{ quantity=variant{Sell=5_000_000}; price=10_000_000;}, variant{LMT}, null, null, null, null)'
+- brokerage: ?{ broker: Principal; rate: Float; }. Set the broker’s receiving account (principal) and brokerage rates.
+- quickly: ?Bool. Sets whether to execute quickly or not, if it is set to true, it will return asynchronously without waiting for the execution of the ICTC to be completed.
 
 Returns:
 - res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
@@ -419,39 +421,29 @@ Returns:
 
 See the `UNIT_SIZE and Price` section for a description of PRICE and human-readable PRICE.
 
+## Function `trade`
+``` motoko no-repl
+func trade(_order : OrderPrice, _orderType : OrderType, _expiration : ?PeriodNs, _nonce : ?Nonce, _sa : ?Sa, _data : ?Data) : async TradingResult
+```
+
+Generic trade method that do not support broker  
+@deprecated: This method will be deprecated. Suggested alternative to using tradeCore().
+
 ## Function `trade_b`
 ``` motoko no-repl
 func trade_b(_order : OrderPrice, _orderType : OrderType, _expiration : ?PeriodNs, _nonce : ?Nonce, _sa : ?Sa, _data : ?Data, _brokerage : ?{ broker : Principal; rate : Float }) : async TradingResult
 ```
 
-Generic trade method that support broker
-
-Arguments: (See the trade() method arguments, the following are additional arguments)
-- brokerage: ?{ broker: Principal; rate: Float; }. Set the broker’s receiving account (principal) and brokerage rates.
-
-Returns:
-- res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
-    status through drc205_events() or statusByTxid().
+Generic trade method that support broker  
+@deprecated: This method will be deprecated. Suggested alternative to using tradeCore().
 
 ## Function `tradeMKT`
 ``` motoko no-repl
 func tradeMKT(_token : DebitToken, _value : Amount, _nonce : ?Nonce, _sa : ?Sa, _data : ?Data) : async TradingResult
 ```
 
-Fast MKT ordering method (not supported broker)
-The trader adds _value number of DebitToken and if the order match is successful, he will get some number of CreditToken.
-
-Arguments:
-- debitToken: Principal. DebitToken’s canister-id (DebitToken: The token that the trader needs to add to the trading pair).
-- value: Amount. The amount of DebitToken you want to add.
-- nonce: ?Nonce. Optionally specify nonce value.
-- sa: ?Sa. Optionally specify the subaccount of the caller
-- data: ?Data. Optional Remark data, like memo.
-
-Returns:
-- res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
-    status through drc205_events() or statusByTxid().
-
+Fast MKT ordering method  
+@deprecated: This method will be deprecated. Suggested alternative to using tradeMKT_b().
 
 ## Function `tradeMKT_b`
 ``` motoko no-repl
@@ -460,12 +452,21 @@ func tradeMKT_b(_token : DebitToken, _value : Amount, _limitPrice : ?Nat, _nonce
 
 Fast MKT ordering method (supported broker)
 
-Arguments: (See the trade() method arguments, the following are additional arguments)
+The trader adds _value number of DebitToken and if the order match is successful, he will get some number of CreditToken.
+
+Arguments:
+- debitToken: Principal. DebitToken’s canister-id (DebitToken: The token that the trader needs to add to the trading pair).
+- value: Amount. The amount of DebitToken you want to add.
+- limitPrice: ?Nat; The most unfavorable price that can be accepted, null means any price is accepted.
+- nonce: ?Nonce. Optionally specify nonce value.
+- sa: ?Sa. Optionally specify the subaccount of the caller
+- data: ?Data. Optional Remark data, like memo.
 - brokerage: ?{ broker: Principal; rate: Float; }. Set the broker’s receiving account (principal) and brokerage rates.
 
 Returns:
 - res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
     status through drc205_events() or statusByTxid().
+
 
 ## Function `cancel`
 ``` motoko no-repl
@@ -815,6 +816,13 @@ func getRole(_account : Address) : async { broker : Bool; vipMaker : Bool; proTr
 ```
 
 Query a trader's roles
+
+## Function `isAccountIctcDone`
+``` motoko no-repl
+func isAccountIctcDone(_a : AccountId) : async (Bool, [Toid])
+```
+
+Returns whether there are transactions in process for an account.
 
 ## Function `getPairAddress`
 ``` motoko no-repl

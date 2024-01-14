@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.4";
+    private let version_: Text = "0.5.5";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -306,7 +306,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var gridSpread: Nat = Nat.max(initArgs.spreadRate, 1_000); // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
     private stable var gridSoid : ?Nat = null; // If the grid order has been successfully created, save the strategy id.
     private stable var gridOrderDeleted : Bool = false; // Grid order is deleted by DAO.
-    private stable var gridSpread2: Nat = Nat.min(gridSpread * 5, 250_000); // The second grid order takes a 5x grid spread, with a maximum value of 25%.
+    private stable var gridSpread2: Nat = gridSpread * 5; // The second grid order takes a 5x grid spread.
     private stable var gridSoid2 : ?Nat = null; 
     private stable var gridOrderDeleted2 : Bool = false; 
     // Events
@@ -453,6 +453,11 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                         result := await* _localDexDepositFallback(_pair, _sa);
                         // check & return
                         return (#Done, ?#This(#dexDepositFallback(result)), null);
+                    };
+                    case(#updatePoolLocalBalance(_token0, _token1)){
+                        _updatePoolLocalBalance(_token0, _token1);
+                        // check & return
+                        return (#Done, ?#This(#updatePoolLocalBalance(poolLocalBalance)), null);
                     };
                     case(_){return (#Error, null, ?{code=#future(9901); message="Non-local function."; });};
                 };
@@ -1251,7 +1256,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         let dexDepositIcrc1Account = {owner = pairPrincipal; subaccount = ?makerAccount };
         let dexDepositAccount = Tools.principalToAccountBlob(pairPrincipal, ?Blob.toArray(makerAccount));
         if (_token0 > token0Fee * 2){
-            _updatePoolLocalBalance(?#sub(_token0), null);
+            // _updatePoolLocalBalance(?#sub(_token0), null); // Issue: No compensation when encountering an exception
             if (token0Std != #drc20 and not(token0ICRC2)){
                 // let ttids0 = _sendToken0(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token0], _accountId, null);
                 _updatePoolLocalBalance(?#sub(token0Fee), null);
@@ -1272,9 +1277,14 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let comp1 = _buildTask(_accountId, pairPrincipal, #__skip, []);
             let ttid1 = saga.push(_toid, task1, ?comp1, null);
             ttidSize += 1;
+            // task2 should definitely succeed, otherwise the data may be inconsistent.
+            let task2 = _buildTask(_accountId, Principal.fromActor(this), #This(#updatePoolLocalBalance(?#sub(_token0), null)), []);
+            let comp2 = _buildTask(_accountId, Principal.fromActor(this), #__skip, []); 
+            let ttid2 = saga.push(_toid, task2, ?comp2, null);
+            ttidSize += 1;
         };
         if (_token1 > token1Fee * 2){
-            _updatePoolLocalBalance(null, ?#sub(_token1));
+            // _updatePoolLocalBalance(null, ?#sub(_token1)); // Issue: No compensation when encountering an exception
             if (token1Std != #drc20 and not(token1ICRC2)){
                 // let ttids0 = _sendToken1(toid, Blob.fromArray(sa_zero), [], [dexDepositIcrc1Account], [_token1], _accountId, null);
                 _updatePoolLocalBalance(null, ?#sub(token1Fee));
@@ -1294,6 +1304,11 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let task1 = _buildTask(_accountId, pairPrincipal, #ICDex(#deposit(#token1, Nat.sub(_token1, token1Fee*2), null)), []);
             let comp1 = _buildTask(_accountId, pairPrincipal, #__skip, []);
             let ttid1 = saga.push(_toid, task1, ?comp1, null);
+            ttidSize += 1;
+            // task2 should definitely succeed, otherwise the data may be inconsistent.
+            let task2 = _buildTask(_accountId, Principal.fromActor(this), #This(#updatePoolLocalBalance(null, ?#sub(_token1))), []);
+            let comp2 = _buildTask(_accountId, Principal.fromActor(this), #__skip, []); 
+            let ttid2 = saga.push(_toid, task2, ?comp2, null);
             ttidSize += 1;
         };
         if (_token0 > 0 or _token1 > 0){
