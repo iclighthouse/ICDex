@@ -444,7 +444,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.39";
+    private let version_: Text = "0.12.42";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -516,7 +516,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private stable var lastStorageTime : Time.Time = 0;
     private var countAsyncMessage : Nat = 0;
     // The maximum number of orders the order book can accept, if this is exceeded, only quotes within +/-5% of the latest price will be accepted.
-    private let maxTotalPendingNumber : Nat = 50_000; 
+    private let maxTotalPendingNumber : Nat = 20_000; 
     // DRC205: External scalable storage of transaction records
     private var drc205 = DRC205.DRC205({EN_DEBUG = icdex_debug; MAX_CACHE_TIME = 6 * 30 * 24 * 3600 * ns_; MAX_CACHE_NUMBER_PER = 1000; MAX_STORAGE_TRIES = 2; }); 
     // Statistics on broker's volume and commissions
@@ -537,7 +537,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     */
     // Manages canister memory growth
     private func _checkMemory(): (){
-        let defaultDuration = 90 * 24 * 3600 * ns_;
+        let defaultDuration = Int.abs(ExpirationDuration);
         let memmory = Prim.rts_memory_size();
         if (memmory > maxMemory){ // Blocking
             pause := true;
@@ -579,6 +579,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 case(?(order_)){
                     if (order_.status != #Done and order_.status != #Recovered){
                         res := false;
+                        return res;
                     };
                 };
                 case(_){};
@@ -591,8 +592,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var completed: Bool = true;
         for (toid in _toids.vals()){
             let status = _getSaga().status(toid);
-            if (status != ?#Done and status != ?#Recovered){
+            if (status != ?#Done and status != ?#Recovered and status != null){
                 completed := false;
+                return completed;
             };
         };
         return completed;
@@ -614,12 +616,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
     private func _visitLog(_a: AccountId): (){
         icdex_lastVisits := Deque.pushFront(icdex_lastVisits, (_a, _now()));
+        var size = List.size(icdex_lastVisits.0) + List.size(icdex_lastVisits.1);
         var enLoop: Bool = true;
         while(enLoop){
             switch(Deque.popBack(icdex_lastVisits)){
                 case(?(deque, (_account, _ts))){
-                    if (_now() > _ts + 3600 or List.size(icdex_lastVisits.0) + List.size(icdex_lastVisits.1) > 5999){
+                    if (_now() > _ts + 900 or size > 3000){
                         icdex_lastVisits := deque;
+                        size -= Nat.min(size, 1);
                     }else{
                         enLoop := false;
                     };
@@ -652,9 +656,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         return (count, count * 10 / _duration);
     };
-    // TPS within 5 seconds must be less than MAX_TPS and TPS within 15 seconds must be less than MAX_TPS * 80%.
+    // TPS within 6 seconds must be less than MAX_TPS.
     private func _checkTPSLimit() : Bool{
-        return _tps(5, null).1 < setting.MAX_TPS*10 and _tps(15, null).1 < setting.MAX_TPS*8;
+        return _tps(6, null).1 < setting.MAX_TPS*10;
     };
     // Total number of asynchronous message queues
     private func _asyncMessageSize() : Nat{
@@ -682,17 +686,17 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         _visitLog(Option.get(_caller, Tools.principalToAccountBlob(Principal.fromActor(this), null)));
     };
     // Check the maximum number of orders the trader is allowed to have in PENDING status.
-    // 1. Trader: MAX_PENDINGS + 5 orders per pro-order
-    // 2. Vip-maker: MAX_PENDINGS * 10 + 10 orders per pro-order
-    private func _maxPendings(_trader: AccountId) : Nat{
+    // 1. Trader: MAX_PENDINGS + (sto_setting.gridMaxPerSide * 2 + 2) orders per pro-order
+    // 2. Vip-maker: MAX_PENDINGS * 10 + (sto_setting.gridMaxPerSide * 4 + 2) orders per pro-order
+    private func _maxPendings(_trader: AccountId, _isProOrder: Bool) : Nat{
         var proOrderCount : Nat = 0;
         switch(Trie.get(icdex_userProOrderList, keyb(_trader), Blob.equal)){
             case(?(userOrderList)){ proOrderCount := List.size(userOrderList); };
             case(_){};
         };
         switch(Trie.get(icdex_makers, keyb(_trader), Blob.equal)){
-            case(?(v, p)){ return setting.MAX_PENDINGS * 10 + proOrderCount * 10; };
-            case(_){ return setting.MAX_PENDINGS + proOrderCount * 5; };
+            case(?(v, p)){ return setting.MAX_PENDINGS * 10 + (if (_isProOrder){ proOrderCount * (sto_setting.gridMaxPerSide * 4 + 2) }else{ 0 }) };
+            case(_){ return setting.MAX_PENDINGS + (if (_isProOrder){ proOrderCount * (sto_setting.gridMaxPerSide * 2 + 2) }else{ 0 }) };
         };
     };
 
@@ -2474,12 +2478,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
 
     // Conditional filter function for new orders
-    private func _traderFilter(account: AccountId, txid: Txid, order: OrderPrice, _orderType: OrderType, expirationDuration: Int, data: Blob) : ?TradingResult{
-        if (data.size() > 2048){
-            return ?#err({ code=#UndefinedError; message="410: The length of _data must be less than 2 KB"; });
+    private func _traderFilter(account: AccountId, txid: Txid, order: OrderPrice, _orderType: OrderType, expirationDuration: Int, data: Blob, isProOrder: Bool) : ?TradingResult{
+        if (data.size() > 256){
+            return ?#err({ code=#UndefinedError; message="410: The length of _data must be less than 256B"; });
         };
-        if (_pendingSize(?account) >= _maxPendings(account) and _orderType == #LMT and not(icdex_debug)){
-            return ?#err({code=#UndefinedError; message="411: The maximum number of pending status orders allowed per account is "# Nat.toText(_maxPendings(account));});
+        if (_pendingSize(?account) >= _maxPendings(account, isProOrder) and _orderType == #LMT and not(icdex_debug)){
+            return ?#err({code=#UndefinedError; message="411: The maximum number of pending status orders allowed per account is "# Nat.toText(_maxPendings(account, isProOrder));});
         };
         if (_pendingSize(null) >= maxTotalPendingNumber and _orderType == #LMT and 
         ((OrderBook.side(order) == #Sell and order.price > icdex_lastPrice.price*105/100) or (OrderBook.side(order) == #Buy and order.price < icdex_lastPrice.price*95/100))){
@@ -2674,7 +2678,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Core function for trading
     private func _trade(_caller:Principal, _order: OrderPrice, _orderType: OrderType, _expiration: ?PeriodNs, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data,
-    _brokerage: ?{broker: Principal; rate: Float}, _quickly: Bool) : async* TradingResult{
+    _brokerage: ?{broker: Principal; rate: Float}, _quickly: Bool, _isProOrder: Bool) : async* TradingResult{
         let __start = Time.now();
         assert(mode == #GeneralTrading);
         if (not(initialized)){ await* _init(); await* _getGas(true); };
@@ -2708,7 +2712,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if(nonce != _getNonce(account)){ // check nonce
             return #err({code=#NonceError; message="401: Nonce Error. The nonce should be "#Nat.toText(_getNonce(account));});
         }; 
-        switch(_traderFilter(account, txid, order, _orderType, expirationDuration, data)){
+        switch(_traderFilter(account, txid, order, _orderType, expirationDuration, data, _isProOrder)){
             case(?err){ return err; };
             case(_){};
         };
@@ -2743,7 +2747,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         icdex_orders := Trie.put(icdex_orders, keyb(txid), Blob.equal, tradingOrder).0;
         //trieLog := List.push((txid, "put", Trie.isValid(icdex_orders, true)), trieLog);
         _addNonce(account); // update nonce here
-        if (Time.now() > lastExpiredTime + 5*ns_ and _pendingSize(null) < maxTotalPendingNumber){ 
+        if (Time.now() > lastExpiredTime + 5*ns_ and not(_isProOrder)){ 
             lastExpiredTime := Time.now();
             _clear();
             _expire();
@@ -2851,7 +2855,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         // record storage
         _saveOrderRecord(txid, true, false);
         //await drc205.store();
-        if (not(_quickly)){
+        if (not(_isProOrder)){
             await* _callDrc205Store(false, false); // 0 ~ 4
         };
         switch(_brokerage){
@@ -2861,19 +2865,55 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             case(_){};
         };
         let p_toid = _autoWithdraw({owner = icdexRouter; subaccount = null}, null);
-        if (not(_quickly)){
-            if (countFilled > 0 and enableStrategyOrders){
-                if (icdex_debug){
-                    await _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell })); 
-                }else{
-                    let f = _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell }));
-                };
+        if (not(_isProOrder) and countFilled > 0 and enableStrategyOrders){
+            if (icdex_debug){
+                await _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell })); 
+            }else{
+                let f = _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell }));
             };
-            await* _ictcSagaRun(toid, false); // >= 10
+        };
+        if (not(_quickly) and not(_isProOrder)){
+            await* _ictcSagaRun(toid, false); 
+        }else if (_quickly and not(_isProOrder) and _tps(15, null).1 < setting.MAX_TPS*7 and _checkAsyncMessageLimit()){
+            if (icdex_debug){
+                ignore await saga.run(toid);
+            }else{
+                let f = saga.run(toid); // fast mode
+            };
         };
         lastExecutionDuration := Time.now() - __start;
         if (lastExecutionDuration > maxExecutionDuration) { maxExecutionDuration := lastExecutionDuration };
         return #ok({ txid = txid; filled = res.filled; status = status; });
+    };
+
+    private func _tradeCore(_caller: Principal, _order: OrderPrice, _orderType: OrderType, _expiration: ?PeriodNs, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data,
+    _brokerage: ?{broker: Principal; rate: Float}, _quickly: ?Bool) : async* TradingResult{
+        _checkICTCError();
+        if (not(_notPaused(?_caller) and initialized)){
+            return #err({code=#UndefinedError; message="400: Trading pair has been suspended.";}); 
+        };
+        let account = Tools.principalToAccountBlob(_caller, _sa);
+        await* _checkOverload(?account);
+        let brokerageRate: Float = switch(_brokerage){ 
+            case(?(b)){ b.rate };
+            case(_){ 0.0 };
+        };
+        if (brokerageRate > 0.005){
+            return #err({code=#UndefinedError; message="414: Brokerage rate should not be higher than 0.005 (0.5%).";}); 
+        };
+        if (_tps(6, ?account).0 > 3){ 
+            countRejections += 1; 
+            return #err({code=#UndefinedError; message="406: Tip: Only one order can be made within 3 seconds.";}); 
+        };
+        try{
+            countAsyncMessage += 1;
+            let res = await* _trade(_caller, _order, _orderType, _expiration, _nonce, _sa, _data, _brokerage, Option.get(_quickly, false), false);
+            countAsyncMessage -= Nat.min(1, countAsyncMessage);
+            return res;
+        }catch(e){
+            countAsyncMessage -= Nat.min(1, countAsyncMessage);
+            throw Error.reject("420: internal call error: "# Error.message(e)); 
+        };
     };
 
     // Cancel all orders. 1. Owner (DAO) can cancel all orders; 2. A trader can cancel all his own orders.
@@ -2975,8 +3015,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let res = _preCreateTx(_getAccountId(_account));
         return res;
     };
-    
-    /// Generic trade method that do not support broker
+
+    /// The core, and most versatile, trading function.
     ///
     /// Arguments:
     /// - orderPrice: OrderPrice. 
@@ -3000,97 +3040,35 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /// - sa: ?Sa. Optionally specify the subaccount of the caller
     /// - data: ?Data. Optional Remark data, like memo.
     /// e.g. '(record{ quantity=variant{Sell=5_000_000}; price=10_000_000;}, variant{LMT}, null, null, null, null)'
+    /// - brokerage: ?{ broker: Principal; rate: Float; }. Set the broker’s receiving account (principal) and brokerage rates.
+    /// - quickly: ?Bool. Sets whether to execute quickly or not, if it is set to true, it will return asynchronously without waiting for the execution of the ICTC to be completed.
     ///
     /// Returns:
     /// - res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
     ///     status through drc205_events() or statusByTxid().
     ///
     /// See the `UNIT_SIZE and Price` section for a description of PRICE and human-readable PRICE.
+    public shared(msg) func tradeCore(_order: OrderPrice, _orderType: OrderType, _expiration: ?PeriodNs, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data,
+    _brokerage: ?{broker: Principal; rate: Float}, _quickly: ?Bool) : async TradingResult{
+        return await* _tradeCore(msg.caller, _order, _orderType, _expiration, _nonce, _sa, _data, _brokerage, _quickly);
+    };
+    
+    /// Generic trade method that do not support broker  
+    /// @deprecated: This method will be deprecated. Suggested alternative to using tradeCore().
     public shared(msg) func trade(_order: OrderPrice, _orderType: OrderType, _expiration: ?PeriodNs, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data) : async TradingResult{
-        _checkICTCError();
-        if (not(_notPaused(?msg.caller) and initialized)){
-            return #err({code=#UndefinedError; message="400: Trading pair has been suspended.";}); 
-        };
-        let account = Tools.principalToAccountBlob(msg.caller, _sa);
-        await* _checkOverload(?account);
-        if (_tps(6, ?account).0 > 3){ 
-            countRejections += 1; 
-            return #err({code=#UndefinedError; message="406: Tip: Only one order can be made within 3 seconds.";}); 
-        };
-        try{
-            countAsyncMessage += 1;
-            let res = await* _trade(msg.caller, _order, _orderType, _expiration, _nonce, _sa, _data, null, false);
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            return res;
-        }catch(e){
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            throw Error.reject("420: internal call error: "# Error.message(e)); 
-        };
+        return await* _tradeCore(msg.caller, _order, _orderType, _expiration, _nonce, _sa, _data, null, null);
     };
 
-    /// Generic trade method that support broker
-    ///
-    /// Arguments: (See the trade() method arguments, the following are additional arguments)
-    /// - brokerage: ?{ broker: Principal; rate: Float; }. Set the broker’s receiving account (principal) and brokerage rates.
-    ///
-    /// Returns:
-    /// - res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
-    ///     status through drc205_events() or statusByTxid().
+    /// Generic trade method that support broker  
+    /// @deprecated: This method will be deprecated. Suggested alternative to using tradeCore().
     public shared(msg) func trade_b(_order: OrderPrice, _orderType: OrderType, _expiration: ?PeriodNs, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data,
     _brokerage: ?{broker: Principal; rate: Float}) : async TradingResult{
-        _checkICTCError();
-        if (not(_notPaused(?msg.caller) and initialized)){
-            return #err({code=#UndefinedError; message="400: Trading pair has been suspended.";}); 
-        };
-        let account = Tools.principalToAccountBlob(msg.caller, _sa);
-        await* _checkOverload(?account);
-        let brokerageRate: Float = switch(_brokerage){ 
-            case(?(b)){ b.rate };
-            case(_){ 0.0 };
-        };
-        if (brokerageRate > 0.005){
-            return #err({code=#UndefinedError; message="414: Brokerage rate should not be higher than 0.005 (0.5%).";}); 
-        };
-        if (_tps(6, ?account).0 > 3){ 
-            countRejections += 1; 
-            return #err({code=#UndefinedError; message="406: Tip: Only one order can be made within 3 seconds.";}); 
-        };
-        try{
-            countAsyncMessage += 1;
-            let res = await* _trade(msg.caller, _order, _orderType, _expiration, _nonce, _sa, _data, _brokerage, false);
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            return res;
-        }catch(e){
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            throw Error.reject("420: internal call error: "# Error.message(e)); 
-        };
+        return await* _tradeCore(msg.caller, _order, _orderType, _expiration, _nonce, _sa, _data, _brokerage, null);
     };
 
-    /// Fast MKT ordering method (not supported broker)
-    /// The trader adds _value number of DebitToken and if the order match is successful, he will get some number of CreditToken.
-    ///
-    /// Arguments:
-    /// - debitToken: Principal. DebitToken’s canister-id (DebitToken: The token that the trader needs to add to the trading pair).
-    /// - value: Amount. The amount of DebitToken you want to add.
-    /// - nonce: ?Nonce. Optionally specify nonce value.
-    /// - sa: ?Sa. Optionally specify the subaccount of the caller
-    /// - data: ?Data. Optional Remark data, like memo.
-    ///
-    /// Returns:
-    /// - res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
-    ///     status through drc205_events() or statusByTxid().
-    /// 
+    /// Fast MKT ordering method  
+    /// @deprecated: This method will be deprecated. Suggested alternative to using tradeMKT_b().
     public shared(msg) func tradeMKT(_token: DebitToken, _value: Amount, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data) : async TradingResult{
-        _checkICTCError();
-        if (not(_notPaused(?msg.caller) and initialized)){
-            return #err({code=#UndefinedError; message="400: Trading pair has been suspended.";}); 
-        };
-        let account = Tools.principalToAccountBlob(msg.caller, _sa);
-        await* _checkOverload(?account);
-        if (_tps(6, ?account).0 > 3){ 
-            countRejections += 1; 
-            return #err({code=#UndefinedError; message="406: Tip: Only one order can be made within 3 seconds.";}); 
-        };
         var _order: OrderPrice = {quantity=#Sell(0); price=0;};
         var _orderType: OrderType = #MKT;
         if (_token == _token0Canister()){
@@ -3098,44 +3076,28 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         } else if (_token == _token1Canister()){
             _order := {quantity=#Buy((0, _value)); price=0;};
         };
-        try{
-            countAsyncMessage += 1;
-            let res = await* _trade(msg.caller, _order, _orderType, null, _nonce, _sa, _data, null, true);
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            return res;
-        }catch(e){
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            throw Error.reject("420: internal call error: "# Error.message(e)); 
-        };
+        return await* _tradeCore(msg.caller, _order, _orderType, null, _nonce, _sa, _data, null, ?true);
     };
 
     /// Fast MKT ordering method (supported broker)
+    /// 
+    /// The trader adds _value number of DebitToken and if the order match is successful, he will get some number of CreditToken.
     ///
-    /// Arguments: (See the trade() method arguments, the following are additional arguments)
+    /// Arguments:
+    /// - debitToken: Principal. DebitToken’s canister-id (DebitToken: The token that the trader needs to add to the trading pair).
+    /// - value: Amount. The amount of DebitToken you want to add.
+    /// - limitPrice: ?Nat; The most unfavorable price that can be accepted, null means any price is accepted.
+    /// - nonce: ?Nonce. Optionally specify nonce value.
+    /// - sa: ?Sa. Optionally specify the subaccount of the caller
+    /// - data: ?Data. Optional Remark data, like memo.
     /// - brokerage: ?{ broker: Principal; rate: Float; }. Set the broker’s receiving account (principal) and brokerage rates.
     ///
     /// Returns:
     /// - res: TradingResult. Returns order result. The execution is asynchronous, Record the txid and you can check the order 
     ///     status through drc205_events() or statusByTxid().
+    /// 
     public shared(msg) func tradeMKT_b(_token: DebitToken, _value: Amount, _limitPrice: ?Nat, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data,
     _brokerage: ?{broker: Principal; rate: Float}) : async TradingResult{
-        _checkICTCError();
-        if (not(_notPaused(?msg.caller) and initialized)){
-            return #err({code=#UndefinedError; message="400: Trading pair has been suspended.";}); 
-        };
-        let account = Tools.principalToAccountBlob(msg.caller, _sa);
-        await* _checkOverload(?account);
-        if (_tps(6, ?account).0 > 3){ 
-            countRejections += 1; 
-            return #err({code=#UndefinedError; message="406: Tip: Only one order can be made within 3 seconds.";}); 
-        };
-        let brokerageRate: Float = switch(_brokerage){ 
-            case(?(b)){ b.rate };
-            case(_){ 0.0 };
-        };
-        if (brokerageRate > 0.005){
-            return #err({code=#UndefinedError; message="414: Brokerage rate should not be higher than 0.005 (0.5%).";}); 
-        };
         let limitPrice = Option.get(_limitPrice, 0);
         var _order: OrderPrice = {quantity=#Sell(0); price=limitPrice;};
         var _orderType: OrderType = #MKT;
@@ -3144,15 +3106,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         } else if (_token == _token1Canister()){
             _order := {quantity=#Buy((0, _value)); price = _order.price;};
         };
-        try{
-            countAsyncMessage += 1;
-            let res = await* _trade(msg.caller, _order, _orderType, null, _nonce, _sa, _data, _brokerage, true);
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            return res;
-        }catch(e){
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            throw Error.reject("420: internal call error: "# Error.message(e)); 
-        };
+        return await* _tradeCore(msg.caller, _order, _orderType, null, _nonce, _sa, _data, _brokerage, ?true);
     };
     
     /// The trader cancels an order
@@ -3161,7 +3115,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /// - nonce: Nat. Nonce of the order. If you don't know the nonce of order, you can call cancelByTxid().
     /// - sa: ?Sa. Optionally specify the subaccount of the caller
     public shared(msg) func cancel(_nonce: Nonce, _sa: ?Sa) : async (){
-        if (not(_notPaused(?msg.caller) and initialized)){
+        if (not(_notPaused(?msg.caller))){
             throw Error.reject("400: Trading pair has been suspended."); 
         };
         let account = Tools.principalToAccountBlob(msg.caller, _sa);
@@ -3689,6 +3643,22 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         }
     };
 
+    /// Returns whether there are transactions in process for an account.
+    public query func isAccountIctcDone(_a: AccountId): async (Bool, [Toid]){
+        var toids: [Toid] = [];
+        for ((a, toid, time) in List.toArray(List.filter(accountWithdrawToids, func (item: (AccountId, Toid, Time.Time)): Bool{ item.0 == _a })).vals()){
+            if (not(_ictcDone([toid]))){
+                return (false, [toid]);
+            };
+        };
+        for ((t, o) in Trie.iter(_accountPendingOrders(?_a))){
+            if (not(_ictcDone(o.toids))){
+                return (false, o.toids);
+            };
+        };
+        return (true, []);
+    };
+
     /* ===========================
       PoolMode section
     ============================== */
@@ -4186,6 +4156,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /// Returns the balance kept in PoolAccount by a trader in a safe way. (An exception will be thrown when the ICTC is executing and has not yet completed. You should try the query again after a while)
     public query func safeAccountBalance(_a: Address): async {balance: KeepingBalance; pendingOrders: (Amount, Amount); price: STO.Price; unitSize: Nat}{
         let account = _getAccountId(_a);
+        assert(_notPaused(null));
         assert(_accountIctcDone(account));
         return {balance = _getAccountBalance(account); pendingOrders = _getPendingOrderLiquidity(?account); price = icdex_lastPrice.price; unitSize = setting.UNIT_SIZE };
     };
@@ -4446,7 +4417,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             if (isExisting and Option.isNull(optTxid) and ((side == #Sell and quantity <= balances.token0.available) or (side == #Buy and amount <= balances.token1.available))){
                 count += 1;
                 try{
-                    if (count % 5 == 0){ // Execute _awaitFunc() every 5 trades, otherwise may face insufficient number of executable instructions.
+                    if (count % 10 == 0){ // Execute _awaitFunc() every 10 trades, otherwise may face insufficient number of executable instructions.
                         try{
                             countAsyncMessage += 1;
                             await _awaitFunc();
@@ -4455,7 +4426,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                             countAsyncMessage -= Nat.min(1, countAsyncMessage);
                         };
                     };
-                    let res = await* _trade(icrc1Account.owner, orderPrice, #LMT, null, null, _toSaNat8(icrc1Account.subaccount), null, null, true);
+                    let res = await* _trade(icrc1Account.owner, orderPrice, #LMT, null, null, _toSaNat8(icrc1Account.subaccount), null, null, true, true);
                     switch(res){ 
                         case(#ok(r)){
                             let (isExisting, optTxid) = STO.isPendingOrder(icdex_stOrderRecords, soid, side, orderPrice.price);
@@ -4492,21 +4463,32 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                             };
                         };
                         case(#err(e)){
+                            // po_last_error #= Nat.toText(soid) # ": "# debug_show(e) #" || ";
                             icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, soid, side, orderPrice.price);
                             icdex_stOrderRecords := STO.updateStats(icdex_stOrderRecords, soid, {orderCount = 0; errorCount = 1; totalInAmount = {token0=0; token1=0}; totalOutAmount = {token0=0; token1=0};});
                         };
                     };
                 }catch(e){
+                    // po_last_error #= Nat.toText(soid) # ": "# debug_show(Error.message(e)) #" || ";
                     icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, soid, side, orderPrice.price);
                     icdex_stOrderRecords := STO.updateStats(icdex_stOrderRecords, soid, {orderCount = 0; errorCount = 1; totalInAmount = {token0=0; token1=0}; totalOutAmount = {token0=0; token1=0};});
                 };
             }else if (isExisting and Option.isNull(optTxid)){
+                // po_last_error #= Nat.toText(soid) # ": The balance is insufficient. || ";
                 icdex_stOrderRecords := STO.removePendingOrderByPrice(icdex_stOrderRecords, soid, side, orderPrice.price);
                 icdex_stOrderRecords := STO.updateStats(icdex_stOrderRecords, soid, {orderCount = 0; errorCount = 1; totalInAmount = {token0=0; token1=0}; totalOutAmount = {token0=0; token1=0};});
             };
         };
         await* _ictcSagaRun(0, false);  
     };
+    // private var po_last_error: Text = "";
+    // public query func debug_po_errors(): async Text{
+    //     return po_last_error;
+    // };
+    // public shared(msg) func debug_reset_po_errors(): async (){
+    //     assert(_onlyOwner(msg.caller));
+    //     po_last_error := "";
+    // };
 
     // Canceling an order in an order book
     private func _cancelOrder(_soid: ?Nat, _txid: Txid, _side: ?OrderBook.OrderSide) : SagaTM.Toid{
@@ -4666,7 +4648,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 if (v < icdex_lastPrice.price*10 ){ res := false };
             };
             case(?#Percent(?v)){
-                if (v < 100 ){ res := false }; // 1/10000
+                if (v < 100 or v >= 100000000){ res := false }; // 1/10000 ~ 1
             };
             case(_){};
         };
@@ -4780,7 +4762,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     }else{
                         icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, soid, status);
                     };
-                    if (poCount == 10 or poCount % 50 == 0){
+                    if (poCount == 10 or poCount % 30 == 0){
                         await _awaitFunc(); // Prevents insufficient number of available execution instructions
                     };
                     sto_lastWorkTime2 := _now();
@@ -4938,8 +4920,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (icdex_lastPrice.price == 0){
             throw Error.reject("458: Requires the pair to have at least one trade."); 
         };
-        if (List.size(icdex_activeProOrderList) >= 2000){
-            throw Error.reject("460: The number of pro-order strategies that the system can host cannot exceed 2,000."); 
+        if (List.size(icdex_activeProOrderList) >= 500){
+            throw Error.reject("460: The number of pro-order strategies that the system can host cannot exceed 500."); 
         };
         let icrc1Account: STO.ICRC1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa) };
         let account = Tools.principalToAccountBlob(msg.caller, _sa);
@@ -5218,8 +5200,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (not(enableStrategyOrders)){
             throw Error.reject("400: The Strategy Order module is disabled!"); 
         };
-        if (List.size(icdex_activeStopLossOrderList.buy) + List.size(icdex_activeStopLossOrderList.sell) >= 50000){
-            throw Error.reject("460: The number of stoploss-order strategies that the system can host cannot exceed 50,000."); 
+        if (List.size(icdex_activeStopLossOrderList.buy) + List.size(icdex_activeStopLossOrderList.sell) >= 10000){
+            throw Error.reject("460: The number of stoploss-order strategies that the system can host cannot exceed 10,000."); 
         };
         if (icdex_lastPrice.price == 0){
             throw Error.reject("458: Requires the pair to have at least one trade."); 

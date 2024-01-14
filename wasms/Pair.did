@@ -984,6 +984,8 @@ type ICDexPair =
    token0: () -> (TokenType, opt TokenStd) query;
    token1: () -> (TokenType, opt TokenStd) query;
    tpsStats: () -> (nat, float64, nat, nat, int, int) query;
+   tradeCore: (OrderPrice, OrderType, opt PeriodNs, opt Nonce, opt Sa, opt Data, 
+   opt record { broker: principal; rate: float64; }, opt Bool) -> (TradingResult);
    trade: (OrderPrice, OrderType, opt PeriodNs, opt Nonce, opt Sa,
     opt Data) -> (TradingResult);
    tradeMKT: (DebitToken, Amount, opt Nonce, opt Sa, opt Data) ->

@@ -80,10 +80,10 @@ module {
         //     #update_settings: { canister_id : Principal; settings : IC.canister_settings; };
         //     #http_request: IC.CanisterHttpRequestArgs;
         // }; 
-        #Ledger: {
-            #transfer: Ledger.TransferArgs;
-            #account_balance: Ledger.AccountBalanceArgs;
-        }; 
+        // #Ledger: {
+        //     #transfer: Ledger.TransferArgs;
+        //     #account_balance: Ledger.AccountBalanceArgs;
+        // }; 
         // #CyclesWallet: {
         //     #wallet_balance;
         //     #wallet_send: { canister: Principal; amount: Nat64 };
@@ -121,13 +121,13 @@ module {
             //#getCoinSeconds : ?DRC20.Address;
             #dropAccount: ?DRC20.Sa;
         }; 
-        #DIP20: {
-            #transfer : (to: Principal, value: Nat);
-            #transferFrom : (from: Principal, to: Principal, value: Nat);
-            #approve : (spender: Principal, value: Nat);
-            //#decimals;
-            #balanceOf : (who: Principal);
-        };
+        // #DIP20: {
+        //     #transfer : (to: Principal, value: Nat);
+        //     #transferFrom : (from: Principal, to: Principal, value: Nat);
+        //     #approve : (spender: Principal, value: Nat);
+        //     //#decimals;
+        //     #balanceOf : (who: Principal);
+        // };
         #ICRC1: { // ICRC1 -> ICRC1New result  (Old version ICRC1)
             #icrc1_transfer : (ICRC1.TransferArgs);
             #icrc1_balance_of : (ICRC1.Account);
@@ -136,19 +136,19 @@ module {
             #icrc1_transfer : (ICRC1New.TransferArgs);
             #icrc1_balance_of : (ICRC1New.Account);
         };
-        #ICRC2: {  // ICRC2 -> Unavailable   (Old version ICRC2)
-            #icrc2_approve : (ICRC2.ApproveArgs); //*
-            #icrc2_transfer_from : (ICRC2.TransferFromArgs); //*
-        };
-        #ICRC2New: { // ICRC2New -> ICRC2New result
-            #icrc2_approve : (ICRC2New.ApproveArgs);
-            #icrc2_transfer_from : (ICRC2New.TransferFromArgs);
-        };
-        #ICTokens: {
-            #mint: (_to:DRC20.Address, _value: DRC20.Amount, _nonce: ?DRC20.Nonce, _data: ?DRC20.Data);
-            #burn: (_value: DRC20.Amount, _nonce: ?DRC20.Nonce, _sa: ?DRC20.Sa, _data: ?DRC20.Data);
-            //#heldFirstTime: DRC20.Address;
-        };
+        // #ICRC2: {  // ICRC2 -> Unavailable   (Old version ICRC2)
+        //     #icrc2_approve : (ICRC2.ApproveArgs); //*
+        //     #icrc2_transfer_from : (ICRC2.TransferFromArgs); //*
+        // };
+        // #ICRC2New: { // ICRC2New -> ICRC2New result
+        //     #icrc2_approve : (ICRC2New.ApproveArgs);
+        //     #icrc2_transfer_from : (ICRC2New.TransferFromArgs);
+        // };
+        // #ICTokens: {
+        //     #mint: (_to:DRC20.Address, _value: DRC20.Amount, _nonce: ?DRC20.Nonce, _data: ?DRC20.Data);
+        //     #burn: (_value: DRC20.Amount, _nonce: ?DRC20.Nonce, _sa: ?DRC20.Sa, _data: ?DRC20.Data);
+        //     //#heldFirstTime: DRC20.Address;
+        // };
         // #ICSwap: {
         //     #getDepositAccount : (_account: ICSwap.Address);
         //     #swap : (_order: ICSwap.OrderRequest, _slip: ?Nat, _autoWithdraw: ?Bool, _nonce: ?ICSwap.Nonce, _sa: ?ICSwap.Sa, _data: ?ICSwap.Data);
@@ -199,6 +199,7 @@ module {
             #batchTransfer: ([(_act: {#add; #sub}, _account: Blob, _token: {#token0; #token1}, _amount: {#locked: Nat; #available: Nat})]);
             // for ICDexMaker
             #dexDepositFallback: (_pair: Principal, _sa: ?[Nat8]);
+            #updatePoolLocalBalance: (_token0: ?{#add: Nat; #sub: Nat; #set: Nat}, _token1: ?{#add: Nat; #sub: Nat; #set: Nat});
         };
     };
 
@@ -223,10 +224,10 @@ module {
         //     #update_settings: ();
         //     #http_request: IC.CanisterHttpResponsePayload
         // }; 
-        #Ledger: {
-            #transfer: Ledger.TransferResult;
-            #account_balance: Ledger.ICP;
-        }; 
+        // #Ledger: {
+        //     #transfer: Ledger.TransferResult;
+        //     #account_balance: Ledger.ICP;
+        // }; 
         // #CyclesWallet: {
         //     #wallet_balance: { amount: Nat64 };
         //     #wallet_send: CyclesWallet.WalletResult;
@@ -264,18 +265,18 @@ module {
             //#getCoinSeconds : (DRC20.CoinSeconds, ?DRC20.CoinSeconds);
             #dropAccount;
         }; 
-        #ICTokens: {
-            #mint: DRC20.TxnResult;
-            #burn: DRC20.TxnResult;
-            //#heldFirstTime: ?Int;
-        };
-        #DIP20: {
-            #transfer : DIP20.TxReceipt;
-            #transferFrom : DIP20.TxReceipt;
-            #approve : DIP20.TxReceipt;
-            //#decimals : Nat8;
-            #balanceOf : Nat;
-        };
+        // #ICTokens: {
+        //     #mint: DRC20.TxnResult;
+        //     #burn: DRC20.TxnResult;
+        //     //#heldFirstTime: ?Int;
+        // };
+        // #DIP20: {
+        //     #transfer : DIP20.TxReceipt;
+        //     #transferFrom : DIP20.TxReceipt;
+        //     #approve : DIP20.TxReceipt;
+        //     //#decimals : Nat8;
+        //     #balanceOf : Nat;
+        // };
         #ICRC1: {
             #icrc1_transfer : { #Ok: Nat; #Err: ICRC1.TransferError; }; //*
             #icrc1_balance_of : Nat;
@@ -284,14 +285,14 @@ module {
             #icrc1_transfer : { #Ok: Nat; #Err: ICRC1New.TransferError; };
             #icrc1_balance_of : Nat;
         };
-        #ICRC2: {
-            #icrc2_approve : ({ #Ok : Nat; #Err : ICRC2.ApproveError });
-            #icrc2_transfer_from : ({ #Ok : Nat; #Err : ICRC2.TransferFromError });
-        };
-        #ICRC2New: {
-            #icrc2_approve : ({ #Ok : Nat; #Err : ICRC2New.ApproveError });
-            #icrc2_transfer_from : ({ #Ok : Nat; #Err : ICRC2New.TransferFromError });
-        };
+        // #ICRC2: {
+        //     #icrc2_approve : ({ #Ok : Nat; #Err : ICRC2.ApproveError });
+        //     #icrc2_transfer_from : ({ #Ok : Nat; #Err : ICRC2.TransferFromError });
+        // };
+        // #ICRC2New: {
+        //     #icrc2_approve : ({ #Ok : Nat; #Err : ICRC2New.ApproveError });
+        //     #icrc2_transfer_from : ({ #Ok : Nat; #Err : ICRC2New.TransferFromError });
+        // };
         // #ICSwap: {
         //     #getDepositAccount : (ICRC1.Account, ICSwap.Address, ICSwap.Nonce, ICSwap.Txid);
         //     #swap : ICSwap.TxnResult;
@@ -325,6 +326,7 @@ module {
             // #dip20SendComp : ();
             #batchTransfer: ([{token0:{locked: Nat; available: Nat}; token1:{locked: Nat; available: Nat}}]);
             #dexDepositFallback: (value0: Nat, value1: Nat);
+            #updatePoolLocalBalance: ({ balance0: Nat; balance1: Nat; ts: Nat; });
         };
     };
 
@@ -348,8 +350,8 @@ module {
                     // case(?(#CyclesFinance(#cyclesToIcp(#ok(v))))){ txid_ := v };
                     // case(?(#CyclesFinance(#icpToCycles(#ok(v))))){ txid_ := v };
                     // case(?(#CyclesFinance(#claim(#ok(v))))){ txid_ := v };
-                    case(?(#ICTokens(#mint(#ok(v))))){ txid_ := v };
-                    case(?(#ICTokens(#burn(#ok(v))))){ txid_ := v };
+                    // case(?(#ICTokens(#mint(#ok(v))))){ txid_ := v };
+                    // case(?(#ICTokens(#burn(#ok(v))))){ txid_ := v };
                     // case(?(#ICSwap(#swap(#ok(v))))){ txid_ := v };
                     // case(?(#ICSwap(#add(#ok(v))))){ txid_ := v };
                     // case(?(#ICSwap(#remove(#ok(v))))){ txid_ := v };
@@ -520,36 +522,36 @@ module {
                     //         };
                     //     };
                     // };
-                    case(#Ledger(method)){
-                        let ledger: Ledger.Self = actor(calleeId);
-                        switch(method){
-                            case(#account_balance(args)){
-                                var result: Ledger.ICP = { e8s = 0;}; // Receipt
-                                try{
-                                    // do
-                                    result := await ledger.account_balance(args);
-                                    // check & return
-                                    return (#Done, ?#Ledger(#account_balance(result)), null);
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#transfer(args)){
-                                var result: Ledger.TransferResult = #Ok(0); // Receipt
-                                try{
-                                    // do
-                                    result := await ledger.transfer(args);
-                                    // check & return
-                                    switch(result){
-                                        case(#Ok(high)){ return (#Done, ?#Ledger(#transfer(result)), null); };
-                                        case(#Err(e)){ return (#Error, ?#Ledger(#transfer(result)), ?{code=#future(9903); message="ICP Transfer Error."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                        };
-                    };
+                    // case(#Ledger(method)){
+                    //     let ledger: Ledger.Self = actor(calleeId);
+                    //     switch(method){
+                    //         case(#account_balance(args)){
+                    //             var result: Ledger.ICP = { e8s = 0;}; // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await ledger.account_balance(args);
+                    //                 // check & return
+                    //                 return (#Done, ?#Ledger(#account_balance(result)), null);
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         case(#transfer(args)){
+                    //             var result: Ledger.TransferResult = #Ok(0); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await ledger.transfer(args);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#Ok(high)){ return (#Done, ?#Ledger(#transfer(result)), null); };
+                    //                     case(#Err(e)){ return (#Error, ?#Ledger(#transfer(result)), ?{code=#future(9903); message="ICP Transfer Error."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //     };
+                    // };
                     // case(#CyclesWallet(method)){
                     //     let callee: CyclesWallet.Self = actor(calleeId);
                     //     if (cycles > 0){ Cycles.add(cycles); };
@@ -883,66 +885,66 @@ module {
                             //case(_){ return (#Error, null, ?{code=#future(9902); message="No such method."; });};
                         };
                     };
-                    case(#DIP20(method)){
-                        let token: DIP20.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
-                        switch(method){
-                            case(#balanceOf(user)){
-                                var result: Nat = 0; // Receipt
-                                try{
-                                    // do
-                                    result := await token.balanceOf(user);
-                                    // check & return
-                                    return (#Done, ?#DIP20(#balanceOf(result)), null);
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#approve(spender, amount)){
-                                var result: DIP20.TxReceipt = #Err(#Other("")); // Receipt
-                                try{
-                                    // do
-                                    result := await token.approve(spender, amount);
-                                    // check & return
-                                    switch(result){
-                                        case(#Ok(txid)){ return (#Done, ?#DIP20(#approve(result)), null); };
-                                        case(#Err(e)){ return (#Error, ?#DIP20(#approve(result)), ?{code=#future(9903); message="DIP20 token Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#transfer(to, amount)){
-                                var result: DIP20.TxReceipt = #Err(#Other("")); // Receipt
-                                try{
-                                    // do
-                                    result := await token.transfer(to, amount);
-                                    // check & return
-                                    switch(result){
-                                        case(#Ok(txid)){ return (#Done, ?#DIP20(#transfer(result)), null); };
-                                        case(#Err(e)){ return (#Error, ?#DIP20(#transfer(result)), ?{code=#future(9903); message="DIP20 token Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#transferFrom(from, to, amount)){
-                                var result: DIP20.TxReceipt = #Err(#Other("")); // Receipt
-                                try{
-                                    // do
-                                    result := await token.transferFrom(from, to, amount);
-                                    // check & return
-                                    switch(result){
-                                        case(#Ok(txid)){ return (#Done, ?#DIP20(#transferFrom(result)), null); };
-                                        case(#Err(e)){ return (#Error, ?#DIP20(#transferFrom(result)), ?{code=#future(9903); message="DIP20 token Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            //case(_){ return (#Error, null, ?{code=#future(9902); message="No such method."; });};
-                        };
-                    };
+                    // case(#DIP20(method)){
+                    //     let token: DIP20.Self = actor(calleeId);
+                    //     if (cycles > 0){ Cycles.add(cycles); };
+                    //     switch(method){
+                    //         case(#balanceOf(user)){
+                    //             var result: Nat = 0; // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.balanceOf(user);
+                    //                 // check & return
+                    //                 return (#Done, ?#DIP20(#balanceOf(result)), null);
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         case(#approve(spender, amount)){
+                    //             var result: DIP20.TxReceipt = #Err(#Other("")); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.approve(spender, amount);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#Ok(txid)){ return (#Done, ?#DIP20(#approve(result)), null); };
+                    //                     case(#Err(e)){ return (#Error, ?#DIP20(#approve(result)), ?{code=#future(9903); message="DIP20 token Err."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         case(#transfer(to, amount)){
+                    //             var result: DIP20.TxReceipt = #Err(#Other("")); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.transfer(to, amount);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#Ok(txid)){ return (#Done, ?#DIP20(#transfer(result)), null); };
+                    //                     case(#Err(e)){ return (#Error, ?#DIP20(#transfer(result)), ?{code=#future(9903); message="DIP20 token Err."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         case(#transferFrom(from, to, amount)){
+                    //             var result: DIP20.TxReceipt = #Err(#Other("")); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.transferFrom(from, to, amount);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#Ok(txid)){ return (#Done, ?#DIP20(#transferFrom(result)), null); };
+                    //                     case(#Err(e)){ return (#Error, ?#DIP20(#transferFrom(result)), ?{code=#future(9903); message="DIP20 token Err."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         //case(_){ return (#Error, null, ?{code=#future(9902); message="No such method."; });};
+                    //     };
+                    // };
                     case(#ICRC1(method)){ // For forward compatibility
                         let token: ICRC1New.Self = actor(calleeId);
                         if (cycles > 0){ Cycles.add(cycles); };
@@ -1007,75 +1009,75 @@ module {
                             //case(_){ return (#Error, null, ?{code=#future(9902); message="No such method."; });};
                         };
                     };
-                    case(#ICRC2New(method)){
-                        let token: ICRC2New.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
-                        switch(method){
-                            case(#icrc2_approve(args)){
-                                var result: { #Ok: Nat; #Err: ICRC2New.ApproveError; } = #Err(#TemporarilyUnavailable); // Receipt
-                                try{
-                                    // do
-                                    result := await token.icrc2_approve(args);
-                                    // check & return
-                                    switch(result){
-                                        case(#Ok(id)){ return (#Done, ?#ICRC2New(#icrc2_approve(result)), null); };
-                                        case(#Err(e)){ return (#Error, ?#ICRC2New(#icrc2_approve(result)), ?{code=#future(9903); message="ICRC2 token Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#icrc2_transfer_from(args)){
-                                var result: { #Ok: Nat; #Err: ICRC2New.TransferFromError; } = #Err(#TemporarilyUnavailable); // Receipt
-                                try{
-                                    // do
-                                    result := await token.icrc2_transfer_from(args);
-                                    // check & return
-                                    switch(result){
-                                        case(#Ok(id)){ return (#Done, ?#ICRC2New(#icrc2_transfer_from(result)), null); };
-                                        case(#Err(e)){ return (#Error, ?#ICRC2New(#icrc2_transfer_from(result)), ?{code=#future(9903); message="ICRC2 token Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                        };
-                    };
-                    case(#ICTokens(method)){
-                        let token: ICTokens.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
-                        switch(method){
-                            case(#mint(_to, _value, _nonce, _data)){
-                                var result: ICTokens.TxnResult = #err({code=#UndefinedError; message="No call."}); // Receipt
-                                try{
-                                    // do
-                                    result := await token.ictokens_mint(_to, _value, _nonce, _data);
-                                    // check & return
-                                    switch(result){
-                                        case(#ok(txid)){ return (#Done, ?#ICTokens(#mint(result)), null); };
-                                        case(#err(e)){ return (#Error, ?#ICTokens(#mint(result)), ?{code=#future(9903); message="Calling Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#burn(_value, _nonce, _sa, _data)){
-                                var result: ICTokens.TxnResult = #err({code=#UndefinedError; message="No call."}); // Receipt
-                                try{
-                                    // do
-                                    result := await token.ictokens_burn(_value, _nonce, _sa, _data);
-                                    // check & return
-                                    switch(result){
-                                        case(#ok(txid)){ return (#Done, ?#ICTokens(#burn(result)), null); };
-                                        case(#err(e)){ return (#Error, ?#ICTokens(#burn(result)), ?{code=#future(9903); message="Calling Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            //case(_){ return (#Error, null, ?{code=#future(9902); message="No such method."; });};
-                        };
-                    };
+                    // case(#ICRC2New(method)){
+                    //     let token: ICRC2New.Self = actor(calleeId);
+                    //     if (cycles > 0){ Cycles.add(cycles); };
+                    //     switch(method){
+                    //         case(#icrc2_approve(args)){
+                    //             var result: { #Ok: Nat; #Err: ICRC2New.ApproveError; } = #Err(#TemporarilyUnavailable); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.icrc2_approve(args);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#Ok(id)){ return (#Done, ?#ICRC2New(#icrc2_approve(result)), null); };
+                    //                     case(#Err(e)){ return (#Error, ?#ICRC2New(#icrc2_approve(result)), ?{code=#future(9903); message="ICRC2 token Err."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         case(#icrc2_transfer_from(args)){
+                    //             var result: { #Ok: Nat; #Err: ICRC2New.TransferFromError; } = #Err(#TemporarilyUnavailable); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.icrc2_transfer_from(args);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#Ok(id)){ return (#Done, ?#ICRC2New(#icrc2_transfer_from(result)), null); };
+                    //                     case(#Err(e)){ return (#Error, ?#ICRC2New(#icrc2_transfer_from(result)), ?{code=#future(9903); message="ICRC2 token Err."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //     };
+                    // };
+                    // case(#ICTokens(method)){
+                    //     let token: ICTokens.Self = actor(calleeId);
+                    //     if (cycles > 0){ Cycles.add(cycles); };
+                    //     switch(method){
+                    //         case(#mint(_to, _value, _nonce, _data)){
+                    //             var result: ICTokens.TxnResult = #err({code=#UndefinedError; message="No call."}); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.ictokens_mint(_to, _value, _nonce, _data);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#ok(txid)){ return (#Done, ?#ICTokens(#mint(result)), null); };
+                    //                     case(#err(e)){ return (#Error, ?#ICTokens(#mint(result)), ?{code=#future(9903); message="Calling Err."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         case(#burn(_value, _nonce, _sa, _data)){
+                    //             var result: ICTokens.TxnResult = #err({code=#UndefinedError; message="No call."}); // Receipt
+                    //             try{
+                    //                 // do
+                    //                 result := await token.ictokens_burn(_value, _nonce, _sa, _data);
+                    //                 // check & return
+                    //                 switch(result){
+                    //                     case(#ok(txid)){ return (#Done, ?#ICTokens(#burn(result)), null); };
+                    //                     case(#err(e)){ return (#Error, ?#ICTokens(#burn(result)), ?{code=#future(9903); message="Calling Err."; }); };
+                    //                 };
+                    //             } catch (e){
+                    //                 return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
+                    //             };
+                    //         };
+                    //         //case(_){ return (#Error, null, ?{code=#future(9902); message="No such method."; });};
+                    //     };
+                    // };
                     // case(#ICSwap(method)){
                     //     let swap: ICSwap.Self = actor(calleeId);
                     //     if (cycles > 0){ Cycles.add(cycles); };
