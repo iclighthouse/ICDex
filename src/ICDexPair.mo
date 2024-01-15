@@ -444,11 +444,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.42";
+    private let version_: Text = "0.12.43";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
     private let maxMemory: Nat = 1500*1000*1000; // 1.5G
+    private let defaultDuration = 3 * 30 * 24 * 3600 * ns_;
     private stable var ExpirationDuration : Int = 3 * 30 * 24 * 3600 * ns_;
     private stable var name_: Text = initArgs.name;
     private stable var pause: Bool = false;
@@ -537,7 +538,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     */
     // Manages canister memory growth
     private func _checkMemory(): (){
-        let defaultDuration = Int.abs(ExpirationDuration);
         let memmory = Prim.rts_memory_size();
         if (memmory > maxMemory){ // Blocking
             pause := true;
