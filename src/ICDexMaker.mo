@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.5";
+    private let version_: Text = "0.5.6";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -276,7 +276,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var visibility: {#Public; #Private} = initArgs.allow;
     private stable var initialized: Bool = false;
     private stable var sysTransactionLock: Bool = false; // Global transaction lock
-    private stable var withdrawalFee: Nat = 100; // ppm. 10000 means 1%.  (Fee: 10 * tokenFee + withdrawalFee * Value / 1000000)
+    private stable var withdrawalFee: Nat = 300; // ppm. 10000 means 1%.  (Fee: 10 * tokenFee + withdrawalFee * Value / 1000000)
     private stable var pairPrincipal: Principal = initArgs.pair; // Trading pair canister-id. An ICDexMaker can be bound to only one trading pair.
     private stable var token0Principal: Principal = initArgs.token0;
     private stable var token0Symbol: Text = "";
@@ -309,6 +309,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var gridSpread2: Nat = gridSpread * 5; // The second grid order takes a 5x grid spread.
     private stable var gridSoid2 : ?Nat = null; 
     private stable var gridOrderDeleted2 : Bool = false; 
+    private let rebalanceThresholdPct: Nat = 10; // 10%
+    private let resetGridThresholdPct: Nat = 20; // 20%
     // Events
     private stable var blockIndex : ICEvents.BlockHeight = 0;
     private stable var firstBlockIndex : ICEvents.BlockHeight = 0;
@@ -1336,7 +1338,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 let ttid2 = _ictcCreateGridOrder(#First, toid);
                 ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
                 ttidSize += 1;
-            }else if (not(gridOrderDeleted) and (_token0 > poolBalance.balance0 / 5 or _token1 > poolBalance.balance1 / 5)){
+            }else if (not(gridOrderDeleted) and (_token0 > poolBalance.balance0 * resetGridThresholdPct / 100 or _token1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
                 let ttid3 = _ictcUpdateGridOrder(#First, toid, #Running);
                 ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_accountId);
                 ttidSize += 1;
@@ -1345,7 +1347,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 let ttid4 = _ictcCreateGridOrder(#Second, toid);
                 ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
                 ttidSize += 1;
-            }else if (not(gridOrderDeleted2) and (_token0 > poolBalance.balance0 / 5 or _token1 > poolBalance.balance1 / 5)){
+            }else if (not(gridOrderDeleted2) and (_token0 > poolBalance.balance0 * resetGridThresholdPct / 100 or _token1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
                 let ttid5 = _ictcUpdateGridOrder(#Second, toid, #Running);
                 ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_accountId);
                 ttidSize += 1;
@@ -1743,9 +1745,11 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 _updatePoolLocalBalance(?#add(addLiquidityToken0), ?#add(addLiquidityToken1));
                 _updatePoolBalance(?#add(addLiquidityToken0), ?#add(addLiquidityToken1));
             };
-            if (poolLocalBalance.balance0 > poolBalance.balance0 * 10 / 100 or poolLocalBalance.balance1 > poolBalance.balance1 * 10 / 100){ 
-                let value0 = Nat.sub(Nat.max(poolLocalBalance.balance0, poolBalance.balance0 * 5 / 100), poolBalance.balance0 * 5 / 100); // fixed a bug
-                let value1 = Nat.sub(Nat.max(poolLocalBalance.balance1, poolBalance.balance1 * 5 / 100), poolBalance.balance1 * 5 / 100); // fixed a bug
+            let rebalanceThreshold0 = poolBalance.balance0 * rebalanceThresholdPct / 100;
+            let rebalanceThreshold1 = poolBalance.balance1 * rebalanceThresholdPct / 100;
+            if (poolLocalBalance.balance0 > rebalanceThreshold0 or poolLocalBalance.balance1 > rebalanceThreshold1){ 
+                let value0 = Nat.sub(Nat.max(poolLocalBalance.balance0, rebalanceThreshold0 / 2), rebalanceThreshold0 / 2); // fixed a bug
+                let value1 = Nat.sub(Nat.max(poolLocalBalance.balance1, rebalanceThreshold1 / 2), rebalanceThreshold1 / 2); // fixed a bug
                 if (not(gridOrderDeleted and gridOrderDeleted2) and (value0 > token0Fee * 2 or value1 > token1Fee * 2)){
                     let toid = _depositToDex(_account, value0, value1, true); // sysTransactionLock
                     gridToid := toid;
@@ -1817,8 +1821,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
             // withdraw from Dex
             if (values.value0 > poolLocalBalance.balance0 or values.value1 > poolLocalBalance.balance1){
-                let value0 = if (values.value0 > token0Fee){ Nat.max(Nat.min(Nat.sub(values.value0, token0Fee), Nat.sub(poolBalance.balance0, poolLocalBalance.balance0)), poolBalance.balance0 * 5 / 100) }else{ 0 };
-                let value1 = if (values.value1 > token1Fee){ Nat.max(Nat.min(Nat.sub(values.value1, token1Fee), Nat.sub(poolBalance.balance1, poolLocalBalance.balance1)), poolBalance.balance1 * 5 / 100) }else{ 0 };
+                let value0 = if (values.value0 > token0Fee){ Nat.max(Nat.min(Nat.sub(values.value0, token0Fee), Nat.sub(poolBalance.balance0, poolLocalBalance.balance0)), poolBalance.balance0 * rebalanceThresholdPct / 2 / 100) }else{ 0 };
+                let value1 = if (values.value1 > token1Fee){ Nat.max(Nat.min(Nat.sub(values.value1, token1Fee), Nat.sub(poolBalance.balance1, poolLocalBalance.balance1)), poolBalance.balance1 * rebalanceThresholdPct / 2 / 100) }else{ 0 };
                 if (value0 > 0 or value1 > 0){
                     let (v0, v1) = await* _withdrawFromDex(value0, value1); // sysTransactionLock
                     try{
@@ -1862,11 +1866,11 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
             ignore _putEvent(#withdraw({account=_icrc1Account; token0=resValue0; token1=resValue1; toid=?toid}), ?_account);
             // update grid order
-            if (not(gridOrderDeleted) and (shouldRunGridOrder1 or resValue0 > poolBalance.balance0 / 5 or resValue1 > poolBalance.balance1 / 5)){
+            if (not(gridOrderDeleted) and (shouldRunGridOrder1 or resValue0 > poolBalance.balance0 * resetGridThresholdPct / 100 or resValue1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
                 let ttid2 = _ictcUpdateGridOrder(#First, toid, #Running);
                 ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_account);
             };
-            if (not(gridOrderDeleted2) and (shouldRunGridOrder2 or resValue0 > poolBalance.balance0 / 5 or resValue1 > poolBalance.balance1 / 5)){
+            if (not(gridOrderDeleted2) and (shouldRunGridOrder2 or resValue0 > poolBalance.balance0 * resetGridThresholdPct / 100 or resValue1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
                 let ttid2 = _ictcUpdateGridOrder(#Second, toid, #Running);
                 ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_account);
             };

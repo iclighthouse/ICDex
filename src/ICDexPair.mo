@@ -444,7 +444,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.43";
+    private let version_: Text = "0.12.45";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -2901,7 +2901,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (brokerageRate > 0.005){
             return #err({code=#UndefinedError; message="414: Brokerage rate should not be higher than 0.005 (0.5%).";}); 
         };
-        if (_tps(6, ?account).0 > 3){ 
+        if (_tps(6, ?account).0 > 4){ 
             countRejections += 1; 
             return #err({code=#UndefinedError; message="406: Tip: Only one order can be made within 3 seconds.";}); 
         };
@@ -4806,6 +4806,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
                         let (feeToken0, feeToken1) = _chargeSTOrderFee2(account, sto.stType, stats_inAmount.token0, stats_inAmount.token1);
                         _update(_txid, null, null, null, null, ?{fee0 = feeToken0; fee1 = feeToken1}, null, null);
+                        switch(_side, sto.strategy){
+                            case(#Buy, #GridOrder(grid)){
+                                icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, soid, null, null, ?#add({ buy1 = _quantity; sell1 = 0 }));
+                            };
+                            case(#Sell, #GridOrder(grid)){
+                                icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, soid, null, null, ?#add({ buy1 = 0; sell1 = _quantity }));
+                            };
+                            case(_){};
+                        };
                     };
                     case(_){};
                 };
@@ -4993,6 +5002,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         amount = arg.amount;
                         ppmFactor = ?ppmFactor; //*
                     };
+                    level1Filled = null;
                     gridPrices = {midPrice = null; buy = []; sell = [] };
                 }));
                 soid := icdex_soid;
@@ -5135,7 +5145,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                             amount = amount;
                             ppmFactor = ?ppmFactor;
                         },
-                        null);
+                        null, null);
                         soid := _soid;
                     };
                     case(#IcebergOrder(io), #IcebergOrder(arg)){

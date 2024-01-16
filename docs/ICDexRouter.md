@@ -34,8 +34,8 @@ It includes Public Maker and Private Maker:
 ### NFT
 
 The NFT collection ICLighthouse Planet Cards (goncb-kqaaa-aaaap-aakpa-cai) has special qualifications for some of the features 
-of ICDex, in addition to its own NFT properties. NFT holders of #NEPTUNE,#URANUS,#SATURN have the qualification to create an 
-ICDexMaker; NFT holders of #NEPTUNE have the permission to bind a Vip-maker role.
+of ICDex, in addition to its own NFT properties. NFT holders have a discounted fee for creating an ICDexMaker. 
+NFT holders of #NEPTUNE have the permission to bind a Vip-maker role.
 
 ## 2 Deployment
 
@@ -77,9 +77,8 @@ the trading pair methods can be called through ICDexRouter to realize the govern
 
 ### Automated market maker creation and governance
 
-- Automated market maker creation: ICDexRouter is the contract factory for ICDexMaker. To create an automated market maker the user 
-needs to have an NFT ICLighthouse Planet Card with #NEPTUNE,#URANUS or #SATURN and pay a fee (ICL). Owner (DAO) can create an 
-automated market maker directly.
+- Automated market maker creation: ICDexRouter is the contract factory for ICDexMaker. To create an OAMM pool, a fee (ICL) is 
+required and NFT holders have a discount on the fee.
 - Automated market maker governance: The management of Automated market makers by the Owner (DAO) includes upgrading, modifying the 
 controller, and setting up vip-maker qualifications, etc. ICDexRouter wraps the methods related to the governance of automated market 
 maker, so that the automated market maker methods can be called through ICDexRouter to realize the governance.
@@ -89,8 +88,8 @@ maker, so that the automated market maker methods can be called through ICDexRou
 Users who deposit NFTs into the ICDexRouter are granted specific qualifications, and some operations require locking the NFT. 
 The currently supported NFT is ICLighthouse Planet Cards (goncb-kqaaa-aaaap-aakpa-cai), and qualifications that can be granted for 
 the operations include:
-- Creating an automated market maker canister: Accounts that have an NFT card with #NEPTUNE, #URANUS or #SATURN deposited into 
-the ICDexRouter will be qualified to create an automated market maker canister.
+- Creating an automated market maker canister: Accounts that have NFT cards deposited to 
+the ICDexRouter will be eligible for a discounted fee on creating an automated market maker canister.
 - Binding vip-maker qualifications: An account that has an NFT card with #NEPTUNE, #URANUS or #SATURN deposited into the ICDexRouter 
 can set up to 5 target accounts as vip-maker roles, which will receive rebates when trading as maker roles. If the holder of the NFT 
 removes the NFT from ICDexRouter, all the vip-maker roles he has bound will be invalidated.
@@ -656,7 +655,7 @@ func maker_create(_arg : { pair : Principal; allow : {#Public; #Private}; name :
 Create a new Automated Market Maker (ICDexMaker).  
 Trading pairs and automated market makers are in a one-to-many relationship, with one trading pair corresponding to zero or more 
 automated market makers.  
-permissions: Dao, NFT#NEPTUNE,#URANUS,#SATURN holders
+permissions: Dao, NFT holders, users
 
 Arguments:
 - arg: 
@@ -791,14 +790,14 @@ Deposit from Automated Market Maker (ICDexMaker) to TraderAccount for the tradin
 
 ## Function `maker_deleteGridOrder`
 ``` motoko no-repl
-func maker_deleteGridOrder(_maker : Principal) : async ()
+func maker_deleteGridOrder(_maker : Principal, _gridOrder : {#First; #Second}) : async ()
 ```
 
 Deletes grid order from Automated Market Maker (ICDexMaker).
 
 ## Function `maker_createGridOrder`
 ``` motoko no-repl
-func maker_createGridOrder(_maker : Principal) : async ()
+func maker_createGridOrder(_maker : Principal, _gridOrder : {#First; #Second}) : async ()
 ```
 
 Creates a grid order for Automated Market Maker (ICDexMaker) on the trading pair.
