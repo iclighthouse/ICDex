@@ -35,8 +35,8 @@
 /// ### NFT
 ///
 /// The NFT collection ICLighthouse Planet Cards (goncb-kqaaa-aaaap-aakpa-cai) has special qualifications for some of the features 
-/// of ICDex, in addition to its own NFT properties. NFT holders of #NEPTUNE,#URANUS,#SATURN have the qualification to create an 
-/// ICDexMaker; NFT holders of #NEPTUNE have the permission to bind a Vip-maker role.
+/// of ICDex, in addition to its own NFT properties. NFT holders have a discounted fee for creating an ICDexMaker. 
+/// NFT holders of #NEPTUNE have the permission to bind a Vip-maker role.
 ///
 /// ## 2 Deployment
 ///
@@ -78,9 +78,8 @@
 ///
 /// ### Automated market maker creation and governance
 /// 
-/// - Automated market maker creation: ICDexRouter is the contract factory for ICDexMaker. To create an automated market maker the user 
-/// needs to have an NFT ICLighthouse Planet Card with #NEPTUNE,#URANUS or #SATURN and pay a fee (ICL). Owner (DAO) can create an 
-/// automated market maker directly.
+/// - Automated market maker creation: ICDexRouter is the contract factory for ICDexMaker. To create an OAMM pool, a fee (ICL) is 
+/// required and NFT holders have a discount on the fee.
 /// - Automated market maker governance: The management of Automated market makers by the Owner (DAO) includes upgrading, modifying the 
 /// controller, and setting up vip-maker qualifications, etc. ICDexRouter wraps the methods related to the governance of automated market 
 /// maker, so that the automated market maker methods can be called through ICDexRouter to realize the governance.
@@ -90,8 +89,8 @@
 /// Users who deposit NFTs into the ICDexRouter are granted specific qualifications, and some operations require locking the NFT. 
 /// The currently supported NFT is ICLighthouse Planet Cards (goncb-kqaaa-aaaap-aakpa-cai), and qualifications that can be granted for 
 /// the operations include:
-/// - Creating an automated market maker canister: Accounts that have an NFT card with #NEPTUNE, #URANUS or #SATURN deposited into 
-/// the ICDexRouter will be qualified to create an automated market maker canister.
+/// - Creating an automated market maker canister: Accounts that have NFT cards deposited to 
+/// the ICDexRouter will be eligible for a discounted fee on creating an automated market maker canister.
 /// - Binding vip-maker qualifications: An account that has an NFT card with #NEPTUNE, #URANUS or #SATURN deposited into the ICDexRouter 
 /// can set up to 5 target accounts as vip-maker roles, which will receive rebates when trading as maker roles. If the holder of the NFT 
 /// removes the NFT from ICDexRouter, all the vip-maker roles he has bound will be invalidated.
@@ -199,7 +198,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.23";
+    private let version_: Text = "0.12.25";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -2071,7 +2070,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Create a new Automated Market Maker (ICDexMaker).  
     /// Trading pairs and automated market makers are in a one-to-many relationship, with one trading pair corresponding to zero or more 
     /// automated market makers.  
-    /// permissions: Dao, NFT#NEPTUNE,#URANUS,#SATURN holders
+    /// permissions: Dao, NFT holders, users
     ///
     /// Arguments:
     /// - arg: 
@@ -2103,12 +2102,21 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             creator: ?AccountId;
         }): async (canister: Principal){
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
-        assert(_onlyNFTHolder(accountId, null, ?#NEPTUNE) or _onlyNFTHolder(accountId, null, ?#URANUS) or _onlyNFTHolder(accountId, null, ?#SATURN) or _onlyOwner(msg.caller));
         assert(_arg.lowerLimit > 0 and _arg.upperLimit > _arg.lowerLimit);
         assert(_arg.spreadRate >= 1000);
         assert(maker_wasm.size() > 0);
         if(not(_onlyOwner(msg.caller)) and _countMaker(accountId, #All) > 3){
             throw Error.reject("You can create up to 3 Maker Canisters per account.");
+        }; 
+        var creatingFee: Nat = creatingMakerFee * 10;
+        if (_onlyOwner(msg.caller)){
+            creatingFee := 0;
+        }else if (_arg.allow == #Private and _onlyNFTHolder(accountId, null, null)){
+            creatingFee := creatingMakerFee;
+        }else if (_arg.allow == #Private){
+            creatingFee := creatingMakerFee * 3;
+        }else if (_arg.allow == #Public and (_onlyNFTHolder(accountId, null, ?#NEPTUNE) or _onlyNFTHolder(accountId, null, ?#URANUS) or _onlyNFTHolder(accountId, null, ?#SATURN))){
+            creatingFee := creatingMakerFee;
         };
         let pairActor: ICDexPrivate.Self = actor(Principal.toText(_arg.pair));
         let pairSetting = await pairActor.getConfig();
@@ -2121,7 +2129,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 spender_subaccount = null; // *
                 from = {owner = msg.caller; subaccount = null};
                 to = {owner = Principal.fromActor(this); subaccount = null};
-                amount = creatingMakerFee;
+                amount = creatingFee;
                 fee = null;
                 memo = null;
                 created_at_time = null;

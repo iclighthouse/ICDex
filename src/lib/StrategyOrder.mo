@@ -656,15 +656,29 @@ module {
     };
 
     /// GridOrder: Updates a pro-order (GridOrder) strategy.
-    public func updateGridOrder(_data: STOrderRecords, _soid: Soid, _setting: ?GridSetting, _gridPrices: ?GridPrices) : STOrderRecords{
+    public func updateGridOrder(_data: STOrderRecords, _soid: Soid, _setting: ?GridSetting, _gridPrices: ?GridPrices, _level1Filled: ?{#set: {buy1: Amount; sell1: Amount}; #add: {buy1: Amount; sell1: Amount}}) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
             case(?(po)){
                 var strategy = po.strategy;
                 switch(strategy){
                     case(#GridOrder(go)){
+                        var level1Filled : ?{buy1: Amount; sell1: Amount } = go.level1Filled;
+                        switch(go.level1Filled, _level1Filled){
+                            case(_, ?(#set(arg))){
+                                level1Filled := ?arg;
+                            };
+                            case(?(v), ?(#add(arg))){
+                                level1Filled := ?{buy1 = v.buy1 + arg.buy1; sell1 = v.sell1 + arg.sell1 };
+                            };
+                            case(null, ?(#add(arg))){
+                                level1Filled := ?arg;
+                            };
+                            case(_){};
+                        };
                         strategy := #GridOrder({
                             setting = Option.get(_setting, go.setting);
+                            level1Filled = level1Filled;
                             gridPrices = Option.get(_gridPrices, go.gridPrices);
                         });
                     };
@@ -699,6 +713,7 @@ module {
                     case(#GridOrder(grid)){
                         strategy := #GridOrder({
                             setting = grid.setting;
+                            level1Filled = grid.level1Filled;
                             gridPrices = {midPrice = grid.gridPrices.midPrice; buy = []; sell = [] };
                         });
                     };
@@ -738,10 +753,10 @@ module {
             spread := getSpread(#upward, _setting.spread, price);
             while(gridPrice_sell.size() < sideSize and price + spread <= upperLimit and price + spread >= lowerLimit){
                 let nextGridPrice = priceRound(price + spread, 100000);
-                if (nextGridPrice > _price){ // >= _price + spread
+                if (nextGridPrice >= _price){ // >= _price + spread
                     gridPrice_sell := OB.arrayAppend(gridPrice_sell, [nextGridPrice]);
                 };
-                if (gridPrice_sell.size() == 1 and price > midPrice and not(isExistingPrice(/*gridPrice_sell,*/ price, _sto.pendingOrders.sell, _setting))){
+                if (gridPrice_sell.size() == 1 and price > midPrice){ //  and not(isExistingPrice(/*gridPrice_sell,*/ price, _sto.pendingOrders.sell, _setting))
                     midPrice := price;
                 };
                 price := nextGridPrice;
@@ -769,10 +784,10 @@ module {
             spread := getSpread(#downward, _setting.spread, price);
             while(gridPrice_buy.size() < sideSize and price > spread and Nat.sub(price, spread) <= upperLimit and Nat.sub(price, spread) >= lowerLimit){
                 let nextGridPrice = priceRound(Nat.sub(price, spread), 100000);
-                if (nextGridPrice < _price){ // <= Nat.sub(_price, spread)
+                if (nextGridPrice <= _price){ // <= Nat.sub(_price, spread)
                     gridPrice_buy := OB.arrayAppend(gridPrice_buy, [nextGridPrice]);
                 };
-                if (gridPrice_buy.size() == 1 and price < midPrice and not(isExistingPrice(/*gridPrice_buy,*/ price, _sto.pendingOrders.buy, _setting))){
+                if (gridPrice_buy.size() == 1 and price < midPrice){ //  and not(isExistingPrice(/*gridPrice_buy,*/ price, _sto.pendingOrders.buy, _setting))
                     midPrice := price;
                 };
                 price := nextGridPrice;
@@ -800,20 +815,20 @@ module {
     };
 
     /// GridOrder: Similar to getGridPrices().
-    public func getGridPrices2(_data: STOrderRecords, _soid: Soid, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
-         switch(get(_data, _soid)){
-            case(?(po)){
-                switch(po.strategy){
-                    case(#GridOrder(grid)){
-                        return getGridPrices(grid.setting, po, _price, _midPrice, _lowerLimit, _upperLimit);
-                    };
-                    case(_){};
-                };
-            };
-            case(_){};
-        };
-        return {midPrice = null; sell = []; buy = []};
-    };
+    // public func getGridPrices2(_data: STOrderRecords, _soid: Soid, _price: Price, _midPrice: ?Price, _lowerLimit: ?Price, _upperLimit: ?Price) : {midPrice: ?Price; sell: [Price]; buy: [Price]}{
+    //      switch(get(_data, _soid)){
+    //         case(?(po)){
+    //             switch(po.strategy){
+    //                 case(#GridOrder(grid)){
+    //                     return getGridPrices(grid.setting, po, _price, _midPrice, _lowerLimit, _upperLimit);
+    //                 };
+    //                 case(_){};
+    //             };
+    //         };
+    //         case(_){};
+    //     };
+    //     return {midPrice = null; sell = []; buy = []};
+    // };
 
     /// GridOrder: Calculates the quantity of trade order triggered by GridOrder.
     public func getQuantityPerOrder(_setting: GridSetting, _price: Price, _unitSize: Nat, _token0Balance: Amount, _token1Balance: Amount, _side: {#Buy; #Sell}, _minValue: Amount) : 
@@ -1106,9 +1121,17 @@ module {
         let balance1 = balances.token1.available;
         switch(sto.strategy){
             case(#GridOrder(grid)){
+                var level1Filled = { buy1 = 0; sell1 = 0 };
+                switch(grid.level1Filled){
+                    case(?v){ level1Filled := v; };
+                    case(_){};
+                };
                 // prices : {midPrice: ?Price; sell: [Price]; buy: [Price]}
                 let prices = getGridPrices(grid.setting, sto, price, grid.gridPrices.midPrice, null, null);
                 var insufficientBalance : Bool = false;
+                if (prices.midPrice != grid.gridPrices.midPrice){
+                    level1Filled := { buy1 = 0; sell1 = 0 };
+                };
                 // cancel
                 if (prices.buy.size() > 0){
                     let invalidOrders = getInvalidOrders(sto.pendingOrders.buy, #Buy, grid.setting, prices.buy[Nat.sub(prices.buy.size(),1)]);
@@ -1147,10 +1170,17 @@ module {
                 var toBeLockedValue1: Nat = 0;
                 var tempTotalBalance0_buy: Nat = balances.token0.available + balances.token0.locked;
                 var tempTotalBalance1_buy: Nat = balances.token1.available + balances.token1.locked;
+                var sellCount: Nat = 0;
                 for(gridPrice in prices.sell.vals()){
                     let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, tempTotalBalance0_sell, tempTotalBalance1_sell, #Sell, _unitSize*10);
-                    let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
-                    let quantity = OB.quantity(orderPrice);
+                    var orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
+                    var quantity = OB.quantity(orderPrice);
+                    if (sellCount == 0 and level1Filled.sell1 < quantity){
+                        quantity := OB.adjustFlooring(Nat.sub(quantity, level1Filled.sell1), _unitSize);
+                    }else if (sellCount == 0){
+                        quantity := 0;
+                    };
+                    orderPrice := { quantity = #Sell(quantity); price = gridPrice; };
                     if (toBeLockedValue0 + quantity > balances.token0.available){
                         insufficientBalance := true;
                     };
@@ -1164,12 +1194,22 @@ module {
                         tempTotalBalance0_sell -= quantity;
                         tempTotalBalance1_sell += quantity * gridPrice / _unitSize;
                     };
+                    sellCount += 1;
                 };
+                var buyCount: Nat = 0;
                 for(gridPrice in prices.buy.vals()){
                     let orderQuantity = getQuantityPerOrder(grid.setting, gridPrice, _unitSize, tempTotalBalance0_buy, tempTotalBalance1_buy, #Buy, _unitSize*10);
-                    let orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
-                    let quantity = OB.quantity(orderPrice);
-                    let amount = OB.amount(orderPrice);
+                    var orderPrice : OrderPrice = { quantity = orderQuantity; price = gridPrice; };
+                    var quantity = OB.quantity(orderPrice);
+                    var amount = OB.amount(orderPrice);
+                    if (buyCount == 0 and level1Filled.buy1 < quantity){
+                        quantity := OB.adjustFlooring(Nat.sub(quantity, level1Filled.buy1), _unitSize);
+                        amount := quantity * gridPrice / _unitSize;
+                    }else if (buyCount == 0){
+                        quantity := 0;
+                        amount := 0;
+                    };
+                    orderPrice := { quantity = #Buy(quantity, amount); price = gridPrice; };
                     if (toBeLockedValue1 + amount > balances.token1.available){
                         insufficientBalance := true;
                     };
@@ -1183,9 +1223,10 @@ module {
                         tempTotalBalance1_buy -= amount;
                         tempTotalBalance0_buy += quantity;
                     };
+                    buyCount += 1;
                 };
                 // update data
-                data := updateGridOrder(data, _soid, null, ?prices); // 240108: Solve the issue of not updating `Prices` on boundaries.
+                data := updateGridOrder(data, _soid, null, ?prices, ?#set(level1Filled)); // 240108: Solve the issue of not updating `Prices` on boundaries.
                 if (res.size() > 0){
                     data := updateTriggerTime(data, _soid);
                 }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
