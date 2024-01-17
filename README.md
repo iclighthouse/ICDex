@@ -7,15 +7,100 @@ ICDex can be deployed on the IC main network or on a local test network. Due to 
 
 OrderBook: https://github.com/iclighthouse/ICDex/blob/main/OrderBook.md
 
-## Deployment
+ICDex Infrastructure:
+
+![Matching engine](img/icdex.png)
+
+## Tokens for testing
+
+### 1. ICLtest
+```
+dfx canister --network ic create ICLtest --controller __your principal__
+dfx build --network ic ICLtest
+dfx canister --network ic install ICLtest --argument '(record { totalSupply=100000000000000000; decimals=8; fee=1000000; name=opt "ICLtest"; symbol=opt "ICLtest"; metadata=null; founder=null;}, true)'
+```
+
+### 2. Token0
+```
+dfx canister --network ic create Token0 --controller __your principal__
+dfx build --network ic Token0
+dfx canister --network ic install Token0 --argument '(record { totalSupply=100000000000000000; decimals=8; fee=10000; name=opt "Token0"; symbol=opt "Token0"; metadata=null; founder=null;}, true)'
+```
+
+### 3. Token1
+```
+dfx canister --network ic create Token1 --controller __your principal__
+dfx build --network ic Token1
+dfx canister --network ic install Token1 --argument '(record { totalSupply=100000000000000000; decimals=8; fee=10000; name=opt "Token1"; symbol=opt "Token1"; metadata=null; founder=null;}, true)'
+```
+
+## Compiles
+
+- DFX version: 0.15.3 (moc 0.10.3)
+- The compiled wasm files are in the "wasms/" directory.
+
+### 1. ICDexRouter
+```
+dfx canister --network ic create ICDexRouter --controller __your principal__
+dfx build --network ic ICDexRouter
+```
+- Code: "src/ICDexRouter.mo"
+- Module hash: 1f954a60bfcf825c71bc64bc66bdf06fd1eee350d639d37d5420f7c5e056641e
+- Version: 0.12.25
+- Build: {
+    "args": "--compacting-gc"
+}
+
+Copy the wasm file to the "wasms/" directory.
+
+### 2. ICDexPair
+```
+dfx canister --network ic create ICDexPair --controller __your principal__
+dfx build --network ic ICDexPair
+```
+- Code: "src/ICDexPair.mo"
+- Module hash: 006782996688e802ae4b8f5d6ea228b370b778855e52d10051a8598b5881405f
+- Version: 0.12.45
+- Build: {
+    "args": "--incremental-gc"
+}
+- Wasm tool: ic-wasm 0.7.0 (https://github.com/dfinity/ic-wasm). Put the compiled ICDexPair.wasm in the "wasms/" directory and then execute:
+```
+ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
+```
+
+Copy the wasm file to the "wasms/" directory.
+
+### 3. ICDexMaker
+```
+dfx canister --network ic create ICDexMaker --controller __your principal__
+dfx build --network ic ICDexMaker
+```
+- Code: "src/ICDexMaker.mo"
+- Module hash: 66eb5eab4513cacc85288924f25d860ca7ce46918a456663433b806ddd694ae3
+- Version: 0.5.6
+- Build: {
+    "args": "--compacting-gc", 
+    "optimize": "size"
+}
+
+Copy the wasm file to the "wasms/" directory.
+
+## Deployment of ICDex
 
 ### 1. Deploy ICDexRouter
+```
+dfx canister --network ic install ICDexRouter --argument '(principal "__dao-canister-id or your-principal__", true)'
+```
 - args:
-    - initDAO: Principal.  // Owner (DAO) principal
+    - initDAO: Principal.  // Owner (DAO) principal. You can fill in your own Principal when testing.
     - isDebug: Bool
 
 ### 2. (optional) Config ICDexRouter
-- call sys_config()
+- call ICDexRouter.sys_config()
+```
+dfx canister --network ic call ICDexRouter sys_config '(record{ sysToken = opt principal "__ICLtest-canistter-id__"; sysTokenFee = opt 1000000 })'
+```
 - args: 
 ```
 {
@@ -31,50 +116,63 @@ OrderBook: https://github.com/iclighthouse/ICDex/blob/main/OrderBook.md
 ```
 
 ### 3. Set ICDexPair wasm
-- call setWasm()
-- args:
-    - wasm: Blob // wasm file. Tools: https://ic.house/tools
-    - version: Text // version.  e.g. "v0.1.0"
-    - append: Bool // Default is false, if the wasm file is more than 2M, and needs to be uploaded in more than one block, except for the first block, the rest of the blocks should be filled with true.
-    - backup: Bool // Whether to back up the previous version.
-
-If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
+- call ICDexRouter.setWasm()
+```
+dfx canister --network ic call ICDexRouter setWasm '(__ICDexPair.wasm bytes([nat8])__, "__ICDexPair version__", false, true)'
+```
+Or use ic-repl (/usr/local/bin/ic-repl)
+```
+export IdentityName=default
+export ICDexRouterCanisterId=__ICDexRouter-canister-id__
+export ICDexPairVersion=__ICDexPair-version__
+chmod +x  wasms/setPairWasm.sh
+wasms/setPairWasm.sh
+```
 
 ### 4. Create trading pair
-- call create()
+- call ICDexRouter.create()
+```
+dfx canister --network ic call ICDexRouter create '(principal "__Token0-canister-id__", principal "__Token1-canister-id__", __opning-time-nanoseconds__, null, null)'
+```
 - args:
     - token0: Principal // base token canister-id
     - token1: Principal // quote token canister-id
-    - openingTimeNS: Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
+    - openingTimeNS: Time.Time // Set the time in nanoseconds when the pair is open for trading. If an IDO needs to be started, it is recommended that at least 4 days be set aside.
     - unitSize: ?Nat64 // (optional) UNIT_SIZE: It is the base number of quotes in the trading pair and the minimum quantity to be used when placing an order. The quantity of the order placed must be an integer multiple of UNIT_SIZE. E.g., 1000000
     - initCycles: ?Nat // (optional) The amount of cycles added for the newly created trading pair.
 - returns:
     - res: Principal // Trading pair cansiter-id
 
-### 5. (optional) Enable IDO
-- call pair_IDOSetFunder()
-- args:
-    - app: Principal // Trading pair cansiter-id
-    - funder: ?Principal // Add IDO's Funder
-    - requirement: ?ICDexPrivate.IDORequirement // Default configuration, can be filled with null. Refer to the IDO section of the ICDexPair documentation.
+### 5. trade
+- call ICDexPair.trade()
+```
+dfx canister --network ic call __ICDexPair-canister-id__ trade '(record{ quantity = variant{Buy = record{500_000_000: nat; 500_000_000: nat} }; price = 10_000_000: nat }, variant{ LMT }, null, null, null, null)'
+dfx canister --network ic call __ICDexPair-canister-id__ trade '(record{ quantity = variant{Sell = 100_000_000: nat }; price = 10_000_000: nat }, variant{ LMT }, null, null, null, null)'
+```
+args: see `docs/ICDexPair.md` documentation.
 
-### 6. Open trading pair (could specify the opening time)
-- call pair_pause()
-- args:
-    - app: Principal // Trading pair cansiter-id
-    - pause: Bool // 'false' means opening (if openingTime is specified, it will be opened at openingTime), and true means pausing.
-    - openingTime: ?Time.Time // (optional) If IDO is turned on, openingTime needs to be specified as the IDO end time.
+### 6. (optional) Set ICDexMaker wasm
+- call ICDexRouter.maker_setWasm()
+```
+dfx canister --network ic call ICDexRouter maker_setWasm '(__ICDexMaker.wasm bytes([nat8])__, "__ICDexMaker version__", false, true)'
+```
+Or use ic-repl (/usr/local/bin/ic-repl)
+```
+export IdentityName=default
+export ICDexRouterCanisterId=__ICDexRouter-canister-id__
+export ICDexMakerVersion=__ICDexMaker-version__
+chmod +x  wasms/setMakerWasm.sh
+wasms/setMakerWasm.sh
+```
 
-### 7. (optional) Set ICDexMaker wasm
-- call maker_setWasm()
-- args:
-    - wasm: Blob // wasm file. Tools: https://ic.house/tools
-    - version: Text // version.  e.g. "v0.1.0"
-    - append: Bool // Default is false, if the wasm file is more than 2M, and needs to be uploaded in more than one block, except for the first block, the rest of the blocks should be filled with true.
-    - backup: Bool // Whether to back up the previous version.
+### 7. (optional) Create ICDexMaker (OAMM) for trading pair
 
-### 8. (optional) Create ICDexMaker for trading pair
-#### Step 1. call maker_create() // Requires the trading pair to complete at least one trade.
+#### Step 1. call maker_create() 
+Note: Requires the trading pair to complete at least one trade.
+- call ICDexRouter.maker_create()
+```
+dfx canister --network ic call ICDexRouter maker_create '(record{ pair = principal "__ICDexPair-canister-id__"; allow = variant{Public}; name = "MakerTest1"; lowerLimit = 1; upperLimit = 10_000_000_000_000; spreadRate = 10_000; threshold = 1_000_000_000_000; volFactor = 2; creator = null })'
+```
 - args: 
 ```
 {
@@ -89,14 +187,23 @@ If the wasm file exceeds 2M, you can use the ic-wasm tool to compress it.
     creator: ?AccountId; // Specify the creator.
 }
 ```
-#### Step 2. Preparing requirements for creating a grid order (with at least one requirement)
-- Make ICDexMaker get the vip-maker role via NFT bindings to create/update a grid order for free. 
-- Deposit enough ICLs to ICDexMaker as fees for creating/updating a grid order.
+- returns:
+    - res: Principal // ICDexMaker cansiter-id
+
+#### Step 2. Make ICDexMaker get the vip-maker role to create/update a grid order for free. 
+- call ICDexRouter.pair_setVipMaker()
+```
+dfx canister --network ic call ICDexRouter pair_setVipMaker '(principal "__ICDexPair-canister-id__", "__ICDexMaker-canister-id__", 90)'
+```
 
 #### Step 3. The creator activates ICDexMaker by adding the first liquidity
 The creator activates ICDexMaker by adding the first liquidity.
 The first liquidity must be added by the creator, requiring the amount of token0 to be greater than token0_fee * 100000, and the amount of token1 to be greater than token1_fee * 100000.
 
+- call ICDexMaker.add()
+```
+dfx canister --network ic call __ICDexMaker-canister-id__ add '(10_000_000_000: nat, 10_000_000_000: nat, null)'
+```
 
 ## Docs
 
@@ -115,12 +222,6 @@ https://github.com/iclighthouse/ICDex/tree/main/docs
 
 - ICDexRouter (Testnet)
     - Canister-id: pymhy-xyaaa-aaaak-act7a-cai
-    - Module hash: 1f954a60bfcf825c71bc64bc66bdf06fd1eee350d639d37d5420f7c5e056641e
-    - Version: 0.12.25
-    - DFX version: 0.15.3 (moc 0.10.3)
-    - Build: {
-        "args": "--compacting-gc"
-    }
 
 ## Disclaimer
 

@@ -10,17 +10,26 @@
       "type": "motoko",
       "args" : "--compacting-gc"
     },
-    "RouterMain": {
+    "ICDexRouter": {
       "main": "src/ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
       "optimize": "size"
     },
-    "RouterTest": {
-      "main": "src/ICDexRouter.mo",
+    "ICLtest": {
+      "main": "tokens/Token.mo",
       "type": "motoko",
-      "args" : "--compacting-gc",
-      "optimize": "size"
+      "args" : "--compacting-gc"
+    },
+    "Token0": {
+      "main": "tokens/Token.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
+    },
+    "Token1": {
+      "main": "tokens/Token.mo",
+      "type": "motoko",
+      "args" : "--compacting-gc"
     }
   },
   "defaults": {

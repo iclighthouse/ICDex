@@ -1,0 +1,719 @@
+type Account = record { owner : principal; subaccount : opt Subaccount };
+type AccountId = vec nat8;
+type AccountId__1 = vec nat8;
+type AccountId__2 = vec nat8;
+type AccountIdentifier = text;
+type Address = text;
+type Address__1 = text;
+type Amount = nat;
+type Amount__1 = nat;
+type Amount__2 = nat;
+type Balance = nat;
+type BalanceChange = variant {
+  DebitRecord : nat;
+  CreditRecord : nat;
+  NoChange;
+};
+type BlockHeight = nat;
+type CollectionId = principal;
+type Config = record {
+  MAX_STORAGE_TRIES : opt nat;
+  EN_DEBUG : opt bool;
+  MAX_CACHE_NUMBER_PER : opt nat;
+  MAX_CACHE_TIME : opt nat;
+};
+type Config__1 = record {
+  lowerLimit : opt nat;
+  threshold : opt Amount__1;
+  upperLimit : opt nat;
+  volFactor : opt nat;
+  spreadRatePpm : opt nat;
+  withdrawalFeePpm : opt nat;
+};
+type DRC207Support = record {
+  timer : record { interval_seconds : opt nat; enable : bool };
+  monitorable_by_self : bool;
+  monitorable_by_blackhole : record {
+    canister_id : opt principal;
+    allowed : bool;
+  };
+  cycles_receivable : bool;
+};
+type DexConfig = record {
+  MAX_TPS : opt nat;
+  ICTC_RUN_INTERVAL : opt nat;
+  MAKER_BONUS_RATE : opt nat;
+  MAX_PENDINGS : opt nat;
+  ORDER_EXPIRATION_DURATION : opt int;
+  TRADING_FEE : opt nat;
+  UNIT_SIZE : opt nat;
+  STORAGE_INTERVAL : opt nat;
+  ICP_FEE : opt IcpE8s;
+};
+type DexName = text;
+type Event = variant {
+  removeMaker : record { maker : principal; pair : principal };
+  pairConfig : record {
+    setting : opt DexConfig;
+    pair : principal;
+    drc205config : opt Config;
+  };
+  setICDexPairWasm : record {
+    backupPreVersion : bool;
+    version : text;
+    append : bool;
+  };
+  pairICTCDoneTO : record {
+    app : principal;
+    status : OrderStatus;
+    callbacked : bool;
+    toid : nat;
+    completed : bool;
+  };
+  pairICTCDoneTT : record {
+    app : principal;
+    callbacked : bool;
+    toid : nat;
+    ttid : nat;
+    completed : bool;
+  };
+  makerTransactionLock : record {
+    act : variant { lock; unlock };
+    maker : principal;
+  };
+  timerStart : record { intervalSeconds : nat };
+  pairChangeOwner : record { pair : principal; newOwner : principal };
+  nftSetVipMaker : record {
+    rebateRate : nat;
+    pair : principal;
+    nftId : TokenIdentifier;
+    vipMaker : text;
+  };
+  nftTransferFrom : record {
+    result : TransferResponse;
+    args : TransferRequest;
+    nftId : TokenIdentifier;
+    collId : principal;
+  };
+  pairCancelByTxid : record { pair : principal; txid : Txid__2 };
+  addPairToList : record { pair : principal };
+  pairICTCBlockTO : record { app : principal; toid : nat; completed : bool };
+  createMaker : record {
+    arg : record {
+      spreadRate : nat;
+      allow : variant { Private; Public };
+      lowerLimit : nat;
+      threshold : nat;
+      upperLimit : nat;
+      name : text;
+      pair : principal;
+      volFactor : nat;
+    };
+    version : text;
+    makerCanisterId : principal;
+  };
+  removePairFromList : record { pair : principal };
+  reinstallPairWasm : record {
+    pair : principal;
+    version : text;
+    success : bool;
+  };
+  pairSetAuctionMode : record {
+    result : record { bool; AccountId__2 };
+    pair : principal;
+  };
+  makerSetControllers : record {
+    maker : principal;
+    controllers : vec principal;
+    pair : principal;
+  };
+  upgradePairWasm : record { pair : principal; version : text; success : bool };
+  setMakerWasm : record {
+    backupPreVersion : bool;
+    version : text;
+    append : bool;
+  };
+  pairICTCSetAdmin : record {
+    act : variant { Add; Remove };
+    app : principal;
+    admin : principal;
+  };
+  pairICTCClearLog : record {
+    app : principal;
+    expiration : opt int;
+    forced : bool;
+  };
+  createPair : record {
+    initCycles : opt nat;
+    token0 : principal;
+    token1 : principal;
+    pairCanisterId : principal;
+    unitSize : opt nat64;
+  };
+  makerDeleteGridOrder : record { maker : principal };
+  changeOwner : record { newOwner : principal };
+  nftRemoveVipMaker : record { pair : principal; vipMaker : text };
+  makerCancelAllOrders : record { maker : principal };
+  setPairControllers : record { controllers : vec principal; pair : principal };
+  makerDexWithdraw : record {
+    maker : principal;
+    result : record { Amount__2; Amount__2 };
+    token0 : Amount__2;
+    token1 : Amount__2;
+  };
+  dexAddCompetition : record {
+    id : opt nat;
+    end : int;
+    addPairs : vec record {
+      dex : text;
+      minCapital : nat;
+      canisterId : principal;
+      quoteToken : variant { token0; token1 };
+    };
+    name : text;
+    start : int;
+  };
+  refundFee : record {
+    arg : TransferArgs;
+    result : variant { Ok : nat; Err : TransferError };
+    token : principal;
+  };
+  pairTASetDescription : record { desc : text; pair : principal };
+  sysConfig : record {
+    blackhole : opt principal;
+    creatingPairFee : opt nat;
+    aggregator : opt principal;
+    sysTokenFee : opt nat;
+    icDao : opt principal;
+    nftPlanetCards : opt principal;
+    creatingMakerFee : opt nat;
+    sysToken : opt principal;
+  };
+  pairSetUpgradeMode : record {
+    mode : variant { All; Base };
+    pair : principal;
+  };
+  reinstallMaker : record {
+    maker : principal;
+    pair : principal;
+    completed : bool;
+    version : text;
+  };
+  makerResetLocalBalance : record { maker : principal; balance : PoolBalance };
+  createPairByUser : record {
+    token0 : principal;
+    token1 : principal;
+    pairCanisterId : principal;
+  };
+  sysWithdraw : record {
+    to : principal;
+    token : principal;
+    value : nat;
+    txid : variant { txid : Txid__2; index : nat };
+  };
+  nftWithdraw : record {
+    result : TransferResponse;
+    args : TransferRequest;
+    nftId : TokenIdentifier;
+    collId : principal;
+  };
+  initOrUpgrade : record { version : text };
+  pairSync : record { pair : principal };
+  upgradeMaker : record {
+    maker : principal;
+    name : opt text;
+    pair : principal;
+    completed : bool;
+    version : text;
+  };
+  pairEnableStratOrder : record {
+    arg : variant { Enable; Disable };
+    pair : principal;
+  };
+  makerSuspend : record { maker : principal };
+  sysCancelOrder : record { pair : principal; txid : opt Txid__2 };
+  pairStart : record { pair : principal; message : opt text };
+  pairSetVipMaker : record {
+    rebateRate : nat;
+    pair : principal;
+    account : Address__1;
+  };
+  chargeFee : record {
+    arg : TransferFromArgs;
+    result : variant { Ok : nat; Err : TransferFromError };
+    token : principal;
+  };
+  pairEnableIDOAndSetFunder : record {
+    pair : principal;
+    funder : opt principal;
+    _requirement : opt IDORequirement;
+  };
+  makerCreateGridOrder : record { maker : principal };
+  pairICTCCompleteTO : record {
+    app : principal;
+    status : OrderStatus;
+    toid : nat;
+    completed : bool;
+  };
+  makerStart : record { maker : principal };
+  pairFallbackByTxid : record {
+    result : bool;
+    pair : principal;
+    txid : Txid__2;
+  };
+  pairSetOrderFail : record {
+    pair : principal;
+    txidHex : text;
+    refundToken0 : Amount__2;
+    refundToken1 : Amount__2;
+  };
+  backupPairData : record { pair : principal; timestamp : Timestamp__3 };
+  pairICTCRedoTT : record {
+    app : principal;
+    toid : nat;
+    ttid : nat;
+    completed : bool;
+  };
+  rollbackPairWasm : record { pair : principal; success : bool };
+  removePairDataSnapshot : record {
+    timeBefore : Timestamp__3;
+    pair : principal;
+  };
+  pairSTOConfig : record {
+    pair : principal;
+    config : record {
+      gridMaxPerSide : opt nat;
+      stopLossCountMax : opt nat;
+      poFee1 : opt nat;
+      poFee2 : opt float64;
+      proCountMax : opt nat;
+      sloFee1 : opt nat;
+      sloFee2 : opt float64;
+    };
+  };
+  recoveryPairData : record { pair : principal; timestamp : Timestamp__3 };
+  rollbackMaker : record {
+    maker : principal;
+    pair : principal;
+    completed : bool;
+  };
+  pairRemoveVipMaker : record { pair : principal; account : Address__1 };
+  makerConfig : record { maker : principal; config : Config__1 };
+  timerStop;
+  pairICTCRunTO : record {
+    app : principal;
+    result : opt OrderStatus;
+    toid : nat;
+  };
+  sysTrade : record {
+    result : TradingResult;
+    order : OrderPrice;
+    pair : principal;
+    orderType : OrderType;
+    tokenTxid : variant { txid : Txid__2; index : nat };
+  };
+  makerDexDeposit : record {
+    maker : principal;
+    result : record { Amount__2; Amount__2 };
+    token0 : Amount__2;
+    token1 : Amount__2;
+  };
+  pairSuspend : record { pair : principal; message : opt text };
+};
+type ICDexRouter = service {
+  NFTBalance : (Address) -> (vec NFT) query;
+  NFTBindMaker : (text, principal, AccountId, opt vec nat8) -> ();
+  NFTBindingMakers : (text) -> (vec record { principal; AccountId }) query;
+  NFTDeposit : (CollectionId, TokenIdentifier, opt vec nat8) -> ();
+  NFTUnbindMaker : (text, principal, AccountId, opt vec nat8) -> ();
+  NFTWithdraw : (opt TokenIdentifier, opt vec nat8) -> ();
+  NFTs : () -> (vec record { AccountId; vec NFT }) query;
+  backup : (principal) -> (Timestamp);
+  backupToTempCanister : (principal, principal) -> (bool);
+  create : (principal, principal, Time, opt nat64, opt nat) -> (PairCanister);
+  debug_canister_status : (principal) -> (canister_status);
+  debug_monitor : () -> ();
+  dex_addCompetition : (
+      opt nat,
+      text,
+      text,
+      Time,
+      Time,
+      vec record {
+        dex : text;
+        minCapital : nat;
+        canisterId : principal;
+        quoteToken : variant { token0; token1 };
+      },
+    ) -> (nat);
+  drc207 : () -> (DRC207Support) query;
+  getDAO : () -> (principal) query;
+  getPairs : (opt nat, opt nat) -> (TrieList__1_2) query;
+  getPairsByToken : (principal) -> (
+      vec record { PairCanister; SwapPair },
+    ) query;
+  getSnapshots : (principal) -> (vec Timestamp) query;
+  getTokens : () -> (vec TokenInfo__1) query;
+  getWasmVersion : () -> (text, text, nat) query;
+  get_account_events : (AccountId) -> (
+      vec record { Event; Timestamp__1 },
+    ) query;
+  get_event : (BlockHeight) -> (opt record { Event; Timestamp__1 }) query;
+  get_event_count : () -> (nat) query;
+  get_event_first_index : () -> (BlockHeight) query;
+  get_events : (opt ListPage, opt ListSize) -> (TrieList__1_1) query;
+  maker_approveToPair : (principal, principal, nat) -> (bool);
+  maker_cancelAllOrders : (principal) -> ();
+  maker_config : (principal, Config__1) -> (bool);
+  maker_create : (
+      record {
+        creator : opt AccountId;
+        spreadRate : nat;
+        allow : variant { Private; Public };
+        lowerLimit : nat;
+        threshold : nat;
+        upperLimit : nat;
+        name : text;
+        pair : principal;
+        volFactor : nat;
+      },
+    ) -> (principal);
+  maker_createGridOrder : (principal, variant { First; Second }) -> ();
+  maker_deleteGridOrder : (principal, variant { First; Second }) -> ();
+  maker_dexDeposit : (principal, nat, nat) -> (nat, nat);
+  maker_dexWithdraw : (principal, nat, nat) -> (nat, nat);
+  maker_getPrivateMakers : (AccountId, opt nat, opt nat) -> (TrieList__1) query;
+  maker_getPublicMakers : (opt principal, opt nat, opt nat) -> (
+      TrieList__1,
+    ) query;
+  maker_getWasmVersion : () -> (text, text, nat) query;
+  maker_reinstall : (principal, principal, text) -> (opt principal);
+  maker_remove : (principal, principal) -> ();
+  maker_resetLocalBalance : (principal) -> (PoolBalance);
+  maker_rollback : (principal, principal) -> (opt principal);
+  maker_setControllers : (principal, principal, vec principal) -> (bool);
+  maker_setPause : (principal, bool) -> (bool);
+  maker_setWasm : (vec nat8, text, bool, bool) -> ();
+  maker_transactionLock : (principal, variant { lock; unlock }) -> (bool);
+  maker_update : (principal, principal, opt text, text) -> (opt principal);
+  maker_updateAll : (text, bool) -> (
+      record {
+        failures : vec record { principal; principal };
+        total : nat;
+        success : nat;
+      },
+    );
+  monitor_canisters : () -> (vec record { principal; nat }) query;
+  monitor_put : (principal) -> ();
+  monitor_remove : (principal) -> ();
+  pair_IDOSetFunder : (principal, opt principal, opt IDORequirement) -> ();
+  pair_cancelByTxid : (principal, Txid__1, opt Sa) -> ();
+  pair_config : (principal, opt DexConfig, opt Config) -> (bool);
+  pair_enableStratOrder : (principal, variant { Enable; Disable }) -> ();
+  pair_fallbackByTxid : (principal, Txid__1, opt Sa) -> (bool);
+  pair_ictcBlockTO : (principal, nat) -> (opt nat);
+  pair_ictcClearLog : (principal, opt int, bool) -> ();
+  pair_ictcCompleteTO : (principal, nat, OrderStatus) -> (bool);
+  pair_ictcDoneTO : (principal, nat, OrderStatus, bool) -> (bool);
+  pair_ictcDoneTT : (principal, nat, nat, bool) -> (opt nat);
+  pair_ictcRedoTT : (principal, nat, nat) -> (opt nat);
+  pair_ictcRunTO : (principal, nat) -> (opt OrderStatus);
+  pair_ictcSetAdmin : (principal, principal, bool) -> (bool);
+  pair_pause : (principal, bool, opt Time) -> (bool);
+  pair_pauseAll : (bool) -> (
+      record { failures : vec principal; total : nat; success : nat },
+    );
+  pair_pendingAll : (principal, opt nat, opt nat) -> (TrieList);
+  pair_removeVipMaker : (principal, Address) -> ();
+  pair_setAuctionMode : (principal, bool, opt AccountId) -> (bool, AccountId);
+  pair_setOrderFail : (principal, text, nat, nat) -> (bool);
+  pair_setUpgradeMode : (principal, variant { All; Base }) -> ();
+  pair_setVipMaker : (principal, Address, nat) -> ();
+  pair_sync : (principal) -> ();
+  pair_taSetDescription : (principal, text) -> ();
+  pair_withdrawCycles : (principal, nat) -> ();
+  pubCreate : (principal, principal, Time) -> (PairCanister);
+  put : (SwapPair) -> ();
+  recovery : (principal, Timestamp) -> (bool);
+  reinstall : (principal, text, bool) -> (opt PairCanister);
+  remove : (principal) -> ();
+  removeSnapshot : (principal, Timestamp__1) -> ();
+  rollback : (principal) -> (opt PairCanister);
+  route : (principal, principal) -> (
+      vec record { PairCanister; SwapPair },
+    ) query;
+  setControllers : (principal, vec principal) -> (bool);
+  setWasm : (vec nat8, text, bool, bool) -> ();
+  snapshotToTempCanister : (principal, Timestamp, principal) -> (bool);
+  sto_config : (
+      principal,
+      record {
+        gridMaxPerSide : opt nat;
+        stopLossCountMax : opt nat;
+        poFee1 : opt nat;
+        poFee2 : opt float64;
+        proCountMax : opt nat;
+        sloFee1 : opt nat;
+        sloFee2 : opt float64;
+      },
+    ) -> ();
+  sync : () -> ();
+  sys_cancelOrder : (principal, opt Txid__1) -> ();
+  sys_config : (
+      record {
+        blackhole : opt principal;
+        creatingPairFee : opt nat;
+        aggregator : opt principal;
+        sysTokenFee : opt nat;
+        icDao : opt principal;
+        nftPlanetCards : opt principal;
+        creatingMakerFee : opt nat;
+        sysToken : opt principal;
+      },
+    ) -> ();
+  sys_getConfig : () -> (
+      record {
+        blackhole : principal;
+        creatingPairFee : nat;
+        aggregator : principal;
+        sysTokenFee : nat;
+        icDao : principal;
+        nftPlanetCards : principal;
+        creatingMakerFee : nat;
+        sysToken : principal;
+      },
+    ) query;
+  sys_order : (principal, TokenStd, nat, principal, OrderPrice) -> (
+      TradingResult,
+    );
+  sys_withdraw : (principal, TokenStd, principal, nat) -> ();
+  timerStart : (nat) -> ();
+  timerStop : () -> ();
+  update : (principal, text) -> (opt PairCanister);
+  updateAll : (text) -> (
+      record { failures : vec principal; total : nat; success : nat },
+    );
+  wallet_receive : () -> ();
+};
+type IDORequirement = record {
+  threshold : float64;
+  pairs : vec record { pair : principal; token1ToUsdRatio : float64 };
+};
+type IcpE8s = nat;
+type ListPage = nat;
+type ListSize = nat;
+type Memo = vec nat8;
+type NFT = record { User; TokenIdentifier; Balance; NFTType; CollectionId };
+type NFTType = variant {
+  MARS;
+  JUPITER;
+  URANUS;
+  UNKNOWN;
+  MERCURY;
+  NEPTUNE;
+  VENUS;
+  SATURN;
+  EARTH;
+};
+type OrderFilled = record {
+  time : Time;
+  token0Value : BalanceChange;
+  counterparty : Txid;
+  token1Value : BalanceChange;
+};
+type OrderPrice = record {
+  quantity : variant { Buy : record { Quantity; Amount }; Sell : Quantity };
+  price : Price;
+};
+type OrderStatus = variant {
+  Done;
+  Todo;
+  Doing;
+  Recovered;
+  Compensating;
+  Blocking;
+};
+type OrderType = variant { FAK; FOK; LMT; MKT };
+type PairCanister = principal;
+type PairCanister__1 = principal;
+type PoolBalance = record {
+  ts : Timestamp__2;
+  balance0 : Amount__1;
+  balance1 : Amount__1;
+};
+type Price = nat;
+type Quantity = nat;
+type Sa = vec nat8;
+type SubAccount = vec nat8;
+type Subaccount = vec nat8;
+type SwapPair = record {
+  feeRate : float64;
+  token0 : TokenInfo;
+  token1 : TokenInfo;
+  dexName : DexName;
+  canisterId : PairCanister__1;
+};
+type Time = int;
+type Timestamp = nat;
+type Timestamp__1 = nat;
+type Timestamp__2 = nat;
+type Timestamp__3 = nat;
+type Timestamp__4 = nat64;
+type Toid = nat;
+type TokenIdentifier = text;
+type TokenInfo = record { principal; TokenSymbol; TokenStd__1 };
+type TokenInfo__1 = record { principal; TokenSymbol; TokenStd__1 };
+type TokenStd = variant {
+  dft;
+  ext;
+  icp;
+  other : text;
+  cycles;
+  ledger;
+  icrc1;
+  dip20;
+  drc20;
+};
+type TokenStd__1 = variant {
+  dft;
+  ext;
+  icp;
+  other : text;
+  cycles;
+  ledger;
+  icrc1;
+  dip20;
+  drc20;
+};
+type TokenSymbol = text;
+type TradingOrder = record {
+  fee : record { fee0 : int; fee1 : int };
+  gas : record { gas0 : nat; gas1 : nat };
+  status : TradingStatus;
+  toids : vec Toid;
+  data : opt vec nat8;
+  time : Time;
+  txid : Txid;
+  icrc1Account : opt record { owner : principal; subaccount : opt vec nat8 };
+  orderType : OrderType;
+  filled : vec OrderFilled;
+  expiration : Time;
+  nonce : nat;
+  account : AccountId__1;
+  remaining : OrderPrice;
+  index : nat;
+  orderPrice : OrderPrice;
+  refund : record { nat; nat; nat };
+};
+type TradingResult = variant {
+  ok : record { status : TradingStatus; txid : Txid; filled : vec OrderFilled };
+  err : record {
+    code : variant {
+      NonceError;
+      InvalidAmount;
+      UndefinedError;
+      UnacceptableVolatility;
+      TransactionBlocking;
+      InsufficientBalance;
+      TransferException;
+    };
+    message : text;
+  };
+};
+type TradingStatus = variant { Todo; Closed; Cancelled; Pending };
+type TransferArgs = record {
+  to : Account;
+  fee : opt nat;
+  memo : opt vec nat8;
+  from_subaccount : opt Subaccount;
+  created_at_time : opt Timestamp__4;
+  amount : nat;
+};
+type TransferError = variant {
+  GenericError : record { message : text; error_code : nat };
+  TemporarilyUnavailable;
+  BadBurn : record { min_burn_amount : nat };
+  Duplicate : record { duplicate_of : nat };
+  BadFee : record { expected_fee : nat };
+  CreatedInFuture : record { ledger_time : nat64 };
+  TooOld;
+  InsufficientFunds : record { balance : nat };
+};
+type TransferFromArgs = record {
+  to : Account;
+  fee : opt nat;
+  spender_subaccount : opt vec nat8;
+  from : Account;
+  memo : opt vec nat8;
+  created_at_time : opt nat64;
+  amount : nat;
+};
+type TransferFromError = variant {
+  GenericError : record { message : text; error_code : nat };
+  TemporarilyUnavailable;
+  InsufficientAllowance : record { allowance : nat };
+  BadBurn : record { min_burn_amount : nat };
+  Duplicate : record { duplicate_of : nat };
+  BadFee : record { expected_fee : nat };
+  CreatedInFuture : record { ledger_time : nat64 };
+  TooOld;
+  InsufficientFunds : record { balance : nat };
+};
+type TransferRequest = record {
+  to : User;
+  token : TokenIdentifier;
+  notify : bool;
+  from : User;
+  memo : Memo;
+  subaccount : opt SubAccount;
+  amount : Balance;
+};
+type TransferResponse = variant {
+  ok : Balance;
+  err : variant {
+    CannotNotify : AccountIdentifier;
+    InsufficientBalance;
+    InvalidToken : TokenIdentifier;
+    Rejected;
+    Unauthorized : AccountIdentifier;
+    Other : text;
+  };
+};
+type TrieList = record {
+  total : nat;
+  data : vec record { Txid; TradingOrder };
+  totalPage : nat;
+};
+type TrieList__1 = record {
+  total : nat;
+  data : vec record { PairCanister; vec record { principal; AccountId } };
+  totalPage : nat;
+};
+type TrieList__1_1 = record {
+  total : nat;
+  data : vec record { BlockHeight; record { Event; Timestamp__1 } };
+  totalPage : nat;
+};
+type TrieList__1_2 = record {
+  total : nat;
+  data : vec record { PairCanister; SwapPair };
+  totalPage : nat;
+};
+type Txid = vec nat8;
+type Txid__1 = vec nat8;
+type Txid__2 = vec nat8;
+type User = variant { "principal" : principal; address : AccountIdentifier };
+type canister_status = record {
+  status : variant { stopped; stopping; running };
+  memory_size : nat;
+  cycles : nat;
+  settings : definite_canister_settings;
+  module_hash : opt vec nat8;
+};
+type definite_canister_settings = record {
+  freezing_threshold : nat;
+  controllers : vec principal;
+  memory_allocation : nat;
+  compute_allocation : nat;
+};
+service : ICDexRouter
