@@ -59,8 +59,8 @@ dfx canister --network ic create ICDexPair --controller __your principal__
 dfx build --network ic ICDexPair
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: 006782996688e802ae4b8f5d6ea228b370b778855e52d10051a8598b5881405f
-- Version: 0.12.45
+- Module hash: a910ad5cfc125317f627a3b4b349328460ea59c6228f1ac8f53f75a13d4849b1
+- Version: 0.12.46
 - Build: {
     "args": "--incremental-gc"
 }

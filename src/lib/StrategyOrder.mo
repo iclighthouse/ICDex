@@ -928,10 +928,10 @@ module {
     public func isReachedLimit(_totalLimit: {#Token0: Nat; #Token1: Nat}, _totalAmount: {#Token0: Nat; #Token1: Nat}, _price: Price, _unitSize: Nat) : Bool{
         var res: Bool = false;
         switch(_totalLimit, _totalAmount){
-            case(#Token0(limit), #Token0(amount)){ return amount >= limit };
-            case(#Token1(limit), #Token1(amount)){ return amount >= limit };
-            case(#Token0(limit), #Token1(amount)){ return _unitSize * amount / _price >= limit };
-            case(#Token1(limit), #Token0(amount)){ return amount * _price / _unitSize >= limit };
+            case(#Token0(limit), #Token0(amount)){ return amount > limit };
+            case(#Token1(limit), #Token1(amount)){ return amount > limit };
+            case(#Token0(limit), #Token1(amount)){ return _unitSize * amount / _price > limit };
+            case(#Token1(limit), #Token0(amount)){ return amount * _price / _unitSize > limit };
         };
         return res;
     };

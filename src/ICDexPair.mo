@@ -444,7 +444,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.45";
+    private let version_: Text = "0.12.46";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -686,17 +686,42 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         _visitLog(Option.get(_caller, Tools.principalToAccountBlob(Principal.fromActor(this), null)));
     };
     // Check the maximum number of orders the trader is allowed to have in PENDING status.
-    // 1. Trader: MAX_PENDINGS + (sto_setting.gridMaxPerSide * 2 + 2) orders per pro-order
-    // 2. Vip-maker: MAX_PENDINGS * 10 + (sto_setting.gridMaxPerSide * 4 + 2) orders per pro-order
     private func _maxPendings(_trader: AccountId, _isProOrder: Bool) : Nat{
-        var proOrderCount : Nat = 0;
+        var stratOrderCap : Nat = 0;
+        if (_isProOrder) stratOrderCap += 1;
+        switch(Trie.get(icdex_userStopLossOrderList, keyb(_trader), Blob.equal)){
+            case(?(userOrderList)){
+                stratOrderCap += List.size(userOrderList); 
+            };
+            case(_){};
+        };
         switch(Trie.get(icdex_userProOrderList, keyb(_trader), Blob.equal)){
-            case(?(userOrderList)){ proOrderCount := List.size(userOrderList); };
+            case(?(userOrderList)){ 
+                for (soid in List.toArray(userOrderList).vals()){
+                    switch(STO.get(icdex_stOrderRecords, soid)){
+                        case(?sto){
+                            if (sto.status == #Running and sto.stType == #GridOrder){
+                                switch(sto.strategy){
+                                    case(#GridOrder(grid)){ stratOrderCap += grid.setting.gridCountPerSide * 2 + 2 };
+                                    case(_){};
+                                };
+                            }else if (sto.status == #Running and sto.stType == #IcebergOrder){
+                                stratOrderCap += 1;
+                            }else if (sto.status == #Running and sto.stType == #VWAP){
+                                stratOrderCap += 1;
+                            }else if (sto.status == #Running and sto.stType == #TWAP){
+                                stratOrderCap += 1;
+                            };
+                        };
+                        case(_){};
+                    };
+                };
+            };
             case(_){};
         };
         switch(Trie.get(icdex_makers, keyb(_trader), Blob.equal)){
-            case(?(v, p)){ return setting.MAX_PENDINGS * 10 + (if (_isProOrder){ proOrderCount * (sto_setting.gridMaxPerSide * 4 + 2) }else{ 0 }) };
-            case(_){ return setting.MAX_PENDINGS + (if (_isProOrder){ proOrderCount * (sto_setting.gridMaxPerSide * 2 + 2) }else{ 0 }) };
+            case(?(v, p)){ return setting.MAX_PENDINGS * 10 + stratOrderCap };
+            case(_){ return setting.MAX_PENDINGS + stratOrderCap };
         };
     };
 
