@@ -45,7 +45,7 @@ dfx canister --network ic create ICDexRouter --controller __your principal__
 dfx build --network ic ICDexRouter
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 1f954a60bfcf825c71bc64bc66bdf06fd1eee350d639d37d5420f7c5e056641e
+- Module hash: 47a886b13463c3c6e7c3d4dd674003818497d442c965b66759b3deddefc5fea2
 - Version: 0.12.25
 - Build: {
     "args": "--compacting-gc"
@@ -59,8 +59,8 @@ dfx canister --network ic create ICDexPair --controller __your principal__
 dfx build --network ic ICDexPair
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: a910ad5cfc125317f627a3b4b349328460ea59c6228f1ac8f53f75a13d4849b1
-- Version: 0.12.46
+- Module hash: b51504697238c12facd4d6e4f8c9a4aa677653231e953499cf1ef06acfb7b18d
+- Version: 0.12.48
 - Build: {
     "args": "--incremental-gc"
 }
@@ -120,7 +120,8 @@ dfx canister --network ic call ICDexRouter sys_config '(record{ sysToken = opt p
 ```
 dfx canister --network ic call ICDexRouter setWasm '(__ICDexPair.wasm bytes([nat8])__, "__ICDexPair version__", false, true)'
 ```
-Or use ic-repl (/usr/local/bin/ic-repl)
+Or use ic-repl (/usr/local/bin/ic-repl)  
+Note: Local network using setPairWasm_local.sh
 ```
 export IdentityName=default
 export ICDexRouterCanisterId=__ICDexRouter-canister-id__
@@ -156,7 +157,8 @@ args: see `docs/ICDexPair.md` documentation.
 ```
 dfx canister --network ic call ICDexRouter maker_setWasm '(__ICDexMaker.wasm bytes([nat8])__, "__ICDexMaker version__", false, true)'
 ```
-Or use ic-repl (/usr/local/bin/ic-repl)
+Or use ic-repl (/usr/local/bin/ic-repl)  
+Note: Local network using setMakerWasm_local.sh
 ```
 export IdentityName=default
 export ICDexRouterCanisterId=__ICDexRouter-canister-id__

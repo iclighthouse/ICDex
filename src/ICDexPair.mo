@@ -378,7 +378,6 @@ import ICRC1 "mo:icl/ICRC1";
 import ICRC2 "mo:icl/ICRC1";
 import Int "mo:base/Int";
 import Int64 "mo:base/Int64";
-// import Ledger "mo:icl/Ledger";
 import List "mo:base/List";
 import Nat "mo:base/Nat";
 import Nat32 "mo:base/Nat32";
@@ -392,7 +391,6 @@ import Text "mo:base/Text";
 import Time "mo:base/Time";
 import Tools "mo:icl/Tools";
 import Trie "mo:base/Trie";
-// import Trie "./lib/Elastic-Trie";
 import Types "mo:icl/ICDexTypes";
 import Iter "mo:base/Iter";
 import Backup "./lib/ICDexBackupTypes";
@@ -429,7 +427,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     type TradingStatus = Types.TradingStatus;
     type OrderFilled = Types.OrderFilled;
     type TradingOrder = Types.TradingOrder;
-    //type TradingOrderResponse = Types.TradingOrderResponse;
     type PriceWeighted = Types.PriceWeighted;
     type Vol = Types.Vol;
     type OrderStatusResponse = Types.OrderStatusResponse;
@@ -444,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.46";
+    private let version_: Text = "0.12.48";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -457,7 +454,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private stable var pairOpeningTime: Time.Time = 0;
     private stable var enabledAuctionMode: Bool = false; // When Auction Mode is turned on, SELL orders are only allowed to be opened by Funder.
     private stable var funderForAuctionMode: AccountId = Blob.fromArray([]);
-    // private stable var owner: Principal = Option.get(initArgs.owner, installMsg.caller);
     private stable var token0_: Principal = initArgs.token0;
     private stable var token0Symbol: Text = "";
     private stable var token0Std: Types.TokenStd = #drc20;
@@ -733,7 +729,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
     private func _token0Canister() : Principal{ token0_ };
     private func _token1Canister() : Principal{ token1_ };
-    // private let ledger: Ledger.Self = actor("ryjl3-tyaaa-aaaaa-aaaba-cai");
     private func keyb(t: Blob) : Trie.Key<Blob> { return { key = t; hash = Blob.hash(t) }; };
     private func keyn(t: Nat) : Trie.Key<Nat> { return { key = t; hash = Tools.natHash(t) }; };
     private func keyt(t: Text) : Trie.Key<Text> { return { key = t; hash = Text.hash(t) }; };
@@ -799,31 +794,19 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             if (token0Std == #drc20){
                 let token: DRC20.Self = actor(Principal.toText(_token0Canister()));
                 token0Gas := ?(await token.drc20_fee());
-            } /*else if (token0Std == #dip20){
-                let token: DIP20.Self = actor(Principal.toText(_token0Canister()));
-                token0Gas := ?(await token.getTokenFee());
-            }*/ else { // if (token0Std == #icrc1 or token0Std == #icp)
+            } else {
                 let token: ICRC1.Self = actor(Principal.toText(_token0Canister()));
                 token0Gas := ?(await token.icrc1_fee());
-            } /*else if (token0Std == #ledger){
-                let token: Ledger.Self = actor(Principal.toText(_token0Canister()));
-                token0Gas := ?Nat64.toNat((await token.transfer_fee({})).transfer_fee.e8s);
-            }*/;
+            };
         };
         if (_update or Option.isNull(token1Gas)){
             if (token1Std == #drc20){
                 let token: DRC20.Self = actor(Principal.toText(_token1Canister()));
                 token1Gas := ?(await token.drc20_fee());
-            } /*else if (token1Std == #dip20){
-                let token: DIP20.Self = actor(Principal.toText(_token1Canister()));
-                token1Gas := ?(await token.getTokenFee());
-            }*/ else { // if (token1Std == #icrc1 or token1Std == #icp)
+            }else { 
                 let token: ICRC1.Self = actor(Principal.toText(_token1Canister()));
                 token1Gas := ?(await token.icrc1_fee());
-            } /*else if (token1Std == #ledger){
-                let token: Ledger.Self = actor(Principal.toText(_token1Canister()));
-                token1Gas := ?Nat64.toNat((await token.transfer_fee({})).transfer_fee.e8s);
-            }*/;
+            };
         };
     };
     private func _getFee0() : Nat{
@@ -863,10 +846,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         return not(pause) and (Time.now() >= pairOpeningTime or (_inIDO() and _onlyIDOFunder(caller)));
     };
     private func _onlyOrderOwner(_account: AccountId, _txid: Txid) : Bool{
-        // switch(Trie.get(icdex_orders, keyb(_txid), Blob.equal)){
-        //     case(?(order)){ return order.account == _account; };
-        //     case(_){ return false; };
-        // };
         let nonceBytes = Tools.slice(Blob.toArray(_txid), 0, ?3);
         let nonce = Nat32.toNat(Binary.BigEndian.toNat32(nonceBytes));
         let max: Nat = 2 ** 32;
@@ -900,34 +879,11 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func _accountIdToHex(_a: AccountId) : Text{
         return Hex.encode(Blob.toArray(_a));
     };
-    // private func _getSA(_sa: Blob) : Blob{
-    //     var sa = Blob.toArray(_sa);
-    //     while (sa.size() < 32){
-    //         sa := Tools.arrayAppend([0:Nat8], sa);
-    //     };
-    //     return Blob.fromArray(sa);
-    // };
-    // private func _getMainAccount() : AccountId{
-    //     let main = Principal.fromActor(this);
-    //     return Blob.fromArray(Tools.principalToAccount(main, null));
-    // };
     private func _getPairAccount(_sub: Blob) : AccountId{
         let main = Principal.fromActor(this);
         let sa = Blob.toArray(_sub);
         return Blob.fromArray(Tools.principalToAccount(main, ?sa));
     };
-    /*private func _getDip20Principal(_a: AccountId) : Principal{
-        switch(Trie.get(icdex_dip20Balances, keyb(_a), Blob.equal)){
-            case(?(p, v)){ return p; };
-            case(_){ assert(false); return Principal.fromText("aaaaa-aa"); };
-        };
-    };*/
-    /*private func _getDip20Balance(_a: AccountId) : Nat{  // token0 / token1
-        switch(Trie.get(icdex_dip20Balances, keyb(_a), Blob.equal)){
-            case(?(p, v)){ return v; };
-            case(_){ return 0; };
-        };
-    };*/
 
     private func _getPairBalance(_tokenId: Principal, _std: Types.TokenStd, _sub: Blob) : async* Nat{  
         let _a = _getPairAccount(_sub);
@@ -938,17 +894,11 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 let token: DRC20.Self = actor(Principal.toText(_tokenId));
                 let res = await token.drc20_balanceOf(_accountIdToHex(_a));
                 balance := res;
-            } /*else if (_std == #dip20) { // #dip20 
-                balance := _getDip20Balance(_a);
-            }*/ else { // if (_std == #icrc1 or _std == #icp) 
+            }else {
                 let token : ICRC1.Self = actor(Principal.toText(_tokenId));
                 let res = await token.icrc1_balance_of({owner = Principal.fromActor(this); subaccount = _toOptSub(_sub)});
                 balance := res;
-            }/* else if (_std == #icp){ // or _std == #ledger
-                let token: Ledger.Self = actor(Principal.toText(_tokenId));
-                let res = await token.account_balance({ account = _a; });
-                balance := Nat64.toNat(res.e8s);
-            }*/;
+            };
             countAsyncMessage -= Nat.min(1, countAsyncMessage);
             return balance;
         }catch(e){
@@ -1075,48 +1025,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             throw Error.reject("Error transferring token: "# Error.message(e)); 
         };
     };
-    /*private func _dip20TransferFrom(_token: Principal, _a: AccountId, _from: Principal, _to: Principal, _value: Nat) : async Nat{  
-        let token: DIP20.Self = actor(Principal.toText(_token));
-        try{
-            countAsyncMessage += 1;
-            let res = await token.transferFrom(_from, _to, _value);
-            switch(res){
-                case(#Ok(txid)){ 
-                    _dip20Increase(_a, _to, _value);
-                    countAsyncMessage -= Nat.min(1, countAsyncMessage);
-                    return txid; 
-                };
-                case(#Err(e)){ 
-                    throw Error.reject("DIP20 token.transferFrom() error!"); 
-                };
-            };
-        }catch(e){
-            countAsyncMessage -= Nat.min(1, countAsyncMessage);
-            throw Error.reject("query dip20 balance error: "# Error.message(e)); 
-        };
-    };*/
-    /*private func _dip20Increase(_a: AccountId, _p: Principal, _value: Nat) : (){ 
-        switch(Trie.get(icdex_dip20Balances, keyb(_a), Blob.equal)){
-            case(?(p, v)){ 
-                icdex_dip20Balances := Trie.put(icdex_dip20Balances, keyb(_a), Blob.equal, (p, v + _value)).0; 
-            };
-            case(_){
-                icdex_dip20Balances := Trie.put(icdex_dip20Balances, keyb(_a), Blob.equal, (_p, _value)).0; 
-            };
-        };
-    };
-    private func _dip20Decrease(_a: AccountId, _value: Nat) : (){ 
-        switch(Trie.get(icdex_dip20Balances, keyb(_a), Blob.equal)){
-            case(?(p, v)){ 
-                if (Nat.sub(v, _value) == 0){
-                    icdex_dip20Balances := Trie.remove(icdex_dip20Balances, keyb(_a), Blob.equal).0;
-                } else{
-                    icdex_dip20Balances := Trie.put(icdex_dip20Balances, keyb(_a), Blob.equal, (p, Nat.sub(v, _value))).0; 
-                };
-            };
-            case(_){ assert(false); };
-        };
-    };*/
 
     /*
     * ICTC local functions and local tasks
@@ -1137,12 +1045,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
 
     // Local tasks
-    /*private func _dip20Send(_from: AccountId, _value: Nat) : (){ 
-        _dip20Decrease(_from, _value);
-    };
-    private func _dip20SendComp(_a: AccountId, _p: Principal, _value: Nat) : (){ 
-        _dip20Increase(_a, _p, _value);
-    };*/
     private func _localBatchTransfer(_args: [(_act: {#add; #sub}, _account: Blob, _token: {#token0; #token1}, _amount: {#locked: Nat; #available: Nat})]) : 
     ([KeepingBalance]){
         var res : [KeepingBalance] = [];
@@ -1178,20 +1080,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         switch(_args){
             case(#This(method)){
                 switch(method){
-                    // case(#dip20Send(_a, _value)){
-                    //     /*var result = (); // Receipt
-                    //     // do
-                    //     result := _dip20Send(_a, _value);*/
-                    //     // check & return
-                    //     return (#Done, ?#This(#dip20Send), null);
-                    // };
-                    // case(#dip20SendComp(_a, _p, _value)){
-                    //     /*var result = (); // Receipt
-                    //     // do
-                    //     result := _dip20SendComp(_a, _p, _value);*/
-                    //     // check & return
-                    //     return (#Done, ?#This(#dip20SendComp), null);
-                    // }; 
                     case(#batchTransfer(_args: [(_act: {#add; #sub}, _account: Blob, _token: {#token0; #token1}, _amount: {#locked: Nat; #available: Nat})])){
                         let result = _localBatchTransfer(_args);
                         return (#Done, ?#This(#batchTransfer(result)), null);
@@ -1254,7 +1142,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let nonce = _getNonce(account);
         let txid = drc205.generateTxid(Principal.fromActor(this), account, nonce);
         let address = Hex.encode(Blob.toArray(_getPairAccount(txid)));
-        //_addNonce(account);
         return ({owner = Principal.fromActor(this); subaccount = _toOptSub(txid) }, address, nonce, txid);
     };
 
@@ -1280,7 +1167,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     };
                 };
             };
-            case(_){  /*config*/
+            case(_){  
                 if (icdex_debug) { assert(false);};
                 return { owner = Principal.fromActor(this); subaccount = null; };
             };
@@ -1310,7 +1197,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func _makerFilled(_txid: Txid, _filled: OrderFilled, _toid: SagaTM.Toid) : (account: AccountId, nonce: Nonce){
         var account: Blob = Blob.fromArray([]);
         var nonce: Nonce = 0;
-        //var cpFilled : [OrderFilled] = [];
         var token0Value : BalanceChange = #CreditRecord(0); // maker filled
         var token1Value : BalanceChange = #CreditRecord(0); // maker filled
         switch(Trie.get(icdex_orders, keyb(_filled.counterparty), Blob.equal)){
@@ -1322,10 +1208,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     var remainingAmount = OrderBook.amount(order.remaining);
                     var tokenAmount: Nat = 0; // maker vol
                     var currencyAmount: Nat = 0; // maker vol
-                    //var gas0: Nat = 0;
-                    //var gas1: Nat = 0;
                     switch(_filled.token0Value){
-                        case(#CreditRecord(value)){ // Maker Sell  (_txid Taker Buy)
+                        case(#CreditRecord(value)){ // Maker Sell
                             tokenAmount += value;
                             remainingQuantity := Nat.max(remainingQuantity, value) - value;
                             token0Value := #DebitRecord(value);
@@ -1334,7 +1218,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                             tokenAmount += value;
                             remainingQuantity := Nat.max(remainingQuantity, value) - value;
                             token0Value := #CreditRecord(value);
-                            //gas0 += _getFee0();
                         };
                         case(_){};
                     };
@@ -1342,7 +1225,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         case(#DebitRecord(value)){  // Maker Sell
                             currencyAmount += value;
                             token1Value := #CreditRecord(value);
-                            //gas1 += _getFee1();
                         };
                         case(#CreditRecord(value)){  // Maker Buy
                             currencyAmount += value;
@@ -1353,18 +1235,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     };
                     _updateTotalVol(tokenAmount, currencyAmount);
                     _updateVol(account, tokenAmount, currencyAmount);
-                    //if (quantity < setting.UNIT_SIZE){ quantity := 0; };
                     let remaining: OrderPrice = OrderBook.setQuantity(order.remaining, remainingQuantity, ?remainingAmount);
                     var status: TradingStatus = order.status;
-                    // if (Option.isNull(OrderBook.get(icdex_orderBook, order.txid, ?OrderBook.side(order.orderPrice)))){
-                    //     status := #Closed;
-                    // };
                     if (remainingQuantity < setting.UNIT_SIZE){
                         status := #Closed;
                     };
                     let filled : [OrderFilled] = [{counterparty = _txid; token0Value = token0Value; token1Value = token1Value; time = Time.now() }];
                     _update(order.txid, ?remaining, ?_toid, ?filled, null, null, ?status, null);
-                    //ignore _refund(_toid, order.txid, []);
                 };
             };
             case(_){ /*assert(false);*/ };
@@ -1455,7 +1332,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             });
             let task = _buildTask(sub, tokenPrincipal, #DRC20(#transferBatch(accountArr, valueArr, null, sa, _transferData)), _preTtids);
             let ttid = saga.push(_toid, task, null, _callback);
-            // if (Option.isSome(_callback)){ _putTTCallback(ttid) };
             ttids := Tools.arrayAppend(ttids, [ttid]);
         }else{
             var i : Nat = 0;
@@ -1467,9 +1343,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 if (std == #drc20){
                     let task = _buildTask(sub, tokenPrincipal, #DRC20(#transfer(_accountIdToHex(account), value, null, sa, _transferData)), _preTtids);
                     let ttid = saga.push(_toid, task, null, _callback);
-                    // if (Option.isSome(_callback)){ _putTTCallback(ttid) };
                     ttids := Tools.arrayAppend(ttids, [ttid]);
-                } else { // if (std == #icrc1 or std == #icp)
+                } else {
                     let args : ICRC1.TransferArgs = {
                         memo = _transferData;
                         amount = value;
@@ -1480,7 +1355,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     };
                     let task = _buildTask(sub, tokenPrincipal, #ICRC1New(#icrc1_transfer(args)), _preTtids);
                     let ttid = saga.push(_toid, task, null, _callback);
-                    // if (Option.isSome(_callback)){ _putTTCallback(ttid) };
                     ttids := Tools.arrayAppend(ttids, [ttid]);
                 };
                 i += 1;
@@ -1506,9 +1380,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         // Status: #Closed/#Cancelled
         var icrc1Account = _orderIcrc1Account(_txid);
         let account = Tools.principalToAccountBlob(icrc1Account.owner, _toSaNat8(icrc1Account.subaccount));
-        // if (_inCompetition(account)){ /*Competitions*/
-        //     icrc1Account := {owner = Principal.fromActor(this); subaccount = _toOptSub(_getCompAccountSa(account))};
-        // };
         var ttids: [SagaTM.Ttid] = [];
         let saga = _getSaga();
         var toid: SagaTM.Toid = _toid;
@@ -1520,7 +1391,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 var fee1: Nat = 0;
                 // charge cancelling fee: cancelling order without any fills within 1h 
                 if (order.status == #Cancelled and Time.now() < order.time + 3600*ns_ and order.filled.size() == 0 and not(_isSTOrder(_txid))){
-                    // _chargeCancelFee(_value: Amount, _isToken1: Bool) : (value: Amount, icdexFee: Amount)
                     if (OrderBook.side(order.orderPrice) == #Sell and order.orderType == #LMT){
                         let amountAndFee = _chargeCancelFee(tokenAmount, false);
                         tokenAmount := amountAndFee.0;
@@ -1615,9 +1485,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let txid = _txid;
         let txAccount = _getPairAccount(txid);
         var icrc1Account = _icrc1Account;
-        // if (_inCompetition(account)){ /*Competitions*/
-        //     icrc1Account := {owner = Principal.fromActor(this); subaccount = _toOptSub(_getCompAccountSa(account))};
-        // };
         var side: Int = 0;
         switch(_side){
             case(?(#Buy)){ side := 1; };
@@ -1695,9 +1562,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 }).0;
                 if (status != tradingOrder.status and (status == #Closed or status == #Cancelled)) {
                     _pushToClearing(_txid);
-                    // ignore _delPendingOrder(tradingOrder.account, _txid);
                 };
-                //trieLog := List.push((_txid, "put", Trie.isValid(icdex_orders, true)), trieLog);
             };
             case(_){};
         };
@@ -1731,31 +1596,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
     // clear
     private func _clear() : (){
-        // icdex_orders := Trie.filter(icdex_orders, func (k: Txid, v: TradingOrder):Bool{ 
-        //     var isCompleted : Bool = true;
-        //     for (toid in v.toids.vals()){
-        //         let saga = _getSaga();
-        //         switch(saga.status(toid)){
-        //             case(?(status)){ if (status != #Recovered and status != #Done){ isCompleted := false; } };
-        //             case(_){};
-        //         };
-        //     };
-        //     return v.status == #Pending or v.status == #Todo or not(isCompleted); 
-        // });
         // Optimize to a sequence that is about to be cleaned
         var clearingTxidsTemp = List.nil<(Txid)>();
         for (txid in List.toArray(clearingTxids).vals()){
             switch(Trie.get(icdex_orders, keyb(txid), Blob.equal)){
                 case(?(order)){
                     let isCompleted = _ictcDone(order.toids);
-                    // var isCompleted : Bool = true;
-                    // let saga = _getSaga();
-                    // for (toid in order.toids.vals()){
-                    //     switch(saga.status(toid)){
-                    //         case(?(status)){ if (status != #Recovered and status != #Done){ isCompleted := false; } };
-                    //         case(_){};
-                    //     };
-                    // };
                     if ((order.status == #Closed or order.status == #Cancelled) and isCompleted){
                         icdex_orders := Trie.remove(icdex_orders, keyb(txid), Blob.equal).0;
                         ignore _delPendingOrder(order.account, txid);
@@ -1795,23 +1641,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Cancel expired orders in the order book and refund them
     private func _expire() : (){
-        // var n : Nat = 0;
-        // let orders = Trie.filter(icdex_orders, func (k: Txid, v: TradingOrder):Bool{
-        //         let defaultExpiration = v.time + ExpirationDuration;
-        //         return Time.now() > v.expiration or Time.now() > defaultExpiration;
-        // });
-        // let saga = _getSaga();
-        // for ((k,v) in Trie.iter(orders)){
-        //     if (_asyncMessageSize() < 450 and n < 500){
-        //         n += 1;
-        //         let toid = saga.create("cancel", #Forward, ?k, null);
-        //         let ttids = _cancel(toid, k, ?OrderBook.side(v.orderPrice));
-        //         saga.close(toid);
-        //         if (ttids.size() == 0){
-        //             ignore saga.doneEmpty(toid);
-        //         };
-        //     };
-        // };
         // Optimize to a time-sorted txid list
         func clearExpiredTxs(deque: Deque.Deque<(Txid, Time.Time)>) : Deque.Deque<(Txid, Time.Time)>{
             switch(Deque.popBack(deque)){
@@ -1842,13 +1671,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
         };
         timeSortedTxids := clearExpiredTxs(timeSortedTxids);
-        // await* _ictcSagaRun(0);
-        // drc205; 
-        // if (_tps(15, null).1 < setting.MAX_TPS*7 or Time.now() > lastStorageTime + setting.STORAGE_INTERVAL*ns_) { 
-        //     lastStorageTime := Time.now();
-        //     ignore drc205.store(); 
-        // }; 
-        // ictc
     };
 
     private func _getPriceWeighted(_weighted: Types.PriceWeighted) : Types.PriceWeighted{
@@ -1916,7 +1738,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
         };
         _setPromotion(_a, { value0 = _addVol0; value1 = _addVol1; });
-        // _compAddVol(activeRound, _a, { value0 = _addVol0; value1 = _addVol1; });/*Competitions*/
     };
 
     private func _updateBrokerData(_a: AccountId, _vol: Vol, _commission: Vol, _latestRate: Float) : (){
@@ -1974,9 +1795,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var gas = _getFee0();
         if (_isToken1) { gas := _getFee1(); };
         var tradingFee = _value * _getTradingFee() / 1_000_000; 
-        // if (not(_isToken1)){
-        //     tradingFee := _value * _getTradingFee() / 2 / 1_000_000; // Buyer
-        // };
         if (tradingFee > gas*5){ //fee
             let fee = tradingFee;
             amount := _value - fee;
@@ -2044,49 +1862,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(_){
                 orders := icdex_orders;
-                // for ((accountId, txids) in Trie.iter(icdex_pendingOrders)){
-                //     for (txid in txids.vals()){
-                //         switch(Trie.get(icdex_orders, keyb(txid), Blob.equal)){
-                //             case(?(t)){
-                //                 orders := Trie.put(orders, keyb(txid), Blob.equal, t).0;
-                //             };
-                //             case(_){};
-                //         };
-                //     };
-                // };
             };
         };
         return orders;
     };
 
-    // private func _toReponse(_order: TradingOrder) : TradingOrder{
-    //     if (icdex_debug){ return _order; };
-    //     return {
-    //         account = _order.account;
-    //         icrc1Account = null;
-    //         txid = _order.txid;
-    //         orderType = _order.orderType;
-    //         orderPrice = _order.orderPrice;
-    //         time = _order.time;
-    //         expiration = _order.expiration;
-    //         remaining = _order.remaining;
-    //         toids = _order.toids;
-    //         filled = _order.filled;  
-    //         status = _order.status;
-    //         refund = _order.refund;
-    //         gas = _order.gas;
-    //         fee = _order.fee;
-    //         index = _order.index;
-    //         nonce = _order.nonce;
-    //         data = _order.data;
-    //     }
-    // };
-
     // Save order transaction records
     private func _saveOrderRecord(_txid: Txid, _allDetails: Bool, _isFailed: Bool) : (){
         switch(Trie.get(icdex_orders, keyb(_txid), Blob.equal)){
             case(?(order)){
-                // if (order.filled.size() > 0 or order.status == #Cancelled or (_isFailed and order.status == #Todo)){
                 if (order.status != #Todo or _isFailed){
                     var fills: [OrderFilled] = []; // order.filled;
                     if (_allDetails){
@@ -2106,7 +1890,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     }else if (order.status == #Cancelled){
                         status := #Cancelled;
                     };
-                    //if (order.status == #Cancelled and order.filled.size() == 0){ status := #Failed };
                     var orderValue0 = OrderBook.quantity(order.orderPrice);
                     var orderValue1 = OrderBook.amount(order.orderPrice);
                     var quantity: Nat = 0;
@@ -2283,15 +2066,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     token0Symbol := await token0.icrc1_symbol();
                     token0Std := #icrc1;
                 } catch(e){
-                    /*try{
-                        let token0: DIP20.Self = actor(Principal.toText(_token0Canister()));
-                        token0Symbol := await token0.symbol();
-                        token0Std := #dip20;
-                    } catch(e){
-                        let token0: Ledger.Self = actor(Principal.toText(_token0Canister()));
-                        token0Symbol := (await token0.symbol()).symbol;
-                        token0Std := #ledger;
-                    };*/
                     assert(false);
                 };
             };
@@ -2314,15 +2088,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     token1Std := #icrc1;
                     token1Symbol := await token1.icrc1_symbol();
                 } catch(e){
-                    /*try {
-                        let token1: DIP20.Self = actor(Principal.toText(_token1Canister()));
-                        token1Std := #dip20;
-                        token1Symbol := await token1.symbol();
-                    } catch(e){
-                        let token1: Ledger.Self = actor(Principal.toText(_token1Canister()));
-                        token1Std := #ledger;
-                        token1Symbol := (await token1.symbol()).symbol;
-                    };*/
                     assert(false);
                 };
             };
@@ -2526,16 +2291,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (OrderBook.side(order) == #Buy and OrderBook.amount(order) <= _getFee1() ){
             return ?#err({code=#InvalidAmount; message="402: Invalid Amount";});
         };
-        // if (_orderType == #MKT and order.price > 0){
-        //     return ?#err({code=#UndefinedError; message="403: Unavailable Price";});
-        // };
-        if (Option.isSome(Trie.get(icdex_orders, keyb(txid), Blob.equal)) /*or  // The txid should not exist in order list
-        OrderBook.inOrderBook(icdex_orderBook, txid)*/){ // The txid should not exist in the order book
+        if (Option.isSome(Trie.get(icdex_orders, keyb(txid), Blob.equal))){ // The txid should not exist in the order book
             return ?#err({code=#UndefinedError; message="413: Order Duplicate";});
         }; 
-        // if (_inCompSettlement(account)){ /*Competitions*/
-        //     return ?#err({code=#UndefinedError; message="416: Trading competition participants are suspended from trading during the settlement period. Please wait until the settlement is completed.";});
-        // };
         if (expirationDuration < 1800*ns_ or expirationDuration > ExpirationDuration){
             return ?#err({code=#UndefinedError; message="404: The parameter `_expiration` is invalid and needs to be between 1_800_000_000_000 and "# Int.toText(ExpirationDuration) #" nanoseconds.";});
         };
@@ -2548,17 +2306,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var tokenAmount : Nat = 0;
         var currencyAmount : Nat = 0;
         let account = Tools.principalToAccountBlob(icrc1Account.owner, _toSaNat8(icrc1Account.subaccount));
-        for (filled in filled.vals() ){ // Array.reverse {counterparty: Txid; token0Value: BalanceChange; token1Value: BalanceChange;}
-            //let makerAccountPrincipal = _orderPrincipal(filled.counterparty);
-            // ___txid1 := txid;
-            // ___txid2 := filled.counterparty;
+        for (filled in filled.vals() ){
             var makerIcrc1Account = _orderIcrc1Account(filled.counterparty);
-            // ___account := ?makerIcrc1Account;
             let (makerAccount, makerNonce) = _makerFilled(txid, filled, toid);
-            // if (_inCompetition(makerAccount)){ /*Competitions*/
-            //     makerIcrc1Account := {owner = Principal.fromActor(this); subaccount = _toOptSub(_getCompAccountSa(makerAccount))};
-            // };
-            //let makerTxAccount = _getPairAccount(filled.counterparty);
             let taker_mode = _exchangeMode(account, ?nonce);
             let taker_isKeptFunds = _isKeepingBalanceInPair(account);
             let maker_mode = _exchangeMode(makerAccount, ?makerNonce);
@@ -2581,16 +2331,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 case(#CreditRecord(value)){ // Buy   (send to taker) 
                     tokenAmount += value;
                     if (value > _getFee0()){
-                        let (amount, makerFee, icdexFee, brokerFee) = _chargeFee(makerAccount/*_counterpartyAccount(filled.counterparty)*/, value, false, _brokerage);
+                        let (amount, makerFee, icdexFee, brokerFee) = _chargeFee(makerAccount, value, false, _brokerage);
                         var transferBatch_to : [ICRC1.Account] = [icrc1Account];
                         var transferBatch_value : [Nat] = [amount];
-                        // let ttids = _sendToken0(true, toid, filled.counterparty, [], [icrc1Account], [amount], ?filled.counterparty, null);
-                        // preTtids := Tools.arrayAppend(preTtids, ttids);
                         if (makerFee > _getFee0()){ // makerTxAccount -> makerAccount
                             transferBatch_to := Tools.arrayAppend(transferBatch_to, [makerIcrc1Account]);
                             transferBatch_value := Tools.arrayAppend(transferBatch_value, [makerFee]);
-                            // let ttids = _sendToken0(true, toid, filled.counterparty, [], [makerIcrc1Account], [makerFee], ?filled.counterparty, null);
-                            // preTtids := Tools.arrayAppend(preTtids, ttids);
                             let makerAccountId = Tools.principalToAccountBlob(makerIcrc1Account.owner, _toSaNat8(makerIcrc1Account.subaccount));
                             if (_onlyVipMaker(makerAccountId)){
                                 _updateMakerData(makerAccountId, {value0=value; value1=0;}, {value0=makerFee; value1=0;}, 0, 1);
@@ -2599,8 +2345,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         if (icdexFee > _getFee0()){  // makerTxAccount -> router
                             transferBatch_to := Tools.arrayAppend(transferBatch_to, [{owner = icdexRouter; subaccount = null}]);
                             transferBatch_value := Tools.arrayAppend(transferBatch_value, [icdexFee]);
-                            // let ttids = _sendToken0(true, toid, filled.counterparty, [], [{owner = icdexRouter; subaccount = null}], [icdexFee], ?filled.counterparty, null);
-                            // preTtids := Tools.arrayAppend(preTtids, ttids);
                         };
                         if (brokerFee > _getFee0()){
                             switch(_brokerage){
@@ -2644,16 +2388,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 case(#CreditRecord(value)){ //Sell  (send to taker) 
                     currencyAmount += value;
                     if (value > _getFee1()){
-                        let (amount, makerFee, icdexFee, brokerFee) = _chargeFee(makerAccount/*_counterpartyAccount(filled.counterparty)*/, value, true, _brokerage);
+                        let (amount, makerFee, icdexFee, brokerFee) = _chargeFee(makerAccount, value, true, _brokerage);
                         var transferBatch_to : [ICRC1.Account] = [icrc1Account];
                         var transferBatch_value : [Nat] = [amount];
-                        // let ttids = _sendToken1(true, toid, filled.counterparty, [], [icrc1Account], [amount], ?filled.counterparty, null);
-                        // preTtids := Tools.arrayAppend(preTtids, ttids);
                         if (makerFee > _getFee1()){
                             transferBatch_to := Tools.arrayAppend(transferBatch_to, [makerIcrc1Account]);
                             transferBatch_value := Tools.arrayAppend(transferBatch_value, [makerFee]);
-                            // let ttids = _sendToken1(true, toid, filled.counterparty, [], [makerIcrc1Account], [makerFee], ?filled.counterparty, null);
-                            // preTtids := Tools.arrayAppend(preTtids, ttids);
                             let makerAccountId = Tools.principalToAccountBlob(makerIcrc1Account.owner, _toSaNat8(makerIcrc1Account.subaccount));
                             if (_onlyVipMaker(makerAccountId)){
                                 _updateMakerData(makerAccountId, {value0=0; value1=value;}, {value0=0; value1=makerFee;}, 0, 1);
@@ -2662,8 +2402,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         if (icdexFee > _getFee1()){
                             transferBatch_to := Tools.arrayAppend(transferBatch_to, [{owner = icdexRouter; subaccount = null}]);
                             transferBatch_value := Tools.arrayAppend(transferBatch_value, [icdexFee]);
-                            // let ttids = _sendToken1(true, toid, filled.counterparty, [], [{owner = icdex_; subaccount = null}], [icdexFee], ?filled.counterparty, null);
-                            // preTtids := Tools.arrayAppend(preTtids, ttids);
                         };
                         if (brokerFee > _getFee1()){
                             switch(_brokerage){
@@ -2770,7 +2508,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             data = _data;
         };
         icdex_orders := Trie.put(icdex_orders, keyb(txid), Blob.equal, tradingOrder).0;
-        //trieLog := List.push((txid, "put", Trie.isValid(icdex_orders, true)), trieLog);
         _addNonce(account); // update nonce here
         if (Time.now() > lastExpiredTime + 5*ns_ and not(_isProOrder)){ 
             lastExpiredTime := Time.now();
@@ -2857,7 +2594,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (status == #Closed or status == #Cancelled){
             _pushToClearing(txid);
         };
-        //trieLog := List.push((txid, "put", Trie.isValid(icdex_orders, true)), trieLog);
         icdex_priceWeighted := _getPriceWeighted(icdex_priceWeighted);
         icdex_lastPrice := Option.get(res.fillPrice, icdex_lastPrice);
         icdex_klines2 := OrderBook.putBatch(icdex_klines2, res.filled, setting.UNIT_SIZE);
@@ -2879,7 +2615,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         // record storage
         _saveOrderRecord(txid, true, false);
-        //await drc205.store();
         if (not(_isProOrder)){
             await* _callDrc205Store(false, false); // 0 ~ 4
         };
@@ -3257,23 +2992,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
     };
 
-    /*public query func getDip20Balance(_account: Address) : async (Nat, Principal){
-        let accountId = _getAccountId(_account);
-        return (_getDip20Balance(accountId), _getDip20Principal(accountId));
-    };
-    public query func getTxDip20Balance(_txid: Text) : async ?(Nat, Principal){
-        let a = Hex.decode(_txid);
-        switch (a){
-            case (#ok(txid:[Nat8])){
-                let accountId = _getPairAccount(Blob.fromArray(txid));
-                return ?(_getDip20Balance(accountId), _getDip20Principal(accountId));
-            };
-            case(#err(_)){
-                return null;
-            }
-        };
-    };*/
-
     /// Query all orders of a trader that are in pending status
     ///
     /// Arguments:
@@ -3445,8 +3163,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     public query func feeStatus() : async Types.FeeStatus{
         return {
             feeRate = _natToFloat(_getTradingFee()) / 1_000_000;
-            feeBalance = {value0=0; value1=0}; //icdex_feeBalance;
-            totalFee = icdex_totalFee; //icdex_totalFee;
+            feeBalance = {value0=0; value1=0}; 
+            totalFee = icdex_totalFee; 
         };
     };
 
@@ -3462,7 +3180,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         switch(_account) {
             case(null){
                 return {
-                value0 = value0; value1 = value1; // last price
+                value0 = value0; value1 = value1; 
                 priceWeighted = icdex_priceWeighted; 
                 vol = icdex_totalVol;
                 swapCount = Nat64.fromNat(icdex_index);
@@ -3473,7 +3191,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 let account = _getAccountId(_a);
                 let vol = _getVol(account);
                 return {
-                value0 = value0; value1 = value1; // last price
+                value0 = value0; value1 = value1; 
                 priceWeighted = icdex_priceWeighted; 
                 vol = vol;
                 swapCount = Nat64.fromNat(_getNonce(account));
@@ -3947,64 +3665,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             case(_){ return {token0 = {locked = 0; available = 0}; token1 = {locked = 0; available = 0}} };
         };
     };
-    // private func _deposit2(_caller: Principal, _side:{#token0;#token1}, _a: AccountId, _value: Amount) : async* (){
-    //     let sa_account = _a; // _getPairAccount( );
-    //     let sa_pool = Blob.fromArray(sa_zero);
-    //     let poolAccount = _getPairAccount(sa_pool);
-    //     let saga = _getSaga();
-    //     var fee: Nat = _getFee0();
-    //     var std = token0Std;
-    //     var tokenPrincipal = _token0Canister();
-    //     if (_side == #token1){
-    //         fee := _getFee1();
-    //         std := token1Std;
-    //         tokenPrincipal := _token1Canister();
-    //     };
-    //     if (_value <= fee){
-    //         throw Error.reject("431: The specified `_value` should be greater than fee."); 
-    //     };
-    //     if (std == #icp or std == #icrc1 /*or std == #ledger*/){
-    //         var balance : Nat = 0;
-    //         try{
-    //             if (_side == #token0){
-    //                 balance := await* _getBaseBalance(sa_account);
-    //             }else{
-    //                 balance := await* _getQuoteBalance(sa_account);
-    //             };
-    //         }catch(e){
-    //             throw Error.reject("420: internal call error: "# Error.message(e)); 
-    //         };
-    //         if (balance >= _value){
-    //             let toid = saga.create("deposit", #Backward, null, null);
-    //             let ttids = _sendToken(false, _side, toid, sa_account, [], [{owner=Principal.fromActor(this); subaccount = ?sa_pool}], [_value], ?sa_account, null);
-    //             let task1 = _buildTask(?Principal.toBlob(_caller), Principal.fromActor(this), #This(#batchTransfer([(#add, _a, _side, #available(Nat.sub(_value, fee)))])), ttids);
-    //             let ttid1 = saga.push(toid, task1, null, null);
-    //             saga.close(toid);
-    //             await* _ictcSagaRun(toid, false);
-    //         }else{
-    //             throw Error.reject("432: Insufficient balance."); 
-    //         };
-    //     }else if (std == #drc20){
-    //         var balance : Nat = 0;
-    //         try{
-    //             let token: DRC20.Self = actor(Principal.toText(tokenPrincipal));
-    //             balance := await token.drc20_balanceOf(_accountIdToHex(_a));
-    //         }catch(e){
-    //             throw Error.reject("420: internal call error: "# Error.message(e)); 
-    //         };
-    //         if (balance >= _value + fee){
-    //             let toid = saga.create("deposit", #Backward, null, null);
-    //             let task = _buildTask(?sa_account, tokenPrincipal, #DRC20(#transferFrom(_accountIdToHex(_a), _accountIdToHex(poolAccount), _value, null, null, null)), []);
-    //             let ttid = saga.push(toid, task, null, null);
-    //             let task1 = _buildTask(?Principal.toBlob(_caller), Principal.fromActor(this), #This(#batchTransfer([(#add, _a, _side, #available(_value))])), [ttid]);
-    //             let ttid1 = saga.push(toid, task1, null, null);
-    //             saga.close(toid);
-    //             await* _ictcSagaRun(toid, false);
-    //         }else{
-    //             throw Error.reject("432: Insufficient balance."); 
-    //         };
-    //     };
-    // };
     private func _deposit(_side:{#token0; #token1}, _icrc1Account: ICRC1.Account, _amount: Amount) : async* Amount{
         var _fee : Nat = 0;
         var _canisterId : Principal = Principal.fromActor(this);
@@ -4142,7 +3802,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             saga.close(toid);
             _putWithdrawing(account, toid);
-            // await* _ictcSagaRun(toid, false);
         };
         return (toid, resValue0, resValue1);
     };
@@ -4242,8 +3901,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             throw Error.reject("400: Trading pair has been suspended."); 
         };
         ignore await* _deposit(_token, {owner = msg.caller; subaccount = _toSaBlob(_sa)}, _value);
-        // let account = Tools.principalToAccountBlob(msg.caller, _sa);
-        // await* _deposit(msg.caller, _token, account, _value);
     };
 
     /// This method can be called by the trader to return funds exceptionally left in the DepositAccount when there are 
@@ -4566,26 +4223,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
     };
 
-    // // Strategy Trigger Portal
-    // private func _stoTrigger(_soid: STO.Soid) : (STO.STStatus, [(STO.Soid, STO.ICRC1Account, OrderPrice)]){
-    //     assert(icdex_lastPrice.price > 0);
-    //     switch(STO.get(icdex_stOrderRecords, _soid)){
-    //         case(?sto){
-    //             if (sto.status == #Running){
-    //                 switch(sto.strategy){
-    //                     case(#StopLossOrder(v)){ return _sloTrigger(_soid, sto) };
-    //                     case(#GridOrder(v)){ return _goTrigger(_soid, sto) };
-    //                     case(#IcebergOrder(v)){ return _ioTrigger(_soid, sto) };
-    //                     case(#VWAP(v)){ return _vwapTrigger(_soid, sto) };
-    //                     case(#TWAP(v)){ return _twapTrigger(_soid, sto) };
-    //                 };
-    //             };
-    //             return (sto.status, []);
-    //         };
-    //         case(_){ return (#Deleted, []) };
-    //     };
-    // };
-
     // Strategy Trigger Portal
     private func _stoTrigger(_soid: STO.Soid) : (STO.STStatus, [(STO.Soid, STO.ICRC1Account, OrderPrice)]){
         assert(icdex_lastPrice.price > 0);
@@ -4695,6 +4332,68 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
         };
         return (stats_inAmount, stats_outAmount);
+    };
+
+    // Updates the quantity of level-1 orders on the grid.
+    private func _updateGridOrderLevel1Filled(_soid: STO.Soid): (){
+        switch(STO.get(icdex_stOrderRecords, _soid)){
+            case(?(sto)){
+                switch(sto.strategy){
+                    case(#GridOrder(grid)){
+                        var buy1: Amount = 0;
+                        var sell1: Amount = 0;
+                        switch(grid.level1Filled){
+                            case(?(filled)){
+                                buy1 := filled.buy1;
+                                sell1 := filled.sell1;
+                            };
+                            case(_){};
+                        };
+                        var buy1Txid = Blob.fromArray([]);
+                        var buy1Price: Nat = 0;
+                        if (sto.pendingOrders.buy.size() > 0){
+                            for ((optTxid, price, quantity) in sto.pendingOrders.buy.vals()){
+                                if (price > buy1Price){
+                                    buy1Txid := Option.get(optTxid, buy1Txid);
+                                    buy1Price := price;
+                                };
+                            };
+                        };
+                        if (buy1Txid.size() > 0){
+                            switch(Trie.get(icdex_orders, keyb(buy1Txid), Blob.equal)){
+                                case(?(order)){
+                                    let (v0, v1) = _sumFilledAmount(order.filled);
+                                    buy1 := Nat.max(buy1, v0);
+                                };
+                                case(_){};
+                            };
+                        };
+                        var sell1Txid = Blob.fromArray([]);
+                        var sell1Price: Nat = 0;
+                        if (sto.pendingOrders.sell.size() > 0){
+                            for ((optTxid, price, quantity) in sto.pendingOrders.sell.vals()){
+                                if (price < sell1Price or sell1Price == 0){
+                                    sell1Txid := Option.get(optTxid, sell1Txid);
+                                    sell1Price := price;
+                                };
+                            };
+                        };
+                        if (sell1Txid.size() > 0){
+                            switch(Trie.get(icdex_orders, keyb(sell1Txid), Blob.equal)){
+                                case(?(order)){
+                                    let (v0, v1) = _sumFilledAmount(order.filled);
+                                    sell1 := Nat.max(sell1, v0);
+                                };
+                                case(_){};
+                            };
+                        };
+                        icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, _soid, null, null, ?#set({ buy1 = buy1; sell1 = sell1 }));
+                    };
+                    case(_){};
+                };
+            };
+            case(_){};
+        };
     };
 
     // Strategy worktop. It is triggered by the matching engine when a order is matched and all active strategy orders are executed in a loop.
@@ -4954,7 +4653,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (icdex_lastPrice.price == 0){
             throw Error.reject("458: Requires the pair to have at least one trade."); 
         };
-        if (List.size(icdex_activeProOrderList) >= 500){
+        if (List.size(icdex_activeProOrderList) >= 5000){
             throw Error.reject("460: The number of pro-order strategies that the system can host cannot exceed 500."); 
         };
         let icrc1Account: STO.ICRC1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa) };
@@ -5125,6 +4824,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         switch(STO.get(icdex_stOrderRecords, _soid)){
             case(?(sto)){
+                // level1Filled
+                _updateGridOrderLevel1Filled(_soid);
                 // cancel orders
                 let saga = _getSaga();
                 for ((optTxid, price, quantity) in sto.pendingOrders.buy.vals()){
@@ -5504,7 +5205,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         return false;
                     };
                 };
-                return _price == price and _quantity == t.supply; // _price >= Nat.sub(price, 1) and _price <= price + 1
+                return _price == price and _quantity == t.supply; 
             }));
         };
         if (IDOSetting_.IDOEnabled and _side == #Buy and _type == #FOK and Time.now() >= pairOpeningTime){ // buy(limit) #FOK
@@ -5524,17 +5225,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 switch(Trie.get(IDOParticipants, keyb(_a), Blob.equal)){
                     case(?(p)){
                         var participant = p;
-                        // if (participant.limit == 0 and threshold > 0){
-                        //     participant := await* _fetchVolForIDO(_a);
-                        // };
                         amountLimit := participant.limit - Nat.min(participant.limit, participant.used);
                     };
-                    case(_){
-                        // if (threshold > 0){
-                        //     let participant = await* _fetchVolForIDO(_a);
-                        //     amountLimit := participant.limit - Nat.min(participant.limit, participant.used);
-                        // };
-                    };
+                    case(_){};
                 };
             };
             
@@ -5735,14 +5428,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /* ===========================
       Management section
     ============================== */
-    // public query func getOwner() : async Principal{  
-    //     return owner;
-    // };
-    // public shared(msg) func changeOwner(_newOwner: Principal) : async Bool{ 
-    //     assert(_onlyOwner(msg.caller));
-    //     owner := _newOwner;
-    //     return true;
-    // };
 
     /// Synchronizing token0 and token1 transfer fees
     public shared(msg) func sync() : async (){
@@ -5763,7 +5448,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             icdex_lastPrice := { quantity = #Sell(0); price = 0 };
             let saga = _getSaga();
             for ((k,v) in Trie.iter(icdex_orders)){
-                //_cancel(k, ?OrderBook.side(v.orderPrice));
                 let toid = saga.create("cancel", #Forward, ?k, null);
                 let ttids = _cancel(toid, k, ?OrderBook.side(v.orderPrice));
                 saga.close(toid);
@@ -5823,9 +5507,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     public shared(msg) func setVipMaker(_account: Address, _rate: Nat) : async (){
         assert(_onlyOwner(msg.caller));
         assert(_rate <= 100);
-        // if (_onlyToken(msg.caller)){
-        //     assert(_rate <= 70);
-        // };
         switch(Trie.get(icdex_makers, keyb(_getAccountId(_account)), Blob.equal)){
             case(?(rate, managedBy)){
                 if (_onlyOwner(msg.caller) or managedBy == msg.caller){
@@ -6161,53 +5842,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     // End: Trading Ambassadors
 
 
-    // /* ===========================
-    //   Competitions section
-    //   @deprecated: Removed the competition feature. 
-    // ============================== */
-    // // T1 -- start -- T2 -- end -- T3 -- settled -- T4
-    // type CompCapital = {value0: Nat; value1: Nat; total: Float;}; // @deprecated
-    // type RoundItem = { // @deprecated
-    //     name: Text;
-    //     content: Text; // H5
-    //     start: Time.Time;
-    //     end: Time.Time;
-    //     quoteToken: {#token0; #token1};
-    //     closedPrice: ?Float; // 1 smallest token = ? quote smallest token, Set only after the end time
-    //     isSettled: Bool;
-    //     minCapital: Nat;
-    // };
-    // type CompResult = { // @deprecated
-    //     icrc1Account: ICRC1.Account;
-    //     status: {#Active; #Dropout;};
-    //     vol: Vol;
-    //     capital: CompCapital;
-    //     assetValue: ?CompCapital; // Note: Only set after settlement
-    // };
-    // private stable var activeRound : Nat = 0; // @deprecated
-    // private stable var rounds: Trie.Trie<Nat, RoundItem> = Trie.empty(); // @deprecated
-    // private stable var competitors: Trie.Trie2D<Nat, AccountId, CompResult> = Trie.empty(); // @deprecated
-    // private stable var ictcTaskCallbackEvents: Trie.Trie<SagaTM.Ttid, Time.Time> = Trie.empty(); // @deprecated
-    // private func _putTTCallback(_ttid: SagaTM.Ttid) : (){ 
-    //     ictcTaskCallbackEvents := Trie.put(ictcTaskCallbackEvents, keyn(_ttid), Nat.equal, Time.now()).0;
-    // };
-    // private func _removeTTCallback(_ttid: SagaTM.Ttid) : (){ 
-    //     ictcTaskCallbackEvents := Trie.remove(ictcTaskCallbackEvents, keyn(_ttid), Nat.equal).0;
-    // };
-    // private func _clearTTCallback() : (){ 
-    //     ictcTaskCallbackEvents := Trie.filter(ictcTaskCallbackEvents, func (k: SagaTM.Ttid, v: Time.Time): Bool{
-    //         Time.now() < v + ExpirationDuration;
-    //     });
-    // };
-    // private func _checkTTCallback(_ttid: SagaTM.Ttid, _task: SagaTM.Task) : Bool{ 
-    //     if (Time.now() > _task.time + ExpirationDuration){
-    //         return false;
-    //     };
-    //     return Option.isSome(Trie.get(ictcTaskCallbackEvents, keyn(_ttid), Nat.equal));
-    // };
-    // End: Competitions
-
-
     /* ===========================
       ICTC section
     ============================== */
@@ -6221,16 +5855,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         return Option.isSome(Array.find(ictc_admins, func (t: Principal): Bool{ t == _caller }));
     }; 
     private func _onlyBlocking(_toid: Nat) : Bool{
-        /// Saga
         switch(_getSaga().status(_toid)){
             case(?(status)){ return status == #Blocking }; // or status == #Compensating
             case(_){ return false; };
         };
-        /// 2PC
-        // switch(_getTPC().status(_toid)){
-        //     case(?(status)){ return status == #Blocking };
-        //     case(_){ return false; };
-        // };
     };
 
     /// Returns the list of ICTC administrators
@@ -6420,7 +6048,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         assert(_onlyOwner(msg.caller) or _onlyIctcAdmin(msg.caller));
         let saga = _getSaga();
         saga.close(_toid);
-        // await* _ictcSagaRun(_toid, true);
         try{
             let r = await saga.run(_toid);
             return r;
@@ -6472,7 +6099,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         switch(_ia){
             case(?(ia)){
                 msgCaller := ?ia.owner;
-                caller := Option.get(ia.subaccount, Blob.fromArray([])); // Tools.icrc1Encode(ia); // Option.get(ia.subaccount, Blob.fromArray([]));
+                caller := Option.get(ia.subaccount, Blob.fromArray([]));
             };
             case(_){};
         };
@@ -6647,11 +6274,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /* ===========================
       Upgrade section
     ============================== */
-    // Note: Redundant variables are used for compatibility with previous versions
-    // private stable var __sagaData: [SagaTM.Data] = [];
     private stable var __sagaDataNew: ?SagaTM.Data = null;
-    // private stable var __drc205Data: [DRC205.DataTemp] = [];
-    // private stable var __drc205DataV2: [DRC205.DataTempV2] = [];
     private stable var __drc205DataNew: ?DRC205.DataTempV2 = null;
     private var __upgradeMode : {#Base; #All} = #All;
 
@@ -6677,48 +6300,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
 
     system func postupgrade() {
-        // if (__sagaData.size() > 0){
-        //     _getSaga().setData(__sagaData[0]);
-        //     __sagaData := [];
-        // };
         switch(__sagaDataNew){
             case(?(data)){
                 _getSaga().setData(data);
-                // __sagaData := [];
                 __sagaDataNew := null;
             };
-            case(_){
-                // if (__sagaData.size() > 0){
-                //     _getSaga().setData(__sagaData[0]);
-                //     __sagaData := [];
-                // };
-            };
+            case(_){};
         };
-        // if (__drc205DataV2.size() > 0){
-        //     drc205.setData(__drc205DataV2[0]);
-        //     __drc205DataV2 := [];
-        //     __drc205Data := [];
-        // };
         switch(__drc205DataNew){
             case(?(data)){
                 drc205.setData(data);
-                // __drc205Data := [];
-                // __drc205DataV2 := [];
                 __drc205DataNew := null;
             };
-            case(_){
-                // if (__drc205DataV2.size() > 0){
-                //     drc205.setData(__drc205DataV2[0]);
-                //     __drc205DataV2 := [];
-                //     __drc205Data := [];
-                // };
-            };
+            case(_){};
         };
         timerId := Timer.recurringTimer(#seconds(900), timerLoop);
-        // Will be removed in version 0.10
-        // for ((txid, tx) in Trie.iter(icdex_orders)){
-        //     ignore _addPendingOrder(tx.account, txid);
-        // };
     };
 
     /* ===========================
@@ -6731,16 +6327,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         try{ await* _ictcSagaRun(0, false) }catch(e){};
         try{ await* _callDrc205Store(true, false) }catch(e){};
         try{ await _hook_stoWorktop(null, null) }catch(e){};
-        // try{ /*Competitions*/
-        //     await* _compSettle(activeRound);
-        //     compInSettlement := false;
-        // }catch(e){
-        //     compInSettlement := false;
-        // };
         if (Cycles.balance() < 300_000_000_000){ // 0.3T
             Timer.cancelTimer(timerId);
         };
-        // _clearTTCallback();
         _autoDeleteSTO();
     };
     private var timerId: Nat = 0;
@@ -6784,7 +6373,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     icdex_priceWeighted = icdex_priceWeighted;
                     icdex_lastPrice = icdex_lastPrice;
                     taDescription = taDescription;
-                    // activeRound = activeRound;
                 });
             };
             case(#icdex_orders){
@@ -6860,21 +6448,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         return (k, v);
                     }));
             };
-            // case(#rounds){
-            //     return #rounds(Trie.toArray<Nat, RoundItem, (Nat, RoundItem)>(rounds, 
-            //         func (k: Nat, v: RoundItem): (Nat, RoundItem){
-            //             return (k, v);
-            //         }));
-            // };
-            // case(#competitors){
-            //     return #competitors(Trie.toArray<Nat, Trie.Trie<AccountId, CompResult>, (Nat, [(AccountId, CompResult)])>(competitors, 
-            //         func (k: Nat, v: Trie.Trie<AccountId, CompResult>): (Nat, [(AccountId, CompResult)]){
-            //             return (k, Trie.toArray<AccountId, CompResult, (AccountId, CompResult)>(v, 
-            //                 func (k1: AccountId, v1: CompResult): (AccountId, CompResult){
-            //                     return (k1, v1);
-            //                 }));
-            //         }));
-            // };
             case(#sagaData(mode)){
                 var data = _getSaga().getDataBase();
                 if (mode == #All){
@@ -6925,12 +6498,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         return (k, v);
                     }));
             };
-            // case(#ictcTaskCallbackEvents){
-            //     return #ictcTaskCallbackEvents(Trie.toArray<Ttid, Time.Time, (Ttid, Time.Time)>(ictcTaskCallbackEvents, 
-            //         func (k: Ttid, v: Time.Time): (Ttid, Time.Time){
-            //             return (k, v);
-            //         }));
-            // };
             case(#ictc_admins){
                 return #ictc_admins(ictc_admins);
             };
@@ -7000,7 +6567,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 icdex_priceWeighted := data.icdex_priceWeighted;
                 icdex_lastPrice := data.icdex_lastPrice;
                 taDescription := data.taDescription;
-                // activeRound := data.activeRound;
             };
             case(#icdex_orders(data)){
                 for ((k, v) in data.vals()){
@@ -7061,20 +6627,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     traderReferrers := Trie.put(traderReferrers, keyb(k), Blob.equal, v).0;
                 };
             };
-            // case(#rounds(data)){
-            //     for ((k, v) in data.vals()){
-            //         rounds := Trie.put(rounds, keyn(k), Nat.equal, v).0;
-            //     };
-            // };
-            // case(#competitors(data)){
-            //     for ((k, v) in data.vals()){
-            //         var trie: Trie.Trie<AccountId, CompResult> = Trie.empty();
-            //         for ((k1, v1) in v.vals()){
-            //             trie := Trie.put(trie, keyb(k1), Blob.equal, v1).0;
-            //         };
-            //         competitors := Trie.put(competitors, keyn(k), Nat.equal, trie).0;
-            //     };
-            // };
             case(#sagaData(data)){
                 _getSaga().setData({
                     autoClearTimeout = data.autoClearTimeout; 
@@ -7118,11 +6670,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     traderReferrerTemps := Trie.put(traderReferrerTemps, keyb(k), Blob.equal, v).0;
                 };
             };
-            // case(#ictcTaskCallbackEvents(data)){
-            //     for ((k, v) in data.vals()){
-            //         ictcTaskCallbackEvents := Trie.put(ictcTaskCallbackEvents, keyn(k), Nat.equal, v).0;
-            //     };
-            // };
             case(#ictc_admins(data)){
                 ictc_admins := data;
             };
