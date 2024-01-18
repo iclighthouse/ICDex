@@ -4653,7 +4653,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (icdex_lastPrice.price == 0){
             throw Error.reject("458: Requires the pair to have at least one trade."); 
         };
-        if (List.size(icdex_activeProOrderList) >= 5000){
+        if (List.size(icdex_activeProOrderList) >= 500){
             throw Error.reject("460: The number of pro-order strategies that the system can host cannot exceed 500."); 
         };
         let icrc1Account: STO.ICRC1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa) };
