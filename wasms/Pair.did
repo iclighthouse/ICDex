@@ -1,526 +1,168 @@
-type Vol = 
- record {
-   value0: Amount;
-   value1: Amount;
- };
-type TxnResult = 
- variant {
-   err:
-    record {
-      code:
-       variant {
-         DuplicateExecutedTransfer;
-         InsufficientAllowance;
-         InsufficientBalance;
-         InsufficientGas;
-         LockedTransferExpired;
-         NoLockedTransfer;
-         NonceError;
-         UndefinedError;
-       };
-      message: text;
-    };
-   ok: Txid;
- };
-type TokenTxnRecord = 
- record {
-   caller: AccountId;
-   gas: Gas;
-   index: nat;
-   msgCaller: opt principal;
-   nonce: nat;
-   timestamp: Time;
-   transaction: Transaction;
-   txid: Txid;
- };
-type TxnRecord = 
- record {
-   account: AccountId;
-   caller: AccountId;
-   cyclesWallet: opt CyclesWallet;
-   data: opt Data;
-   details:
-    vec
-     record {
-       counterparty: Txid;
-       time: Time;
-       token0Value: BalanceChange;
-       token1Value: BalanceChange;
-     };
-   fee: record {
-          token0Fee: int;
-          token1Fee: int;
-        };
-   filled:
-    record {
-      token0Value: BalanceChange;
-      token1Value: BalanceChange;
-    };
-   index: nat;
-   msgCaller: opt principal;
-   nonce: Nonce;
-   operation: OperationType;
-   order:
-    record {
-      token0Value: opt BalanceChange;
-      token1Value: opt BalanceChange;
-    };
-   orderMode: variant {
-                AMM;
-                OrderBook;
-              };
-   orderType: opt variant {
-                    FAK;
-                    FOK;
-                    LMT;
-                    MKT;
-                  };
-   shares: ShareChange;
-   status: Status;
-   time: Time;
-   token0: TokenType;
-   token1: TokenType;
-   txid: Txid;
- };
-type Txid = blob;
-type TxReceipt = 
- variant {
-   Err:
-    variant {
-      AmountTooSmall;
-      BlockUsed;
-      ErrorOperationStyle;
-      ErrorTo;
-      InsufficientAllowance;
-      InsufficientBalance;
-      LedgerTrap;
-      Other: text;
-      Unauthorized;
-    };
-   Ok: nat;
- };
-type TxAccount = text;
-type Ttid = nat;
-type TrieList = 
- record {
-   data: vec record {
-               Txid;
-               TradingOrder;
-             };
-   total: nat;
-   totalPage: nat;
- };
-type TransferResult = 
- variant {
-   Err: TransferError2;
-   Ok: BlockIndex;
- };
-type TransferFromError = 
- variant {
-   BadBurn: record {min_burn_amount: nat;};
-   BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: nat64;};
-   Duplicate: record {duplicate_of: nat;};
-   GenericError: record {
-                   error_code: nat;
-                   message: text;
-                 };
-   InsufficientAllowance: record {allowance: nat;};
-   InsufficientFunds: record {balance: nat;};
-   TemporarilyUnavailable;
-   TooOld;
- };
-type TransferFromArgs = 
- record {
-   amount: nat;
-   created_at_time: opt nat64;
-   fee: opt nat;
-   from: Account;
-   memo: opt blob;
-   to: Account;
- };
-type TransferError2 = 
- variant {
-   BadFee: record {expected_fee: ICP;};
-   InsufficientFunds: record {balance: ICP;};
-   TxCreatedInFuture;
-   TxDuplicate: record {duplicate_of: BlockIndex;};
-   TxTooOld: record {allowed_window_nanos: nat64;};
- };
-type TransferError1 = 
- variant {
-   BadBurn: record {min_burn_amount: nat;};
-   BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: nat64;};
-   Duplicate: record {duplicate_of: nat;};
-   GenericError: record {
-                   error_code: nat;
-                   message: text;
-                 };
-   InsufficientFunds: record {balance: nat;};
-   TemporarilyUnavailable;
-   TooOld;
- };
-type TransferError = 
- variant {
-   BadBurn: record {min_burn_amount: nat;};
-   BadFee: record {expected_fee: nat;};
-   CreatedInFuture;
-   Duplicate: record {duplicate_of: nat;};
-   GenericError: record {
-                   error_code: nat;
-                   message: text;
-                 };
-   InsufficientFunds: record {balance: nat;};
-   TemporarilyUnavailable;
-   TooOld: record {allowed_window_nanos: Duration;};
- };
-type TransferArgs1 = 
- record {
-   amount: ICP;
-   created_at_time: opt Timestamp2;
-   fee: ICP;
-   from_subaccount: opt SubAccount;
-   memo: Memo;
-   to: AccountIdentifier;
- };
-type TransferArgs = 
- record {
-   amount: nat;
-   created_at_time: opt Timestamp1;
-   fee: opt nat;
-   from_subaccount: opt Subaccount;
-   memo: opt blob;
-   to: Account;
- };
-type Transaction = 
- record {
-   data: opt blob;
-   from: AccountId;
-   operation: Operation;
-   to: AccountId;
-   value: nat;
- };
-type TradingStatus = 
- variant {
-   Cancelled;
-   Closed;
-   Pending;
-   Todo;
- };
-type TradingResult = 
- variant {
-   err:
-    record {
-      code:
-       variant {
-         InsufficientBalance;
-         InvalidAmount;
-         NonceError;
-         TransactionBlocking;
-         TransferException;
-         UnacceptableVolatility;
-         UndefinedError;
-       };
-      message: text;
-    };
-   ok: record {
-         filled: vec OrderFilled;
-         status: TradingStatus;
-         txid: Txid;
-       };
- };
-type TradingOrder = 
- record {
-   account: AccountId;
-   data: opt blob;
-   expiration: Time;
-   fee: record {
-          fee0: int;
-          fee1: int;
-        };
-   filled: vec OrderFilled;
-   gas: record {
-          gas0: nat;
-          gas1: nat;
-        };
-   icrc1Account: opt record {
-                       owner: principal;
-                       subaccount: opt blob;
-                     };
-   index: nat;
-   nonce: nat;
-   orderPrice: OrderPrice;
-   orderType: OrderType;
-   refund: record {
-             nat;
-             nat;
-             nat;
-           };
-   remaining: OrderPrice;
-   status: TradingStatus;
-   time: Time;
-   toids: vec Toid;
-   txid: Txid;
- };
-type TokenType = 
- variant {
-   Cycles;
-   Icp;
-   Token: principal;
- };
-type TokenSymbol = text;
-type TokenStd = 
- variant {
-   cycles;
-   dft;
-   dip20;
-   drc20;
-   ext;
-   icp;
-   icrc1;
-   ledger;
-   other: text;
- };
-type TokenInfo = 
- record {
-   principal;
-   TokenSymbol;
-   TokenStd;
- };
-type Toid = nat;
-type To = text;
-type Timestamp2 = record {timestamp_nanos: nat64;};
-type Timestamp1 = nat64;
-type Timestamp = nat;
-type Timeout = nat32;
+type Amount = nat;
 type Time = int;
-type Tcid = nat;
-type SysMode = 
- variant {
-   ClosingOnly;
-   DisabledTrading;
-   GeneralTrading;
-   ReadOnly;
- };
-type Subaccount = blob;
-type SubAccount = blob;
-type Status = 
- variant {
-   Cancelled;
-   Completed;
-   Failed;
-   PartiallyCompletedAndCancelled;
-   Pending;
- };
-type Spender = text;
-type Shares = nat;
-type ShareChange = 
- variant {
-   Burn: Shares;
-   Mint: Shares;
-   NoChange;
- };
-type Setting = 
- record {
-   EN_DEBUG: bool;
-   MAX_CACHE_NUMBER_PER: nat;
-   MAX_CACHE_TIME: nat;
-   MAX_STORAGE_TRIES: nat;
- };
+type Address = text;
 type Sa = vec nat8;
-type RoundItem = 
- record {
-   closedPrice: opt float64;
-   content: text;
-   end: Time;
-   isSettled: bool;
-   minCapital: nat;
-   name: text;
-   quoteToken: variant {
-                 token0;
-                 token1;
-               };
-   start: Time;
- };
-type Receipt = 
- variant {
-   DIP20:
-    variant {
-      approve: TxReceipt;
-      balanceOf: nat;
-      transfer: TxReceipt;
-      transferFrom: TxReceipt;
-    };
-   DRC20:
-    variant {
-      approve: TxnResult;
-      balanceOf: Amount;
-      dropAccount;
-      executeTransfer: TxnResult;
-      lockTransfer: TxnResult;
-      lockTransferFrom: TxnResult;
-      transfer: TxnResult;
-      transferBatch: vec TxnResult;
-      transferFrom: TxnResult;
-      txnRecord: opt TokenTxnRecord;
-    };
-   ICRC1:
-    variant {
-      icrc1_balance_of: nat;
-      icrc1_transfer: variant {
-                        Err: TransferError;
-                        Ok: nat;
-                      };
-    };
-   ICRC1New:
-    variant {
-      icrc1_balance_of: nat;
-      icrc1_transfer: variant {
-                        Err: TransferError1;
-                        Ok: nat;
-                      };
-    };
-   ICRC2:
-    variant {
-      icrc2_approve: variant {
-                       Err: ApproveError;
-                       Ok: nat;
-                     };
-      icrc2_transfer_from: variant {
-                             Err: TransferFromError;
-                             Ok: nat;
-                           };
-    };
-   ICTokens: variant {
-               burn: TxnResult;
-               mint: TxnResult;
-             };
-   Ledger: variant {
-             account_balance: ICP;
-             transfer: TransferResult;
-           };
-   This: variant {
-           dip20Send;
-           dip20SendComp;
-         };
-   __block;
-   __skip;
- };
+type Nonce = nat;
+type Txid = blob;
+type Data = vec nat8;
+type AccountId = blob;
+type CyclesWallet = principal;
+type IcpE8s = nat;
+type Timestamp = nat;
+type Toid = nat;
+type Ttid = nat;
 type Quantity = nat;
-type PriceWeighted = 
- record {
-   token0TimeWeighted: nat;
-   token1TimeWeighted: nat;
-   updateTime: Timestamp;
- };
-type PriceResponse = 
- record {
-   price: nat;
-   quantity: nat;
- };
 type Price = nat;
-type PeriodNs = int;
-type Participant = 
- record {
+type Account = record { owner : principal; subaccount : opt vec nat8 };
+type ICRC1Account = record { owner : principal; subaccount : opt blob };
+type IDOSetting = record {
+  IDOSupplies : vec record { supply : Amount; price : nat };
+  IDOWhitelistEnabled : bool;
+  IDOOpeningTime : Time;
+  IDOTotalSupply : record { IDOSupply : Amount; percentageOfTotal : float64 };
+  IDOEnabled : bool;
+  IDOLimitPerAccount : Amount;
+  IDOClosingTime : Time;
+};
+type IDORequirement = record {
+  threshold : float64;
+  pairs : vec record { pair : principal; token1ToUsdRatio : float64 };
+};
+type Participant = record {
    historyVol: float64;
    limit: Amount;
    updatedTime: Time;
    used: Amount;
- };
-type OrderType = 
- variant {
-   FAK;
-   FOK;
-   LMT;
-   MKT;
- };
-type OrderStatusResponse = 
- variant {
-   Completed: TxnRecord;
-   Failed: TradingOrder;
-   None;
-   Pending: TradingOrder;
- };
-type OrderStatus = 
- variant {
-   Blocking;
-   Compensating;
-   Doing;
-   Done;
-   Recovered;
-   Todo;
- };
-type OrderSide = 
- variant {
-   Buy;
-   Sell;
- };
-type OrderPrice = 
- record {
-   price: Price;
-   quantity: variant {
-               Buy: record {
-                      Quantity;
-                      Amount;
-                    };
-               Sell: Quantity;
-             };
- };
-type OrderFilled = 
- record {
-   counterparty: Txid;
-   time: Time;
-   token0Value: BalanceChange;
-   token1Value: BalanceChange;
- };
-type OperationType = 
- variant {
-   AddLiquidity;
-   Claim;
-   RemoveLiquidity;
-   Swap;
- };
-type Operation = 
- variant {
-   approve: record {allowance: nat;};
-   executeTransfer: record {
-                      fallback: nat;
-                      lockedTxid: Txid;
-                    };
-   lockTransfer:
-    record {
-      decider: AccountId;
-      expiration: Time;
-      locked: nat;
-    };
-   transfer: record {action: variant {
-                               burn;
-                               mint;
-                               send;
-                             };};
- };
-type Nonce = nat;
-type Memo = nat64;
-type ListSize = nat;
-type ListPage = nat;
-type Liquidity = 
- record {
-   priceWeighted: PriceWeighted;
-   shareWeighted: record {
-                    shareTimeWeighted: nat;
-                    updateTime: Timestamp;
-                  };
-   shares: Amount;
-   swapCount: nat64;
-   unitValue: record {
-                Amount;
-                Amount;
-              };
-   value0: Amount;
-   value1: Amount;
-   vol: Vol;
- };
+};
+type KeepingBalance = record {
+  token0 : record { locked : Amount; available : Amount };
+  token1 : record { locked : Amount; available : Amount };
+};
+type AccountSetting = record {
+  enPoolMode : bool;
+  modeSwitchHistory : vec record { Nonce; Nonce };
+  start : opt Nonce;
+  enKeepingBalance : bool;
+};
+type Status = variant {
+  Failed;
+  Cancelled;
+  PartiallyCompletedAndCancelled;
+  Completed;
+  Pending;
+};
+type ShareChange = variant { Burn : Shares; Mint : Shares; NoChange };
+type Shares = nat;
+type BalanceChange = variant {
+  DebitRecord : nat;
+  CreditRecord : nat;
+  NoChange;
+};
+type TokenType = variant { Icp; Token : principal; Cycles };
+type OperationType = variant { AddLiquidity; Swap; Claim; RemoveLiquidity };
+type TxnRecord = record {
+  fee : record { token0Fee : int; token1Fee : int };
+  status : Status;
+  shares : ShareChange;
+  msgCaller : opt principal;
+  order : record {
+    token0Value : opt BalanceChange;
+    token1Value : opt BalanceChange;
+  };
+  data : opt Data;
+  time : Time;
+  txid : Txid;
+  orderMode : variant { AMM; OrderBook };
+  orderType : opt variant { FAK; FOK; LMT; MKT };
+  filled : record {
+    token0Value : BalanceChange;
+    token1Value : BalanceChange;
+  };
+  token0 : TokenType;
+  token1 : TokenType;
+  nonce : Nonce;
+  operation : OperationType;
+  account : AccountId;
+  details : vec record {
+    time : Time;
+    token0Value : BalanceChange;
+    counterparty : Txid;
+    token1Value : BalanceChange;
+  };
+  caller : AccountId;
+  index : nat;
+  cyclesWallet : opt CyclesWallet;
+};
+type Vol = record { value0 : nat; value1 : nat };
+type DRC207Support = record {
+  timer : record { interval_seconds : opt nat; enable : bool };
+  monitorable_by_self : bool;
+  monitorable_by_blackhole : record {
+    canister_id : opt principal;
+    allowed : bool;
+  };
+  cycles_receivable : bool;
+};
+type DexSetting = record {
+  MAX_TPS : nat;
+  ICTC_RUN_INTERVAL : nat;
+  MAKER_BONUS_RATE : nat;
+  MAX_PENDINGS : nat;
+  TRADING_FEE : nat;
+  UNIT_SIZE : nat;
+  STORAGE_INTERVAL : nat;
+  ICP_FEE : IcpE8s;
+};
+type InitArgs = record {
+  owner : opt principal;
+  name : text;
+  token0 : principal;
+  token1 : principal;
+  unitSize : nat64;
+};
+type KBar = record {
+  kid : nat;
+  low : nat;
+  vol : Vol;
+  high : nat;
+  close : nat;
+  open : nat;
+  updatedTs : Timestamp;
+};
+type KInterval = nat;
+type TxAccount = text;
+type TokenInfo = record { principal; TokenSymbol; TokenStd };
+type TokenStd = variant {
+  dft;
+  ext;
+  icp;
+  other : text;
+  cycles;
+  ledger;
+  icrc1;
+  dip20;
+  drc20;
+};
+type TokenSymbol = text;
+type OrderType = variant { FAK; FOK; LMT; MKT };
+type OrderFilled = record {
+  time : Time;
+  token0Value : BalanceChange;
+  counterparty : Txid;
+  token1Value : BalanceChange;
+};
+type OrderSide = variant { Buy; Sell };
+type PriceResponse = record { quantity : nat; price : nat };
+type Liquidity = record {
+  vol : Vol;
+  shares : Amount;
+  shareWeighted : record { updateTime : Timestamp; shareTimeWeighted : nat };
+  unitValue : record { Amount; Amount };
+  value0 : Amount;
+  value1 : Amount;
+  priceWeighted : PriceWeighted;
+  swapCount : nat64;
+};
 type Liquidity2 = record {
   vol : Vol;
   shares : Amount;
@@ -534,347 +176,74 @@ type Liquidity2 = record {
   userCount : nat64;
   unitSize : nat;
 };
-type KInterval = nat;
-type KBar = 
- record {
-   close: nat;
-   high: nat;
-   kid: nat;
-   low: nat;
-   open: nat;
-   updatedTs: Timestamp;
-   vol: Vol;
- };
-type InitArgs = 
- record {
-   name: text;
-   owner: opt principal;
-   token0: principal;
-   token1: principal;
-   unitSize: nat64;
- };
-type IcpE8s = nat;
-type IDOSetting = 
- record {
-   IDOClosingTime: Time;
-   IDOEnabled: bool;
-   IDOLimitPerAccount: Amount;
-   IDOOpeningTime: Time;
-   IDOSupplies: vec record {
-                      price: nat;
-                      supply: Amount;
-                    };
-   IDOTotalSupply: record {
-                     IDOSupply: Amount;
-                     percentageOfTotal: float64;
-                   };
-   IDOWhitelistEnabled: bool;
- };
-type IDORequirement = 
- record {
-   pairs: vec record {
-                pair: principal;
-                token1ToUsdRatio: float64;
-              };
-   threshold: float64;
- };
-type ICP = record {e8s: nat64;};
-
-type Gas = 
- variant {
-   cycles: nat;
-   noFee;
-   token: nat;
- };
-type From = text;
-type FeeStatus = 
- record {
-   feeBalance: FeeBalance;
-   feeRate: float64;
-   totalFee: FeeBalance;
- };
-type FeeBalance = 
- record {
-   value0: Amount;
-   value1: Amount;
- };
-type ExecuteType = 
- variant {
-   fallback;
-   send: nat;
-   sendAll;
- };
-type Duration = nat64;
-type DexSetting = 
- record {
-   ICP_FEE: IcpE8s;
-   ICTC_RUN_INTERVAL: nat;
-   MAKER_BONUS_RATE: nat;
-   MAX_PENDINGS: nat;
-   MAX_TPS: nat;
-   STORAGE_INTERVAL: nat;
-   TRADING_FEE: nat;
-   UNIT_SIZE: nat;
- };
-type DexInfo = 
- record {
-   canisterId: principal;
-   dexName: text;
-   feeRate: float64;
-   mmType: variant {
-             AMM;
-             OrderBook;
-           };
-   pairName: text;
-   token0: record {
-             TokenType;
-             TokenStd;
-           };
-   token1: record {
-             TokenType;
-             TokenStd;
-           };
- };
-type Decider = text;
+type PriceWeighted = record {
+  updateTime : Timestamp;
+  token1TimeWeighted : nat;
+  token0TimeWeighted : nat;
+};
+type ListPage = nat;
+type ListSize = nat;
+type TrieList = record {
+  total : nat;
+  data : vec record { Txid; TradingOrder };
+  totalPage : nat;
+};
+type SysMode = variant {
+  DisabledTrading;
+  ReadOnly;
+  ClosingOnly;
+  GeneralTrading;
+};
+type OrderStatusResponse = variant {
+  Failed : TradingOrder;
+  None;
+  Completed : TxnRecord;
+  Pending : TradingOrder;
+};
+type TradingOrder = record {
+  fee : record { fee0 : int; fee1 : int };
+  gas : record { gas0 : nat; gas1 : nat };
+  status : TradingStatus;
+  toids : vec Toid;
+  data : opt vec nat8;
+  time : Time;
+  txid : Txid;
+  icrc1Account : opt record { owner : principal; subaccount : opt vec nat8 };
+  orderType : OrderType;
+  filled : vec OrderFilled;
+  expiration : Time;
+  nonce : nat;
+  account : AccountId;
+  remaining : OrderPrice;
+  index : nat;
+  orderPrice : OrderPrice;
+  refund : record { nat; nat; nat };
+};
+type OrderPrice = record {
+  quantity : variant { Buy : record { Quantity; Amount }; Sell : Quantity };
+  price : Price;
+};
+type TradingStatus = variant { Todo; Closed; Cancelled; Pending };
+type PeriodNs = int;
+type TradingResult = variant {
+  ok : record { status : TradingStatus; txid : Txid; filled : vec OrderFilled };
+  err : record {
+    code : variant {
+      NonceError;
+      InvalidAmount;
+      UndefinedError;
+      UnacceptableVolatility;
+      TransactionBlocking;
+      InsufficientBalance;
+      TransferException;
+    };
+    message : text;
+  };
+};
 type DebitToken = principal;
-type Data = blob;
-type DRC207Support = 
- record {
-   cycles_receivable: bool;
-   monitorable_by_blackhole:
-    record {
-      allowed: bool;
-      canister_id: opt principal;
-    };
-   monitorable_by_self: bool;
-   timer: record {
-            enable: bool;
-            interval_seconds: opt nat;
-          };
- };
-type CyclesWallet = principal;
-type CompResult = 
- record {
-   icrc1Account: record { owner : principal; subaccount : opt blob; };
-   assetValue: opt CompCapital;
-   capital: CompCapital;
-   status: variant {
-             Active;
-             Dropout;
-           };
-   vol: Vol;
- };
-type CompCapital = 
- record {
-   total: float64;
-   value0: nat;
-   value1: nat;
- };
-type CalleeStatus = 
- record {
-   continuousFailure: nat;
-   failureCount: nat;
-   successCount: nat;
- };
-type Callee = principal;
-type CallType = 
- variant {
-   DIP20:
-    variant {
-      approve: record {
-                 principal;
-                 nat;
-               };
-      balanceOf: principal;
-      transfer: record {
-                  principal;
-                  nat;
-                };
-      transferFrom: record {
-                      principal;
-                      principal;
-                      nat;
-                    };
-    };
-   DRC20:
-    variant {
-      approve: record {
-                 Spender;
-                 Amount;
-                 opt Nonce;
-                 opt Sa;
-                 opt Data;
-               };
-      balanceOf: Address;
-      dropAccount: opt Sa;
-      executeTransfer:
-       record {
-         BlobFill;
-         ExecuteType;
-         opt To;
-         opt Nonce;
-         opt Sa;
-         opt Data;
-       };
-      lockTransfer:
-       record {
-         To;
-         Amount;
-         Timeout;
-         opt Decider;
-         opt Nonce;
-         opt Sa;
-         opt Data;
-       };
-      lockTransferFrom:
-       record {
-         From;
-         To;
-         Amount;
-         Timeout;
-         opt Decider;
-         opt Nonce;
-         opt Sa;
-         opt Data;
-       };
-      transfer: record {
-                  To;
-                  Amount;
-                  opt Nonce;
-                  opt Sa;
-                  opt Data;
-                };
-      transferBatch:
-       record {
-         vec To;
-         vec Amount;
-         opt Nonce;
-         opt Sa;
-         opt Data;
-       };
-      transferFrom:
-       record {
-         From;
-         To;
-         Amount;
-         opt Nonce;
-         opt Sa;
-         opt Data;
-       };
-      txnRecord: BlobFill;
-    };
-   ICRC1: variant {
-            icrc1_balance_of: Account;
-            icrc1_transfer: TransferArgs;
-          };
-   ICRC2:
-    variant {
-      icrc2_approve: ApproveArgs;
-      icrc2_transfer_from: TransferFromArgs;
-    };
-   ICTokens:
-    variant {
-      burn: record {
-              Amount;
-              opt Nonce;
-              opt Sa;
-              opt Data;
-            };
-      mint: record {
-              Address;
-              Amount;
-              opt Nonce;
-              opt Data;
-            };
-    };
-   Ledger:
-    variant {
-      account_balance: AccountBalanceArgs;
-      transfer: TransferArgs1;
-    };
-   This:
-    variant {
-      dip20Send: record {
-                   blob;
-                   nat;
-                 };
-      dip20SendComp: record {
-                       blob;
-                       principal;
-                       nat;
-                     };
-    };
-   __block;
-   __skip;
- };
-type BlockIndex = nat64;
-type BlobFill = 
- variant {
-   AutoFill;
-   ManualFill: blob;
- };
-type BalanceChange = 
- variant {
-   CreditRecord: nat;
-   DebitRecord: nat;
-   NoChange;
- };
-type ApproveError = 
- variant {
-   BadFee: record {expected_fee: nat;};
-   CreatedInFuture: record {ledger_time: nat64;};
-   Duplicate: record {duplicate_of: nat;};
-   GenericError: record {
-                   error_code: nat;
-                   message: text;
-                 };
-   InsufficientFunds: record {balance: nat;};
-   TemporarilyUnavailable;
-   TooOld;
- };
-type ApproveArgs = 
- record {
-   amount: nat;
-   created_at_time: opt nat64;
-   fee: opt nat;
-   from_subaccount: opt blob;
-   memo: opt blob;
-   spender: principal;
- };
-type Amount = nat;
-type AmbassadorData = 
- record {
-   text;
-   nat;
-   Vol;
- };
-type Address = text;
-type AccountIdentifier = blob;
-type AccountId = blob;
-type AccountBalanceArgs = record {account: AccountIdentifier;};
-type Account = 
- record {
-   owner: principal;
-   subaccount: opt Subaccount;
- };
-type KeepingBalance = record {
-  token0 : record { locked : Amount; available : Amount };
-  token1 : record { locked : Amount; available : Amount };
-};
-type AccountSetting = record {
-  enPoolMode : bool;
-  modeSwitchHistory : vec record { Nonce; Nonce };
-  start : opt Nonce;
-  enKeepingBalance : bool;
-};
-type ICDexPair = 
- service {
+type ICDexPair = service {
    IDO_getConfig: () -> (opt principal, IDOSetting, opt IDORequirement) query;
-   IDO_qualification: (opt Address) ->
-    (vec record {
-           Address;
-           Participant;
-         }) query;
+   IDO_qualification: (opt Address) -> (vec record { Address; Participant; }) query;
    accountBalance : (Address) -> (KeepingBalance) query;
    accountConfig : (variant { PoolMode; TunnelMode }, bool, opt Sa) -> ();
    accountSetting : (Address) -> (AccountSetting) query;
@@ -884,71 +253,47 @@ type ICDexPair =
    deposit : (variant { token0; token1 }, Amount, opt Sa) -> ();
    depositFallback : (opt Sa) -> (Amount, Amount);
    drc205_canisterId: () -> (principal) query;
-   drc205_dexInfo: () -> (DexInfo) query;
    drc205_events: (opt Address) -> (vec TxnRecord) query;
-   drc205_events_filter: (opt Address, opt Time, opt Time) -> (record{ vec TxnRecord; bool }) query;
-   drc205_getConfig: () -> (Setting) query;
-   drc205_pool: () -> (vec record {
-                             Txid;
-                             TxnRecord;
-                             nat;
-                           }) query;
+   drc205_events_filter: (opt Address, opt Time, opt Time) -> (vec TxnRecord, bool) query;
    drc205_txn: (Txid) -> (opt TxnRecord) query;
    drc205_txn2: (Txid) -> (opt TxnRecord);
    drc207: () -> (DRC207Support) query;
    fallback: (Nonce, opt Sa) -> (bool);
    fallbackByTxid: (Txid, opt Sa) -> (bool);
-   fee: () ->
-    (record {
-       maker: record {
-                buy: float64;
-                sell: float64;
-              };
-       taker: record {
-                buy: float64;
-                sell: float64;
-              };
-     }) query;
-   feeStatus: () -> (FeeStatus) query;
+   fee: () ->(record {
+       maker: record { buy: float64; sell: float64; };
+       taker: record { buy: float64; sell: float64; };
+   }) query;
    getConfig: () -> (DexSetting) query;
    getQuotes: (KInterval) -> (vec KBar) query;
    getDepositAccount : (Address) -> (Account, Address) query;
    getTxAccount: (Address) -> (Account, TxAccount, Nonce, Txid) query;
-   getRole : (Address) -> (
-      record { broker : bool; proTrader : bool; vipMaker : bool },
-    ) query;
+   getRole : (Address) -> ( record { broker : bool; proTrader : bool; vipMaker : bool }, ) query;
    ictc_TM: () -> (text) query;
    ictc_getAdmins: () -> (vec principal) query;
    ictc_runTT: () -> (bool);
-   info: () ->
-    (record {
-       decimals: nat8;
-       name: text;
-       owner: principal;
-       paused: bool;
-       setting: DexSetting;
-       token0: TokenInfo;
-       token1: TokenInfo;
-       version: text;
-     }) query;
-   latestFilled: () ->
-    (vec record {
-           Timestamp;
-           Txid;
-           OrderFilled;
-           OrderSide;
-         }) query;
-   level10: () -> (nat,
-    record {
-      ask: vec PriceResponse;
-      bid: vec PriceResponse;
-    }) query;
-   level100: () -> (nat,
-    record {
-      ask: vec PriceResponse;
-      bid: vec PriceResponse;
-    }) query;
-   liquidity: (opt Address) -> (Liquidity) query;
+   info : () -> ( record {
+        decimals : nat8;
+        setting : DexSetting;
+        owner : principal;
+        name : text;
+        version : text;
+        token0 : TokenInfo;
+        token1 : TokenInfo;
+        paused : bool;
+      }, ) query;
+   latestFilled : () -> (
+      vec record { Timestamp; Txid; OrderFilled; OrderSide },
+    ) query;
+   level10 : () -> (
+      nat,
+      record { ask : vec PriceResponse; bid : vec PriceResponse },
+    ) query;
+   level100 : () -> (
+      nat,
+      record { ask : vec PriceResponse; bid : vec PriceResponse },
+    ) query;
+   liquidity : (opt Address) -> (Liquidity) query;
    liquidity2 : (opt Address) -> (Liquidity2) query;
    makerRebate: (Address) -> (float64, float64) query;
    name: () -> (text) query;
@@ -956,53 +301,33 @@ type ICDexPair =
    pending: (opt Address, opt ListPage, opt ListSize) -> (TrieList) query;
    pendingCount: () -> (nat) query;
    prepare: (Address) -> (TxAccount, Nonce) query;
-   stats: () ->
-    (record {
+   stats: () -> (record {
        change24h: float64;
        price: float64;
        totalVol: Vol;
        vol24h: Vol;
-     }) query;
+   }) query;
    status: (Address, Nonce) -> (OrderStatusResponse) query;
    statusByTxid: (Txid) -> (OrderStatusResponse) query;
-   sync: () -> ();
-   sysMode: () -> (record {
-                     mode: SysMode;
-                     openingTime: Time;
-                   }) query;
+   sysMode: () -> (record { mode: SysMode; openingTime: Time; }) query;
    ta_ambassador: (Address) -> (bool, text, nat, Vol) query;
    ta_description: () -> (text) query;
-   ta_getReferrer: (Address) -> (opt record {
-                                       Address;
-                                       bool;
-                                     }) query;
-   ta_setDescription: (text) -> ();
+   ta_getReferrer: (Address) -> (opt record { Address; bool; }) query;
    ta_setReferrer: (Address, opt text, opt Sa) -> (bool);
    ta_stats: (opt text) -> (nat, nat, Vol) query;
-   timerStart: (nat) -> ();
-   timerStop: () -> ();
    token0: () -> (TokenType, opt TokenStd) query;
    token1: () -> (TokenType, opt TokenStd) query;
-   tpsStats: () -> (nat, float64, nat, nat, int, int) query;
    tradeCore: (OrderPrice, OrderType, opt PeriodNs, opt Nonce, opt Sa, opt Data, 
    opt record { broker: principal; rate: float64; }, opt bool) -> (TradingResult);
-   trade: (OrderPrice, OrderType, opt PeriodNs, opt Nonce, opt Sa,
-    opt Data) -> (TradingResult);
-   tradeMKT: (DebitToken, Amount, opt Nonce, opt Sa, opt Data) ->
-    (TradingResult);
-   tradeMKT_b: (DebitToken, Amount, opt nat, opt Nonce, opt Sa, opt Data,
-    opt record {
-          broker: principal;
-          rate: float64;
-        }) -> (TradingResult);
+   trade: (OrderPrice, OrderType, opt PeriodNs, opt Nonce, opt Sa, opt Data) -> (TradingResult);
    trade_b: (OrderPrice, OrderType, opt PeriodNs, opt Nonce, opt Sa,
-    opt Data, opt record {
-                    broker: principal;
-                    rate: float64;
-                  }) -> (TradingResult);
+    opt Data, opt record { broker: principal; rate: float64; }) -> (TradingResult);
+   tradeMKT: (DebitToken, Amount, opt Nonce, opt Sa, opt Data) -> (TradingResult);
+   tradeMKT_b: (DebitToken, Amount, opt nat, opt Nonce, opt Sa, opt Data,
+    opt record { broker: principal; rate: float64; }) -> (TradingResult);
    userCount: () -> (nat) query;
    version: () -> (text) query;
    withdraw : (opt Amount, opt Amount, opt Sa) -> (Amount, Amount);
    wallet_receive: () -> ();
- };
+};
 service : (InitArgs, bool) -> ICDexPair
