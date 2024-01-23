@@ -76,16 +76,16 @@ dfx canister --network ic create ICDexPair --controller __your principal__
 dfx build --network ic ICDexPair
 cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
 ```
+- Replace the compressed candid with ic-wasm.
+```
+ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
+```
 - Code: "src/ICDexPair.mo"
 - Module hash: b51504697238c12facd4d6e4f8c9a4aa677653231e953499cf1ef06acfb7b18d
 - Version: 0.12.48
 - Build: {
     "args": "--incremental-gc"
 }
-- Replace the compressed candid with ic-wasm.
-```
-ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
-```
 
 ### 3. ICDexMaker
 ```
