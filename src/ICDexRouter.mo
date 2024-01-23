@@ -138,7 +138,6 @@ import Binary "mo:icl/Binary";
 import Blob "mo:base/Blob";
 import Cycles "mo:base/ExperimentalCycles";
 import DRC20 "mo:icl/DRC20";
-//import DIP20 "mo:icl/DIP20";
 import ICRC1 "mo:icl/ICRC1";
 import DRC207 "mo:icl/DRC207";
 import Float "mo:base/Float";
@@ -198,7 +197,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.25";
+    private let version_: Text = "0.12.26";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -225,14 +224,10 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     private stable var pause: Bool = false; // Most of the operations will be disabled when it is in the paused state (pause = true).
     // - private stable var owner: Principal = installMsg.caller;
     private stable var pairs: Trie.Trie<PairCanister, SwapPair> = Trie.empty(); // Trading Pair Information List
-    private stable var wasm: [Nat8] = []; // ICDexPair wasm
-    private stable var wasm_preVersion: [Nat8] = []; // Pre-version wasm of ICDexPair
-    private stable var wasmVersion: Text = ""; // Name of the current version of ICDexPair wasm
+    private stable var ICDexPairWasmHistory: [(wasm: [Nat8], version: Text, isFinal: Bool)] = [];
     private stable var IDOPairs = List.nil<Principal>(); // List of trading pairs with IDO enabled
     // ICDexMaker
-    private stable var maker_wasm: [Nat8] = []; // ICDexMaker wasm
-    private stable var maker_wasm_preVersion: [Nat8] = []; // // Pre-version wasm of ICDexMaker
-    private stable var maker_wasmVersion: Text = ""; // Name of the current version of ICDexMaker wasm
+    private stable var ICDexMakerWasmHistory: [(wasm: [Nat8], version: Text, isFinal: Bool)] = [];
     // List of public maker canisters (Everyone can add liquidity)
     private stable var maker_publicCanisters: Trie.Trie<PairCanister, [(maker: Principal, creator: AccountId)]> = Trie.empty(); 
     // List of private maker canisters (Only the creator can add liquidity)
@@ -415,7 +410,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
 
     // Create a new trading pair. See the document for ICDexPair for the parameter _unitSize.
     private func _create(_token0: Principal, _token1: Principal, _unitSize: ?Nat64, _initCycles: ?Nat): async* (canister: PairCanister){
-        assert(wasm.size() > 0);
+        let wasmInfo = _getICDexPairVersion(null);
+        let wasm = wasmInfo.0;
+        assert(wasm.size() > 0 and wasmInfo.2 == true);
         var token0Principal = _token0;
         var token0Std: ICDexTypes.TokenStd = #drc20;
         var token0Symbol: Text = "";
@@ -440,7 +437,16 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         // create
         let addCycles : Nat = Option.get(_initCycles, canisterCyclesInit);
         Cycles.add(addCycles);
-        let canister = await ic.create_canister({ settings = null });
+        var controllers: [Principal] = [icDao, blackhole, Principal.fromActor(this)];
+        if (icdex_debug){
+            controllers := [icDao, blackhole, Principal.fromActor(this), installMsg.caller];
+        };
+        let canister = await ic.create_canister({ settings = ?{ 
+            compute_allocation = null;
+            controllers = ?controllers; 
+            freezing_threshold = null;
+            memory_allocation = null;
+        } });
         let pairCanister = canister.canister_id;
         var unitSize = Nat64.fromNat(10 ** Nat.min(Nat.sub(Nat.max(Nat8.toNat(token0Decimals), 1), 1), 19)); // max 10**19
         switch (_unitSize){
@@ -464,19 +470,6 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             feeRate: Float = 0.005; //  0.5%
         };
         pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pair).0;
-        var controllers: [Principal] = [icDao, blackhole, Principal.fromActor(this)];
-        if (icdex_debug){
-            controllers := [icDao, blackhole, Principal.fromActor(this), installMsg.caller];
-        };
-        let settings = await ic.update_settings({
-            canister_id = pairCanister; 
-            settings={ 
-                compute_allocation = null;
-                controllers = ?controllers; 
-                freezing_threshold = null;
-                memory_allocation = null;
-            };
-        });
         await pairActor.init();
         await pairActor.timerStart(900);
         let router: Router.Self = actor(aggregator);
@@ -625,38 +618,146 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
       Managing Wasm
     ========================= */
 
+    // returns ICDexPair wasm
+    private func _getICDexPairVersion(_version: ?Text): (wasm: [Nat8], version: Text, isFinal: Bool){
+        var wasmInfo: ([Nat8], Text, Bool) = ([], "", true);
+        switch(_version){
+            case(?version){
+                switch(Array.find(ICDexPairWasmHistory, func (t: ([Nat8], Text, Bool)): Bool{ t.1 == version })){
+                    case(?item){ wasmInfo := item };
+                    case(_){};
+                };
+            };
+            case(_){
+                if (ICDexPairWasmHistory.size() > 0){
+                    wasmInfo := ICDexPairWasmHistory[0];
+                };
+            };
+        };
+        return wasmInfo;
+    };
+
+    // returns ICDexMaker wasm
+    private func _getICDexMakerVersion(_version: ?Text): (wasm: [Nat8], version: Text, isFinal: Bool){
+        var wasmInfo: ([Nat8], Text, Bool) = ([], "", true);
+        switch(_version){
+            case(?version){
+                switch(Array.find(ICDexMakerWasmHistory, func (t: ([Nat8], Text, Bool)): Bool{ t.1 == version })){
+                    case(?item){ wasmInfo := item };
+                    case(_){};
+                };
+            };
+            case(_){
+                if (ICDexMakerWasmHistory.size() > 0){
+                    wasmInfo := ICDexMakerWasmHistory[0];
+                };
+            };
+        };
+        return wasmInfo;
+    };
+
     /// Set the wasm of the ICDexPair.
     ///
     /// Arguments:
     /// - wasm: Blob. wasm file.
     /// - version: Text. The current version of wasm.
-    /// - append: Bool. Whether to continue uploading the rest of the chunks of the same wasm file. If a wasm file is larger than 2M, 
-    /// it can't be uploaded at once, the solution is to upload it in multiple chunks. `append` is set to false when uploading the 
-    /// first chunk. `append` is set to true when uploading subsequent chunks, and version must be filled in with the same value.
-    /// - backup: Bool. Whether to backup the previous version of wasm.
+    /// - multiChunk: ?{#first; #middle; #final}. If a wasm file is larger than 2M, it can't be uploaded at once, the solution is 
+    /// to upload it in multiple chunks. If multiChunk is equal to null, it means wasm is less than 2M, no need to upload in chunks.
     /// 
-    public shared(msg) func setWasm(_wasm: Blob, _version: Text, _append: Bool, _backup: Bool) : async (){
+    public shared(msg) func setICDexPairWasm(_wasm: Blob, _version: Text, _multiChunk: ?{#first; #middle; #final}) : async (){
         assert(_onlyOwner(msg.caller));
-        if (not(_append)){
-            if (_backup){
-                wasm_preVersion := wasm;
+        switch(_multiChunk){
+            case(null){
+                assert(Option.isNull(Array.find(ICDexPairWasmHistory, func (t: ([Nat8], Text, Bool)): Bool{ _version == t.1 })));
+                ICDexPairWasmHistory := Tools.arrayAppend([(Blob.toArray(_wasm), _version, true)], ICDexPairWasmHistory);
+                ignore _putEvent(#setICDexPairWasm({ version = _version; size = _wasm.size() }), ?Tools.principalToAccountBlob(msg.caller, null));
             };
-            wasm := Blob.toArray(_wasm);
-            wasmVersion := _version;
-        }else{
-            assert(_version == wasmVersion);
-            wasm := Tools.arrayAppend(wasm, Blob.toArray(_wasm));
+            case(?(#first)){
+                assert(Option.isNull(Array.find(ICDexPairWasmHistory, func (t: ([Nat8], Text, Bool)): Bool{ _version == t.1 })));
+                ICDexPairWasmHistory := Tools.arrayAppend([(Blob.toArray(_wasm), _version, false)], ICDexPairWasmHistory);
+            };
+            case(?(#middle)){
+                let wasmInfo = _getICDexPairVersion(null);
+                assert(wasmInfo.0.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == false);
+                let wasm = Tools.arrayAppend(wasmInfo.0, Blob.toArray(_wasm));
+                ICDexPairWasmHistory := Tools.arrayAppend([(wasm, _version, false)], Tools.slice(ICDexPairWasmHistory, 1, null));
+            };
+            case(?(#final)){
+                let wasmInfo = _getICDexPairVersion(null);
+                assert(wasmInfo.0.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == false);
+                let wasm = Tools.arrayAppend(wasmInfo.0, Blob.toArray(_wasm));
+                ICDexPairWasmHistory := Tools.arrayAppend([(wasm, _version, true)], Tools.slice(ICDexPairWasmHistory, 1, null));
+                ignore _putEvent(#setICDexPairWasm({ version = _version; size = wasm.size() }), ?Tools.principalToAccountBlob(msg.caller, null));
+            };
         };
-        ignore _putEvent(#setICDexPairWasm({ version = _version; append = _append; backupPreVersion = _backup }), ?Tools.principalToAccountBlob(msg.caller, null));
+        if (ICDexPairWasmHistory.size() > 32){
+            ICDexPairWasmHistory := Tools.slice(ICDexPairWasmHistory, 0, ?31);
+        };
     };
 
     /// Returns the current version of ICDexPair wasm.
-    public query func getWasmVersion() : async (version: Text, hash: Text, size: Nat){
-        let offset = wasm.size() / 2;
-        var hash224 = SHA224.sha224(Tools.arrayAppend(Tools.slice(wasm, 0, ?1024), Tools.slice(wasm, offset, ?(offset+1024))));
-        var crc : [Nat8] = CRC32.crc32(hash224);
-        let hash = Tools.arrayAppend(crc, hash224); // Because the sha224 computation of the entire wasm will report an insufficient number of instructions to execute, a "strange" hash computation method has been adopted
-        return (wasmVersion, Hex.encode(hash), wasm.size());
+    public query func getICDexPairWasmVersion() : async (version: Text, size: Nat){
+        let wasmInfo = _getICDexPairVersion(null);
+        return (wasmInfo.1, wasmInfo.0.size());
+    };
+
+    /// Returns version history of ICDexPair wasm
+    public query func getICDexPairWasmVersionHistory(): async [(Text, Nat)]{
+        return Array.map<([Nat8], Text, Bool), (Text, Nat)>(ICDexPairWasmHistory, func (t: ([Nat8], Text, Bool)): (Text, Nat){
+            return (t.1, t.0.size());
+        });
+    };
+
+    /// Set the wasm of the ICDexMaker.
+    ///
+    /// Arguments:
+    /// - wasm: Blob. wasm file.
+    /// - version: Text. The current version of wasm.
+    /// - multiChunk: ?{#first; #middle; #final}. If a wasm file is larger than 2M, it can't be uploaded at once, the solution is 
+    /// to upload it in multiple chunks. If multiChunk is equal to null, it means wasm is less than 2M, no need to upload in chunks.
+    /// 
+    public shared(msg) func setICDexMakerWasm(_wasm: Blob, _version: Text, _multiChunk: ?{#first; #middle; #final}) : async (){
+        assert(_onlyOwner(msg.caller));
+        switch(_multiChunk){
+            case(null){
+                assert(Option.isNull(Array.find(ICDexMakerWasmHistory, func (t: ([Nat8], Text, Bool)): Bool{ _version == t.1 })));
+                ICDexMakerWasmHistory := Tools.arrayAppend([(Blob.toArray(_wasm), _version, true)], ICDexMakerWasmHistory);
+                ignore _putEvent(#setICDexMakerWasm({ version = _version; size = _wasm.size() }), ?Tools.principalToAccountBlob(msg.caller, null));
+            };
+            case(?(#first)){
+                assert(Option.isNull(Array.find(ICDexMakerWasmHistory, func (t: ([Nat8], Text, Bool)): Bool{ _version == t.1 })));
+                ICDexMakerWasmHistory := Tools.arrayAppend([(Blob.toArray(_wasm), _version, false)], ICDexMakerWasmHistory);
+            };
+            case(?(#middle)){
+                let wasmInfo = _getICDexMakerVersion(null);
+                assert(wasmInfo.0.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == false);
+                let wasm = Tools.arrayAppend(wasmInfo.0, Blob.toArray(_wasm));
+                ICDexMakerWasmHistory := Tools.arrayAppend([(wasm, _version, false)], Tools.slice(ICDexMakerWasmHistory, 1, null));
+            };
+            case(?(#final)){
+                let wasmInfo = _getICDexMakerVersion(null);
+                assert(wasmInfo.0.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == false);
+                let wasm = Tools.arrayAppend(wasmInfo.0, Blob.toArray(_wasm));
+                ICDexMakerWasmHistory := Tools.arrayAppend([(wasm, _version, true)], Tools.slice(ICDexMakerWasmHistory, 1, null));
+                ignore _putEvent(#setICDexMakerWasm({ version = _version; size = wasm.size() }), ?Tools.principalToAccountBlob(msg.caller, null));
+            };
+        };
+        if (ICDexMakerWasmHistory.size() > 32){
+            ICDexMakerWasmHistory := Tools.slice(ICDexMakerWasmHistory, 0, ?31);
+        };
+    };
+
+    /// Returns the current version of ICDexMaker wasm.
+    public query func getICDexMakerWasmVersion() : async (version: Text, size: Nat){
+        let wasmInfo = _getICDexMakerVersion(null);
+        return (wasmInfo.1, wasmInfo.0.size());
+    };
+
+    /// Returns version history of ICDexMaker wasm
+    public query func getICDexMakerWasmVersionHistory(): async [(Text, Nat)]{
+        return Array.map<([Nat8], Text, Bool), (Text, Nat)>(ICDexMakerWasmHistory, func (t: ([Nat8], Text, Bool)): (Text, Nat){
+            return (t.1, t.0.size());
+        });
     };
 
     /* =======================
@@ -689,24 +790,26 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     ///
     /// Arguments:
     /// - pair: Principal. trading pair canister-id.
-    /// - version: Text. Check the current version to be upgraded.
+    /// - version: Text. Check the version to be upgraded.
     /// 
     /// Returns:
     /// - canister: ?PairCanister. Trading pair canister-id. Returns null if the upgrade was unsuccessful.
     public shared(msg) func update(_pair: Principal, _version: Text): async (canister: ?PairCanister){
         assert(_onlyOwner(msg.caller));
-        assert(wasm.size() > 0);
-        assert(_version == wasmVersion);
+        let wasmInfo = _getICDexPairVersion(?_version);
+        let wasm = wasmInfo.0;
+        assert(wasm.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == true);
         let res = await* _update(_pair, wasm, #upgrade);
-        ignore _putEvent(#upgradePairWasm({ pair = _pair; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+        ignore _putEvent(#upgradePair({ pair = _pair; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
         return res;
     };
 
-    /// Upgrade all ICDexPairs.  
+    /// Upgrade all ICDexPairs to latest version.  
     public shared(msg) func updateAll(_version: Text) : async {total: Nat; success: Nat; failures: [Principal]}{ 
         assert(_onlyOwner(msg.caller));
-        assert(wasm.size() > 0);
-        assert(_version == wasmVersion);
+        let wasmInfo = _getICDexPairVersion(null);
+        let wasm = wasmInfo.0;
+        assert(wasm.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == true);
         var total : Nat = 0;
         var success : Nat = 0;
         var failures: [Principal] = [];
@@ -717,7 +820,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 if (version != _version){
                     total += 1;
                     let res = await* _update(canisterId, wasm, #upgrade);
-                    ignore _putEvent(#upgradePairWasm({ pair = canisterId; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
+                    ignore _putEvent(#upgradePair({ pair = canisterId; version = _version; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
                     success += 1;
                 };
             }catch(e){
@@ -725,19 +828,6 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             };
         };
         return {total = total; success = success; failures = failures};
-    };
-
-    /// Rollback to previous version (the last version that was saved).  
-    /// Note: Operate with caution.
-    public shared(msg) func rollback(_pair: Principal): async (canister: ?PairCanister){
-        assert(_onlyOwner(msg.caller));
-        assert(wasm_preVersion.size() > 0);
-        let pair : ICDexPrivate.Self = actor(Principal.toText(_pair));
-        let info = await pair.info();
-        assert(info.paused);
-       let res = await* _update(_pair, wasm_preVersion, #upgrade);
-       ignore _putEvent(#rollbackPairWasm({ pair = _pair; success = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
-       return res;
     };
 
     /// Modifying the controllers of the trading pair.
@@ -761,7 +851,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     ///
     /// Arguments:
     /// - pair: Principal. trading pair canister-id.
-    /// - version: Text. Check the current version to be upgraded.
+    /// - version: Text. Check the version to be upgraded.
     /// - snapshot: Bool. Whether to back up a snapshot.
     /// 
     /// Returns:
@@ -769,8 +859,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Note: Operate with caution. Consider calling this method only if upgrading is not possible.
     public shared(msg) func reinstall(_pair: Principal, _version: Text, _snapshot: Bool) : async (canister: ?PairCanister){
         assert(_onlyOwner(msg.caller));
-        assert(wasm.size() > 0);
-        assert(_version == wasmVersion);
+        let wasmInfo = _getICDexPairVersion(?_version);
+        let wasm = wasmInfo.0;
+        assert(wasm.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == true);
 
         let data = await _backup(_pair);
         backupData := data;
@@ -783,8 +874,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
 
         await _recovery(_pair, data);
 
-        ignore _putEvent(#reinstallPairWasm({ pair = _pair; version = _version; success = true; }), ?Tools.principalToAccountBlob(msg.caller, null));
-        return res; //?Principal.fromText("");
+        ignore _putEvent(#reinstallPair({ pair = _pair; version = _version; success = true; }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res; 
     };
 
     /// Synchronize trading fees for all pairs.
@@ -2005,39 +2096,6 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         return null;
     };
 
-    /// Set the wasm of the ICDexMaker.
-    ///
-    /// Arguments:
-    /// - wasm: Blob. wasm file.
-    /// - version: Text. The current version of wasm.
-    /// - append: Bool. Whether to continue uploading the rest of the chunks of the same wasm file. If a wasm file is larger than 2M, 
-    /// it can't be uploaded at once, the solution is to upload it in multiple chunks. `append` is set to false when uploading the 
-    /// first chunk. `append` is set to true when uploading subsequent chunks, and version must be filled in with the same value.
-    /// - backup: Bool. Whether to backup the previous version of wasm.
-    public shared(msg) func maker_setWasm(_wasm: Blob, _version: Text, _append: Bool, _backupPreVersion: Bool) : async (){
-        assert(_onlyOwner(msg.caller));
-        if (not(_append)){
-            if (_backupPreVersion){
-                maker_wasm_preVersion := maker_wasm;
-            };
-            maker_wasm := Blob.toArray(_wasm);
-            maker_wasmVersion := _version;
-        }else{
-            assert(_version == maker_wasmVersion);
-            maker_wasm := Tools.arrayAppend(maker_wasm, Blob.toArray(_wasm));
-        };
-        ignore _putEvent(#setMakerWasm({ version = _version; append = _append; backupPreVersion = _backupPreVersion }), ?Tools.principalToAccountBlob(msg.caller, null));
-    };
-
-    /// Returns the current version of ICDexMaker wasm.
-    public query func maker_getWasmVersion() : async (Text, Text, Nat){
-        let offset = maker_wasm.size() / 2;
-        var hash224 = SHA224.sha224(Tools.arrayAppend(Tools.slice(maker_wasm, 0, ?1024), Tools.slice(maker_wasm, offset, ?(offset+1024))));
-        var crc : [Nat8] = CRC32.crc32(hash224);
-        let hash = Tools.arrayAppend(crc, hash224);  
-        return (maker_wasmVersion, Hex.encode(hash), maker_wasm.size());
-    };
-
     /// Returns all public automated market makers.
     public query func maker_getPublicMakers(_pair: ?Principal, _page: ?Nat, _size: ?Nat) : async TrieList<PairCanister, [(Principal, AccountId)]>{
         switch(_pair){
@@ -2104,7 +2162,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
         assert(_arg.lowerLimit > 0 and _arg.upperLimit > _arg.lowerLimit);
         assert(_arg.spreadRate >= 1000);
-        assert(maker_wasm.size() > 0);
+        let wasmInfo = _getICDexMakerVersion(null);
+        let maker_wasm = wasmInfo.0;
+        assert(maker_wasm.size() > 0 and wasmInfo.2 == true);
         if(not(_onlyOwner(msg.caller)) and _countMaker(accountId, #All) > 3){
             throw Error.reject("You can create up to 3 Maker Canisters per account.");
         }; 
@@ -2146,7 +2206,16 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         // create
         try{
             Cycles.add(canisterCyclesInit);
-            let canister = await ic.create_canister({ settings = null });
+            var controllers: [Principal] = [icDao, blackhole, Principal.fromActor(this)]; 
+            if (_arg.allow == #Private){
+                controllers := Tools.arrayAppend(controllers, [msg.caller]);
+            };
+            let canister = await ic.create_canister({ settings = ?{ 
+                compute_allocation = null;
+                controllers = ?controllers;
+                freezing_threshold = null;
+                memory_allocation = null;
+            } });
             let makerCanister = canister.canister_id;
             let args: [Nat8] = Blob.toArray(to_candid({
                 creator = Option.get(_arg.creator, accountId);
@@ -2170,19 +2239,6 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 mode = #install; // #reinstall; #upgrade; #install
                 canister_id = makerCanister;
             });
-            var controllers: [Principal] = [icDao, blackhole, Principal.fromActor(this)]; 
-            if (_arg.allow == #Private){
-                controllers := Tools.arrayAppend(controllers, [msg.caller]);
-            };
-            let settings = await ic.update_settings({
-                canister_id = makerCanister; 
-                settings={ 
-                    compute_allocation = null;
-                    controllers = ?controllers;
-                    freezing_threshold = null;
-                    memory_allocation = null;
-                };
-            });
             if (_arg.allow == #Public){
                 _putPublicMaker(_arg.pair, makerCanister, accountId);
             }else{
@@ -2205,7 +2261,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
 
             // cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
             await* monitor.putCanister(makerCanister);
-            ignore _putEvent(#createMaker({ version = maker_wasmVersion; arg = _arg; makerCanisterId = makerCanister }), ?Tools.principalToAccountBlob(msg.caller, null));
+            ignore _putEvent(#createMaker({ version = wasmInfo.1; arg = _arg; makerCanisterId = makerCanister }), ?Tools.principalToAccountBlob(msg.caller, null));
             return makerCanister;
         }catch(e){
             if (not(_onlyOwner(msg.caller)) and creatingMakerFee > sysTokenFee){
@@ -2229,15 +2285,16 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Arguments:
     /// - pair: Principal. trading pair canister-id.
     /// - maker: Principal. ICDexMaker canister-id.
-    /// - version: Text. Check the current version to be upgraded.
+    /// - version: Text. Check the version to be upgraded.
     /// 
     /// Returns:
     /// - canister: ?Principal. ICDexMaker canister-id. Returns null if the upgrade was unsuccessful.
     /// Note: Operate with caution. Consider calling this method only if upgrading is not possible.
     public shared(msg) func maker_reinstall(_pair: Principal, _maker: Principal, _version: Text) : async (canister: ?Principal){
         assert(_onlyOwner(msg.caller));
-        assert(maker_wasm.size() > 0);
-        assert(_version == maker_wasmVersion);
+        let wasmInfo = _getICDexMakerVersion(?_version);
+        let maker_wasm = wasmInfo.0;
+        assert(maker_wasm.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == true);
 
         let maker0 : Maker.Self = actor(Principal.toText(_maker));
         let maker : actor{
@@ -2293,16 +2350,20 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     public shared(msg) func maker_update(_pair: Principal, _maker: Principal, _name:?Text, _version: Text): async (canister: ?Principal){
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
         assert(_onlyOwner(msg.caller) or (not(_isPublicMaker(_pair, _maker)) and _OnlyMakerCreator(_pair, _maker, accountId))); 
-        assert(_version == maker_wasmVersion);
+        let wasmInfo = _getICDexMakerVersion(?_version);
+        let maker_wasm = wasmInfo.0;
+        assert(maker_wasm.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == true);
         let res = await* _maker_update(_pair, _maker, maker_wasm, #upgrade, { name = _name });
         ignore _putEvent(#upgradeMaker({ version = _version; pair = _pair; maker = _maker; name = _name; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
         return res;
     };
 
-    /// Upgrade all ICDexMakers.  
+    /// Upgrade all ICDexMakers to the latest version.  
     public shared(msg) func maker_updateAll(_version: Text, _updatePrivateMakers: Bool) : async {total: Nat; success: Nat; failures: [(Principal, Principal)]}{ 
         assert(_onlyOwner(msg.caller));
-        assert(_version == maker_wasmVersion);
+        let wasmInfo = _getICDexMakerVersion(null);
+        let maker_wasm = wasmInfo.0;
+        assert(maker_wasm.size() > 0 and wasmInfo.1 == _version and wasmInfo.2 == true);
         var total : Nat = 0;
         var success : Nat = 0;
         var failures: [(Principal, Principal)] = [];
@@ -2339,20 +2400,10 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         return {total = total; success = success; failures = failures};
     };
 
-    /// Rollback an ICDexMaker canister.
-    /// permissions: Dao, Private Maker Creator
-    public shared(msg) func maker_rollback(_pair: Principal, _maker: Principal): async (canister: ?Principal){
-        let accountId = Tools.principalToAccountBlob(msg.caller, null);
-        assert(_onlyOwner(msg.caller) or (not(_isPublicMaker(_pair, _maker)) and _OnlyMakerCreator(_pair, _maker, accountId)));
-        let res = await* _maker_update(_pair, _maker, maker_wasm_preVersion, #upgrade, { name = null });
-        ignore _putEvent(#rollbackMaker({ pair = _pair; maker = _maker; completed = Option.isSome(res) }), ?Tools.principalToAccountBlob(msg.caller, null));
-        return res;
-    };
-
     /// Let ICDexMaker approve the `_amount` of the sysToken the trading pair could spend.
     public shared(msg) func maker_approveToPair(_pair: Principal, _maker: Principal, _amount: Nat): async Bool{
         let accountId = Tools.principalToAccountBlob(msg.caller, null);
-        assert(_onlyOwner(msg.caller) or _OnlyMakerCreator(_pair, _maker, accountId));
+        assert(_onlyOwner(msg.caller));
         let token: ICRC1.Self = actor(Principal.toText(sysToken));
         let arg: ICRC1.TransferArgs = {
             from_subaccount = null;

@@ -36,11 +36,11 @@ module {
         #timerStart: { intervalSeconds: Nat };
         #timerStop;
         #createPairByUser: { token0: Principal; token1: Principal; pairCanisterId: Principal };
-        #setICDexPairWasm: { version: Text; append: Bool; backupPreVersion: Bool };
+        #setICDexPairWasm: { version: Text; size: Nat };
         #createPair: { token0: Principal; token1: Principal; unitSize: ?Nat64; initCycles: ?Nat; pairCanisterId: Principal };
-        #upgradePairWasm: { pair: Principal; version: Text; success: Bool };
-        #rollbackPairWasm: { pair: Principal; success: Bool };
-        #reinstallPairWasm: { pair: Principal; version: Text; success: Bool };
+        #upgradePair: { pair: Principal; version: Text; success: Bool };
+        // #rollbackPair: { pair: Principal; version: Text; success: Bool };
+        #reinstallPair: { pair: Principal; version: Text; success: Bool };
         #setPairControllers: { pair: Principal; controllers: [Principal] };
         #removePairDataSnapshot: { pair: Principal; timeBefore: Timestamp; };
         #backupPairData: { pair: Principal; timestamp: Timestamp; };
@@ -84,7 +84,7 @@ module {
         #nftWithdraw: { collId: Principal; nftId: ERC721.TokenIdentifier; args: ERC721.TransferRequest; result: ERC721.TransferResponse };
         #nftSetVipMaker: { pair: Principal; nftId: ERC721.TokenIdentifier; vipMaker: Text; rebateRate: Nat };
         #nftRemoveVipMaker: { pair: Principal; vipMaker: Text };
-        #setMakerWasm: { version: Text; append: Bool; backupPreVersion: Bool };
+        #setICDexMakerWasm: { version: Text; size: Nat };
         #createMaker: { version: Text; makerCanisterId: Principal; arg: {
             pair: Principal;
             allow: {#Public; #Private};
@@ -97,7 +97,7 @@ module {
         } };
         #upgradeMaker: { version: Text; pair: Principal; maker: Principal; name: ?Text; completed: Bool };
         #reinstallMaker: { version: Text; pair: Principal; maker: Principal; completed: Bool };
-        #rollbackMaker: { pair: Principal; maker: Principal; completed: Bool };
+        // #rollbackMaker: { pair: Principal; maker: Principal; version: Text; completed: Bool };
         #removeMaker: { pair: Principal; maker: Principal; };
         #makerSetControllers: { pair: Principal; maker: Principal; controllers: [Principal] };
         #makerConfig: { maker: Principal; config: Maker.Config };

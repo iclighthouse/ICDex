@@ -58,11 +58,7 @@ type Event = variant {
     pair : principal;
     drc205config : opt Config;
   };
-  setICDexPairWasm : record {
-    backupPreVersion : bool;
-    version : text;
-    append : bool;
-  };
+  setICDexPairWasm : record { size : nat; version : text };
   pairICTCDoneTO : record {
     app : principal;
     status : OrderStatus;
@@ -113,11 +109,6 @@ type Event = variant {
     makerCanisterId : principal;
   };
   removePairFromList : record { pair : principal };
-  reinstallPairWasm : record {
-    pair : principal;
-    version : text;
-    success : bool;
-  };
   pairSetAuctionMode : record {
     result : record { bool; AccountId__2 };
     pair : principal;
@@ -126,12 +117,6 @@ type Event = variant {
     maker : principal;
     controllers : vec principal;
     pair : principal;
-  };
-  upgradePairWasm : record { pair : principal; version : text; success : bool };
-  setMakerWasm : record {
-    backupPreVersion : bool;
-    version : text;
-    append : bool;
   };
   pairICTCSetAdmin : record {
     act : variant { Add; Remove };
@@ -189,10 +174,12 @@ type Event = variant {
     creatingMakerFee : opt nat;
     sysToken : opt principal;
   };
+  upgradePair : record { pair : principal; version : text; success : bool };
   pairSetUpgradeMode : record {
     mode : variant { All; Base };
     pair : principal;
   };
+  reinstallPair : record { pair : principal; version : text; success : bool };
   reinstallMaker : record {
     maker : principal;
     pair : principal;
@@ -274,7 +261,7 @@ type Event = variant {
     ttid : nat;
     completed : bool;
   };
-  rollbackPairWasm : record { pair : principal; success : bool };
+  setICDexMakerWasm : record { size : nat; version : text };
   removePairDataSnapshot : record {
     timeBefore : Timestamp__3;
     pair : principal;
@@ -292,11 +279,6 @@ type Event = variant {
     };
   };
   recoveryPairData : record { pair : principal; timestamp : Timestamp__3 };
-  rollbackMaker : record {
-    maker : principal;
-    pair : principal;
-    completed : bool;
-  };
   pairRemoveVipMaker : record { pair : principal; account : Address__1 };
   makerConfig : record { maker : principal; config : Config__1 };
   timerStop;
@@ -348,13 +330,16 @@ type ICDexRouter = service {
     ) -> (nat);
   drc207 : () -> (DRC207Support) query;
   getDAO : () -> (principal) query;
+  getICDexMakerWasmVersion : () -> (text, nat) query;
+  getICDexMakerWasmVersionHistory : () -> (vec record { text; nat }) query;
+  getICDexPairWasmVersion : () -> (text, nat) query;
+  getICDexPairWasmVersionHistory : () -> (vec record { text; nat }) query;
   getPairs : (opt nat, opt nat) -> (TrieList__1_2) query;
   getPairsByToken : (principal) -> (
       vec record { PairCanister; SwapPair },
     ) query;
   getSnapshots : (principal) -> (vec Timestamp) query;
   getTokens : () -> (vec TokenInfo__1) query;
-  getWasmVersion : () -> (text, text, nat) query;
   get_account_events : (AccountId) -> (
       vec record { Event; Timestamp__1 },
     ) query;
@@ -386,14 +371,11 @@ type ICDexRouter = service {
   maker_getPublicMakers : (opt principal, opt nat, opt nat) -> (
       TrieList__1,
     ) query;
-  maker_getWasmVersion : () -> (text, text, nat) query;
   maker_reinstall : (principal, principal, text) -> (opt principal);
   maker_remove : (principal, principal) -> ();
   maker_resetLocalBalance : (principal) -> (PoolBalance);
-  maker_rollback : (principal, principal) -> (opt principal);
   maker_setControllers : (principal, principal, vec principal) -> (bool);
   maker_setPause : (principal, bool) -> (bool);
-  maker_setWasm : (vec nat8, text, bool, bool) -> ();
   maker_transactionLock : (principal, variant { lock; unlock }) -> (bool);
   maker_update : (principal, principal, opt text, text) -> (opt principal);
   maker_updateAll : (text, bool) -> (
@@ -438,12 +420,20 @@ type ICDexRouter = service {
   reinstall : (principal, text, bool) -> (opt PairCanister);
   remove : (principal) -> ();
   removeSnapshot : (principal, Timestamp__1) -> ();
-  rollback : (principal) -> (opt PairCanister);
   route : (principal, principal) -> (
       vec record { PairCanister; SwapPair },
     ) query;
   setControllers : (principal, vec principal) -> (bool);
-  setWasm : (vec nat8, text, bool, bool) -> ();
+  setICDexMakerWasm : (
+      vec nat8,
+      text,
+      opt variant { final; first; middle },
+    ) -> ();
+  setICDexPairWasm : (
+      vec nat8,
+      text,
+      opt variant { final; first; middle },
+    ) -> ();
   snapshotToTempCanister : (principal, Timestamp, principal) -> (bool);
   sto_config : (
       principal,
