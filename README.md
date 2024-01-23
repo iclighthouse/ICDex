@@ -11,6 +11,27 @@ ICDex Infrastructure:
 
 ![Matching engine](img/icdex.png)
 
+
+## Dependent toolkits
+
+### dfx
+- https://github.com/dfinity/sdk/
+- version: 0.15.3 (https://github.com/dfinity/sdk/releases/tag/0.15.3)
+- moc version: 0.10.3
+
+### vessel
+- https://github.com/dfinity/vessel
+- version: 0.7.0 (https://github.com/dfinity/vessel/releases/tag/v0.7.0)
+
+### ic-wasm
+- https://github.com/dfinity/ic-wasm
+- version: 0.7.0 (https://github.com/dfinity/ic-wasm/releases/tag/0.7.0)
+
+### ic-repl
+- https://github.com/dfinity/ic-repl/
+- version: 0.6.2 (https://github.com/dfinity/ic-repl/releases/tag/0.6.2)
+- Install to the directory `/usr/local/bin/ic-repl`
+
 ## Tokens for testing
 
 ### 1. ICLtest
@@ -36,27 +57,24 @@ dfx canister --network ic install Token1 --argument '(record { totalSupply=10000
 
 ## Compiles
 
-- DFX version: 0.15.3 (moc 0.10.3)
-- The compiled wasm files are in the "wasms/" directory.
-
 ### 1. ICDexRouter
 ```
 dfx canister --network ic create ICDexRouter --controller __your principal__
 dfx build --network ic ICDexRouter
+cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 47a886b13463c3c6e7c3d4dd674003818497d442c965b66759b3deddefc5fea2
-- Version: 0.12.25
+- Module hash: 15e03d8f87b30e26f660f3790c0100bd950a3bd4d4aba0274320bde85b19c1f8
+- Version: 0.12.26
 - Build: {
     "args": "--compacting-gc"
 }
-
-Copy the wasm file to the "wasms/" directory.
 
 ### 2. ICDexPair
 ```
 dfx canister --network ic create ICDexPair --controller __your principal__
 dfx build --network ic ICDexPair
+cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
 ```
 - Code: "src/ICDexPair.mo"
 - Module hash: b51504697238c12facd4d6e4f8c9a4aa677653231e953499cf1ef06acfb7b18d
@@ -64,17 +82,16 @@ dfx build --network ic ICDexPair
 - Build: {
     "args": "--incremental-gc"
 }
-- Wasm tool: ic-wasm 0.7.0 (https://github.com/dfinity/ic-wasm). Put the compiled ICDexPair.wasm in the "wasms/" directory and then execute:
+- Replace the compressed candid with ic-wasm.
 ```
 ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
 ```
-
-Copy the wasm file to the "wasms/" directory.
 
 ### 3. ICDexMaker
 ```
 dfx canister --network ic create ICDexMaker --controller __your principal__
 dfx build --network ic ICDexMaker
+cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm wasms/
 ```
 - Code: "src/ICDexMaker.mo"
 - Module hash: 66eb5eab4513cacc85288924f25d860ca7ce46918a456663433b806ddd694ae3
@@ -83,8 +100,6 @@ dfx build --network ic ICDexMaker
     "args": "--compacting-gc", 
     "optimize": "size"
 }
-
-Copy the wasm file to the "wasms/" directory.
 
 ## Deployment of ICDex
 
@@ -116,9 +131,9 @@ dfx canister --network ic call ICDexRouter sys_config '(record{ sysToken = opt p
 ```
 
 ### 3. Set ICDexPair wasm
-- call ICDexRouter.setWasm()
+- call ICDexRouter.setICDexPairWasm()
 ```
-dfx canister --network ic call ICDexRouter setWasm '(__ICDexPair.wasm bytes([nat8])__, "__ICDexPair version__", false, true)'
+dfx canister --network ic call ICDexRouter setICDexPairWasm '(__ICDexPair.wasm bytes([nat8])__, "__ICDexPair version__", null)'
 ```
 Or use ic-repl (/usr/local/bin/ic-repl)  
 Note: Local network using setPairWasm_local.sh
@@ -153,9 +168,9 @@ dfx canister --network ic call __ICDexPair-canister-id__ trade '(record{ quantit
 args: see `docs/ICDexPair.md` documentation.
 
 ### 6. (optional) Set ICDexMaker wasm
-- call ICDexRouter.maker_setWasm()
+- call ICDexRouter.setICDexMakerWasm()
 ```
-dfx canister --network ic call ICDexRouter maker_setWasm '(__ICDexMaker.wasm bytes([nat8])__, "__ICDexMaker version__", false, true)'
+dfx canister --network ic call ICDexRouter setICDexMakerWasm '(__ICDexMaker.wasm bytes([nat8])__, "__ICDexMaker version__", null)'
 ```
 Or use ic-repl (/usr/local/bin/ic-repl)  
 Note: Local network using setMakerWasm_local.sh

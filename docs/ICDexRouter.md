@@ -148,9 +148,9 @@ Arguments:
 Returns:
 - canister: PairCanister. Trading pair canister-id.
 
-## Function `setWasm`
+## Function `setICDexPairWasm`
 ``` motoko no-repl
-func setWasm(_wasm : Blob, _version : Text, _append : Bool, _backup : Bool) : async ()
+func setICDexPairWasm(_wasm : Blob, _version : Text, _multiChunk : ?{#first; #middle; #final}) : async ()
 ```
 
 Set the wasm of the ICDexPair.
@@ -158,18 +158,51 @@ Set the wasm of the ICDexPair.
 Arguments:
 - wasm: Blob. wasm file.
 - version: Text. The current version of wasm.
-- append: Bool. Whether to continue uploading the rest of the chunks of the same wasm file. If a wasm file is larger than 2M, 
-it can't be uploaded at once, the solution is to upload it in multiple chunks. `append` is set to false when uploading the 
-first chunk. `append` is set to true when uploading subsequent chunks, and version must be filled in with the same value.
-- backup: Bool. Whether to backup the previous version of wasm.
+- multiChunk: ?{#first; #middle; #final}. If a wasm file is larger than 2M, it can't be uploaded at once, the solution is 
+to upload it in multiple chunks. If multiChunk is equal to null, it means wasm is less than 2M, no need to upload in chunks.
 
 
-## Function `getWasmVersion`
+## Function `getICDexPairWasmVersion`
 ``` motoko no-repl
-func getWasmVersion() : async (version : Text, hash : Text, size : Nat)
+func getICDexPairWasmVersion() : async (version : Text, size : Nat)
 ```
 
 Returns the current version of ICDexPair wasm.
+
+## Function `getICDexPairWasmVersionHistory`
+``` motoko no-repl
+func getICDexPairWasmVersionHistory() : async [(Text, Nat)]
+```
+
+Returns version history of ICDexPair wasm
+
+## Function `setICDexMakerWasm`
+``` motoko no-repl
+func setICDexMakerWasm(_wasm : Blob, _version : Text, _multiChunk : ?{#first; #middle; #final}) : async ()
+```
+
+Set the wasm of the ICDexMaker.
+
+Arguments:
+- wasm: Blob. wasm file.
+- version: Text. The current version of wasm.
+- multiChunk: ?{#first; #middle; #final}. If a wasm file is larger than 2M, it can't be uploaded at once, the solution is 
+to upload it in multiple chunks. If multiChunk is equal to null, it means wasm is less than 2M, no need to upload in chunks.
+
+
+## Function `getICDexMakerWasmVersion`
+``` motoko no-repl
+func getICDexMakerWasmVersion() : async (version : Text, size : Nat)
+```
+
+Returns the current version of ICDexMaker wasm.
+
+## Function `getICDexMakerWasmVersionHistory`
+``` motoko no-repl
+func getICDexMakerWasmVersionHistory() : async [(Text, Nat)]
+```
+
+Returns version history of ICDexMaker wasm
 
 ## Function `create`
 ``` motoko no-repl
@@ -198,7 +231,7 @@ Upgrade a trading pair canister.
 
 Arguments:
 - pair: Principal. trading pair canister-id.
-- version: Text. Check the current version to be upgraded.
+- version: Text. Check the version to be upgraded.
 
 Returns:
 - canister: ?PairCanister. Trading pair canister-id. Returns null if the upgrade was unsuccessful.
@@ -208,15 +241,7 @@ Returns:
 func updateAll(_version : Text) : async { total : Nat; success : Nat; failures : [Principal] }
 ```
 
-Upgrade all ICDexPairs.  
-
-## Function `rollback`
-``` motoko no-repl
-func rollback(_pair : Principal) : async (canister : ?PairCanister)
-```
-
-Rollback to previous version (the last version that was saved).  
-Note: Operate with caution.
+Upgrade all ICDexPairs to latest version.  
 
 ## Function `setControllers`
 ``` motoko no-repl
@@ -234,7 +259,7 @@ Reinstall a trading pair canister which is paused.
 
 Arguments:
 - pair: Principal. trading pair canister-id.
-- version: Text. Check the current version to be upgraded.
+- version: Text. Check the version to be upgraded.
 - snapshot: Bool. Whether to back up a snapshot.
 
 Returns:
@@ -611,28 +636,6 @@ func NFTUnbindMaker(_nftId : Text, _pair : Principal, _maker : AccountId, _sa : 
 
 The NFT owner unbinds a vip-maker.
 
-## Function `maker_setWasm`
-``` motoko no-repl
-func maker_setWasm(_wasm : Blob, _version : Text, _append : Bool, _backupPreVersion : Bool) : async ()
-```
-
-Set the wasm of the ICDexMaker.
-
-Arguments:
-- wasm: Blob. wasm file.
-- version: Text. The current version of wasm.
-- append: Bool. Whether to continue uploading the rest of the chunks of the same wasm file. If a wasm file is larger than 2M, 
-it can't be uploaded at once, the solution is to upload it in multiple chunks. `append` is set to false when uploading the 
-first chunk. `append` is set to true when uploading subsequent chunks, and version must be filled in with the same value.
-- backup: Bool. Whether to backup the previous version of wasm.
-
-## Function `maker_getWasmVersion`
-``` motoko no-repl
-func maker_getWasmVersion() : async (Text, Text, Nat)
-```
-
-Returns the current version of ICDexMaker wasm.
-
 ## Function `maker_getPublicMakers`
 ``` motoko no-repl
 func maker_getPublicMakers(_pair : ?Principal, _page : ?Nat, _size : ?Nat) : async TrieList<PairCanister, [(Principal, AccountId)]>
@@ -686,7 +689,7 @@ Reinstall an ICDexMaker canister which is paused.
 Arguments:
 - pair: Principal. trading pair canister-id.
 - maker: Principal. ICDexMaker canister-id.
-- version: Text. Check the current version to be upgraded.
+- version: Text. Check the version to be upgraded.
 
 Returns:
 - canister: ?Principal. ICDexMaker canister-id. Returns null if the upgrade was unsuccessful.
@@ -714,15 +717,7 @@ Returns:
 func maker_updateAll(_version : Text, _updatePrivateMakers : Bool) : async { total : Nat; success : Nat; failures : [(Principal, Principal)] }
 ```
 
-Upgrade all ICDexMakers.  
-
-## Function `maker_rollback`
-``` motoko no-repl
-func maker_rollback(_pair : Principal, _maker : Principal) : async (canister : ?Principal)
-```
-
-Rollback an ICDexMaker canister.
-permissions: Dao, Private Maker Creator
+Upgrade all ICDexMakers to the latest version.  
 
 ## Function `maker_approveToPair`
 ``` motoko no-repl
