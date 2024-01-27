@@ -160,7 +160,7 @@ import Time "mo:base/Time";
 import Tools "mo:icl/Tools";
 import List "mo:base/List";
 import Trie "mo:base/Trie";
-import Router "mo:icl/DexRouter";
+import Aggregator "mo:icl/DexAggregator";
 import SHA224 "mo:sha224/SHA224";
 import CRC32 "mo:icl/CRC32";
 import DRC205 "mo:icl/DRC205";
@@ -472,9 +472,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pair).0;
         await pairActor.init();
         await pairActor.timerStart(900);
-        let router: Router.Self = actor(aggregator);
+        let aggr: Aggregator.Self = actor(aggregator);
         try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
-            await router.putByDex(
+            await aggr.putByDex(
                 (token0Principal, token0Symbol, token0Std), 
                 (token1Principal, token1Symbol, token1Std), 
                 pairCanister);
@@ -544,9 +544,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                     feeRate: Float = (await pairActor.fee()).taker.sell; //  0.5%
                 };
                 pairs := Trie.put(pairs, keyp(pairCanister), Principal.equal, pairNew).0;
-                let router: Router.Self = actor(aggregator);
+                let aggr: Aggregator.Self = actor(aggregator);
                 try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
-                    await router.putByDex(
+                    await aggr.putByDex(
                         (token0Principal, token0Symbol, token0Std), 
                         (token1Principal, token1Symbol, token1Std), 
                         pairCanister);
@@ -1112,9 +1112,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         // let pair = _adjustPair2(_pair);
         pairs := Trie.put(pairs, keyp(_pair.canisterId), Principal.equal, _pair).0;
         await _syncFee(_pair.canisterId);
-        let router: Router.Self = actor(aggregator);
+        let aggr: Aggregator.Self = actor(aggregator);
         try{ // Used to push pair to external directory listings, if it fails it has no effect on ICDex.
-            await router.putByDex(
+            await aggr.putByDex(
                 _pair.token0, 
                 _pair.token1, 
                 _pair.canisterId);
@@ -1128,9 +1128,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         pairs := Trie.filter(pairs, func (k: PairCanister, v: SwapPair): Bool{ 
             _pairCanister != k;
         });
-        let router: Router.Self = actor(aggregator);
+        let aggr: Aggregator.Self = actor(aggregator);
         try{ // Manager external directory listings, if it fails it has no effect on ICDex.
-            await router.removeByDex(_pairCanister);
+            await aggr.removeByDex(_pairCanister);
         }catch(e){};
         // cyclesMonitor := CyclesMonitor.remove(cyclesMonitor, _pairCanister);
         monitor.removeCanister(_pairCanister);
@@ -1474,8 +1474,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         for (pair in _addPairs.vals()){
             pairList := Tools.arrayAppend(pairList, [(pair.dex, pair.canisterId, pair.quoteToken)]);
         };
-        let router : Router.Self = actor(aggregator);
-        let res = await router.pushCompetitionByDex(_id, _name, _content, _start, _end, pairList);
+        let aggr : Aggregator.Self = actor(aggregator);
+        let res = await aggr.pushCompetitionByDex(_id, _name, _content, _start, _end, pairList);
         ignore _putEvent(#dexAddCompetition({ id = _id; name = _name; start = _start; end = _end; addPairs = _addPairs }), ?Tools.principalToAccountBlob(msg.caller, null));
         return res;
     };
