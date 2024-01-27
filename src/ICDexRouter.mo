@@ -197,7 +197,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.26";
+    private let version_: Text = "0.12.27";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -1487,6 +1487,11 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Returns the canister-id of the DAO
     public query func getDAO() : async Principal{  
         return icDao;
+    };
+
+    /// Returns the version of ICDexRouter
+    public query func version() : async Text{  
+        return version_;
     };
 
     // public shared(msg) func changeOwner(_newOwner: Principal) : async Bool{ 
