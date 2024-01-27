@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.6";
+    private let version_: Text = "0.5.7";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -2053,6 +2053,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         gridUpperLimit := Option.get(_config.upperLimit, gridUpperLimit);
         assert(gridUpperLimit > gridLowerLimit);
         gridSpread := Nat.max(Option.get(_config.spreadRatePpm, gridSpread), 100);
+        gridSpread2 := gridSpread * 5;
         poolThreshold := Option.get(_config.threshold, poolThreshold);
         volFactor := Option.get(_config.volFactor, volFactor);
         withdrawalFee := Option.get(_config.withdrawalFeePpm, withdrawalFee);

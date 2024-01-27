@@ -64,8 +64,8 @@ dfx build --network ic ICDexRouter
 cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 15e03d8f87b30e26f660f3790c0100bd950a3bd4d4aba0274320bde85b19c1f8
-- Version: 0.12.26
+- Module hash: 279d3c725ed27635018b37f122ca4762c8a9a5ad959e6728bfdc2acedbf6a9ab
+- Version: 0.12.27
 - Build: {
     "args": "--compacting-gc"
 }
@@ -81,8 +81,8 @@ cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
 ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: b51504697238c12facd4d6e4f8c9a4aa677653231e953499cf1ef06acfb7b18d
-- Version: 0.12.48
+- Module hash: a6a3dff94400f6fc3786cfc588cc6b757631a66ee6434c789235ff22096207dc
+- Version: 0.12.49
 - Build: {
     "args": "--incremental-gc"
 }
@@ -94,8 +94,8 @@ dfx build --network ic ICDexMaker
 cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm wasms/
 ```
 - Code: "src/ICDexMaker.mo"
-- Module hash: 66eb5eab4513cacc85288924f25d860ca7ce46918a456663433b806ddd694ae3
-- Version: 0.5.6
+- Module hash: 96ce5cf5d8ad4a5f7a631879384e1136c801999a2e5169738234ec1f14113fd1
+- Version: 0.5.7
 - Build: {
     "args": "--compacting-gc", 
     "optimize": "size"
@@ -162,6 +162,8 @@ dfx canister --network ic call ICDexRouter create '(principal "__Token0-canister
 ### 5. trade
 - call ICDexPair.trade()
 ```
+dfx canister --network ic call Token0 icrc2_approve '(record{ spender = record{owner = principal "__ICDexPair-canister-id__"; subaccount = null }; amount = 10_000_000_000 })'
+dfx canister --network ic call Token1 icrc2_approve '(record{ spender = record{owner = principal "__ICDexPair-canister-id__"; subaccount = null }; amount = 10_000_000_000 })'
 dfx canister --network ic call __ICDexPair-canister-id__ trade '(record{ quantity = variant{Buy = record{500_000_000: nat; 500_000_000: nat} }; price = 10_000_000: nat }, variant{ LMT }, null, null, null, null)'
 dfx canister --network ic call __ICDexPair-canister-id__ trade '(record{ quantity = variant{Sell = 100_000_000: nat }; price = 10_000_000: nat }, variant{ LMT }, null, null, null, null)'
 ```

@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.48";
+    private let version_: Text = "0.12.49";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -2649,7 +2649,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private func _tradeCore(_caller: Principal, _order: OrderPrice, _orderType: OrderType, _expiration: ?PeriodNs, _nonce: ?Nonce, _sa: ?Sa, _data: ?Data,
     _brokerage: ?{broker: Principal; rate: Float}, _quickly: ?Bool) : async* TradingResult{
         _checkICTCError();
-        if (not(_notPaused(?_caller) and initialized)){
+        if (not(_notPaused(?_caller))){
             return #err({code=#UndefinedError; message="400: Trading pair has been suspended.";}); 
         };
         let account = Tools.principalToAccountBlob(_caller, _sa);
