@@ -64,7 +64,7 @@ dfx build --network ic ICDexRouter
 cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 279d3c725ed27635018b37f122ca4762c8a9a5ad959e6728bfdc2acedbf6a9ab
+- Module hash: 2df08b2bd55ee57ccf56ff79fab40974ca60345ff821bfecb5cc95c8c683ef89
 - Version: 0.12.27
 - Build: {
     "args": "--compacting-gc"
@@ -81,8 +81,8 @@ cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
 ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: a6a3dff94400f6fc3786cfc588cc6b757631a66ee6434c789235ff22096207dc
-- Version: 0.12.49
+- Module hash: 3d1447ebddd39705f7118b8b54cc258a403efc466f8e00b5f148b3a3b96a0ba1
+- Version: 0.12.51
 - Build: {
     "args": "--incremental-gc"
 }
@@ -94,8 +94,8 @@ dfx build --network ic ICDexMaker
 cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm wasms/
 ```
 - Code: "src/ICDexMaker.mo"
-- Module hash: 96ce5cf5d8ad4a5f7a631879384e1136c801999a2e5169738234ec1f14113fd1
-- Version: 0.5.7
+- Module hash: 44ea65c7899c5dd401b9f29bd7965aa1d8765b22212059243b6f1c6327801feb
+- Version: 0.5.8
 - Build: {
     "args": "--compacting-gc", 
     "optimize": "size"

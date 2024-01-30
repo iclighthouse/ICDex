@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.7";
+    private let version_: Text = "0.5.8";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -282,7 +282,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var token0Principal: Principal = initArgs.token0;
     private stable var token0Symbol: Text = "";
     private stable var token0Std: ICDex.TokenStd = initArgs.token0Std;
-    private stable var token0Decimals: Nat8 = 0;
+    // private stable var token0Decimals: Nat8 = 0;
     private stable var token0Fee: Nat = 0;
     private stable var token0ICRC2: Bool = false;
     private stable var token1Principal: Principal = initArgs.token1;
@@ -1325,7 +1325,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     // Refactored: Deposit to trading pair
     // Note: Before calling it, sysTransactionLock is required to be false.
     private func _depositToDex(_accountId: AccountId, _token0: Amount, _token1: Amount, _updateGrid: Bool) : (Toid: Nat){ // sysTransactionLock
-        assert(not(sysTransactionLock));
+        assert(not(sysTransactionLock)); // This line of code is used to find bugs. normally, it is required to ensure that sysTransactionLock=false before calling it.
         sysTransactionLock := true;
         let saga = _getSaga();
         var ttidSize : Nat = 0;
@@ -1440,12 +1440,12 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 let token0_: DRC20.Self = actor(Principal.toText(token0Principal));
                 token0Symbol := await token0_.drc20_name();
                 token0Fee := await token0_.drc20_fee();
-                token0Decimals := await token0_.drc20_decimals();
+                // token0Decimals := await token0_.drc20_decimals();
             }else{
                 let token0_: ICRC1.Self = actor(Principal.toText(token0Principal));
                 token0Symbol := await token0_.icrc1_name();
                 token0Fee := await token0_.icrc1_fee();
-                token0Decimals := await token0_.icrc1_decimals();
+                // token0Decimals := await token0_.icrc1_decimals();
             };
             // token1
             if (token1Std == #drc20){
@@ -1953,6 +1953,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         paused: Bool;
         initialized: Bool;
         sysTransactionLock: Bool;
+        sysGlobalLock: ?Bool;
         visibility: {#Public; #Private};
         creator: AccountId;
         withdrawalFee: Float;
@@ -1978,6 +1979,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             paused = paused;
             initialized = initialized;
             sysTransactionLock = sysTransactionLock;
+            sysGlobalLock = ?sysGlobalLock;
             visibility = visibility;
             creator = creator;
             withdrawalFee = _natToFloat(withdrawalFee) / 1000000;
