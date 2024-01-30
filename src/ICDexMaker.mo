@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.7";
+    private let version_: Text = "0.5.8";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -275,13 +275,14 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var creator: AccountId = initArgs.creator; // Creator account-id
     private stable var visibility: {#Public; #Private} = initArgs.allow;
     private stable var initialized: Bool = false;
-    private stable var sysTransactionLock: Bool = false; // Global transaction lock
+    private stable var sysTransactionLock: Bool = false; // transaction lock
+    private stable var sysGlobalLock: Bool = false; // global lock
     private stable var withdrawalFee: Nat = 300; // ppm. 10000 means 1%.  (Fee: 10 * tokenFee + withdrawalFee * Value / 1000000)
     private stable var pairPrincipal: Principal = initArgs.pair; // Trading pair canister-id. An ICDexMaker can be bound to only one trading pair.
     private stable var token0Principal: Principal = initArgs.token0;
     private stable var token0Symbol: Text = "";
     private stable var token0Std: ICDex.TokenStd = initArgs.token0Std;
-    private stable var token0Decimals: Nat8 = 0;
+    // private stable var token0Decimals: Nat8 = 0;
     private stable var token0Fee: Nat = 0;
     private stable var token0ICRC2: Bool = false;
     private stable var token1Principal: Principal = initArgs.token1;
@@ -984,6 +985,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Fetch ICDexMaker's balance in a trading pair: Updates the total pool balance and returns the available balance.
+    // Note: sysTransactionLock is required to be false.
     private func _fetchPoolBalance() : async* (available0: Amount, available1: Amount){ // sysTransactionLock
         if (sysTransactionLock){
             throw Error.reject("401: The system transaction is locked, please try again later.");
@@ -1227,6 +1229,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Refactored: Withdrawals from trading pair
+    // Note: sysTransactionLock is required to be false.
     private func _withdrawFromDex(_token0: Amount, _token1: Amount): async* (token0: Amount, token1: Amount){ // sysTransactionLock
         let pair: actor{
             withdraw2: shared (_value0: ?Amount, _value1: ?Amount, _sa: ?Sa) -> async (value0: Amount, value1: Amount, status: {#Completed; #Pending});
@@ -1320,8 +1323,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Refactored: Deposit to trading pair
+    // Note: Before calling it, sysTransactionLock is required to be false.
     private func _depositToDex(_accountId: AccountId, _token0: Amount, _token1: Amount, _updateGrid: Bool) : (Toid: Nat){ // sysTransactionLock
-        assert(not(sysTransactionLock));
+        assert(not(sysTransactionLock)); // This line of code is used to find bugs. normally, it is required to ensure that sysTransactionLock=false before calling it.
         sysTransactionLock := true;
         let saga = _getSaga();
         var ttidSize : Nat = 0;
@@ -1436,12 +1440,12 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 let token0_: DRC20.Self = actor(Principal.toText(token0Principal));
                 token0Symbol := await token0_.drc20_name();
                 token0Fee := await token0_.drc20_fee();
-                token0Decimals := await token0_.drc20_decimals();
+                // token0Decimals := await token0_.drc20_decimals();
             }else{
                 let token0_: ICRC1.Self = actor(Principal.toText(token0Principal));
                 token0Symbol := await token0_.icrc1_name();
                 token0Fee := await token0_.icrc1_fee();
-                token0Decimals := await token0_.icrc1_decimals();
+                // token0Decimals := await token0_.icrc1_decimals();
             };
             // token1
             if (token1Std == #drc20){
@@ -1535,16 +1539,19 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // A reconstruction function for remove() that gets the available balance of the pool.
+    // Note: sysTransactionLock is required to be false.
     private func _getAvailableBalances(_shares: Amount): async* (Amount, Amount, Bool, Bool){
         let saga = _getSaga();
         var available0InPool: Amount = 0;
         var available1InPool: Amount = 0;
+        if (sysTransactionLock){
+            throw Error.reject("401: The system transaction is locked, please try again later."); 
+        };
         try{
             let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
             available0InPool := v0;
             available1InPool := v1;
         }catch(e){
-            sysTransactionLock := false;
             throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
         };
         if (sysTransactionLock){
@@ -1558,12 +1565,14 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let ttid = _ictcUpdateGridOrder(#First, toid, #Stopped);
             await* _ictcSagaRun(toid, true);
             shouldRunGridOrder1 := true;
+            if (sysTransactionLock){
+                throw Error.reject("401: The system transaction is locked, please try again later."); 
+            };
             try{
                 let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
                 available0InPool := v0;
                 available1InPool := v1;
             }catch(e){
-                sysTransactionLock := false;
                 throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
             };
         };
@@ -1572,12 +1581,14 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let ttid = _ictcUpdateGridOrder(#Second, toid, #Stopped);
             await* _ictcSagaRun(toid, true);
             shouldRunGridOrder2 := true;
+            if (sysTransactionLock){
+                throw Error.reject("401: The system transaction is locked, please try again later."); 
+            };
             try{
                 let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
                 available0InPool := v0;
                 available1InPool := v1;
             }catch(e){
-                sysTransactionLock := false;
                 throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
             };
         };
@@ -1636,145 +1647,155 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (not(initialized)){
             ignore await* _init();
         };
-        let saga = _getSaga();
-        // check parameters
-        await* _checkParameters(isInitAdd, _account, _token0, _token1);
-        // deposit
-        var depositedToken0: Amount = 0;
-        var depositedToken1: Amount = 0;
-        // _putFallbacking(_account); // Prevents calling fallback() during execution.
-        try{
-            depositedToken0 := await* _deposit(#token0, _icrc1Account, _token0); // transfer token to pool
-            ignore _putEvent(#deposit({account=_icrc1Account; token0=_token0; token1=0}), ?_account);
-            depositedToken1 := await* _deposit(#token1, _icrc1Account, _token1); // transfer token to pool
-            ignore _putEvent(#deposit({account=_icrc1Account; token0=0; token1=_token1}), ?_account);
-            // _removeFallbacking(_account);
-        }catch(e){
-            isException := true;
-            // _removeFallbacking(_account);
-            exceptMessage := "412: Exception on deposit. ("# Error.message(e) #")";
-        };
-        // drc20/icrc2 approve
-        if (isInitAdd and depositedToken0 > token0Fee and depositedToken1 > token1Fee){
-            try{
-                await* _tokensApprove();
-                depositedToken0 -= token0Fee;
-                depositedToken1 -= token1Fee;
-            }catch(e){
-                isException := true;
-                exceptMessage := "400: An error occurred in token0.drc20_approve(). ("# Error.message(e) #")";
-            };
-        };
 
-        if (sysTransactionLock){
-            isException := true;
-            exceptMessage := "401: The system transaction is locked, please try again later. ";
+        if (sysGlobalLock){
+            throw Error.reject("418: Another transaction was not completed, please try again later."); 
         };
-        // get unit net value and set shares
-        var addLiquidityToken0: Amount = 0;
-        var addLiquidityToken1: Amount = 0;
-        var sharesTest: Nat = 0;
-        if (not(isException) and depositedToken0 > 0 and depositedToken1 > 0){
-            if (isInitAdd){
-                _updatePoolLocalBalance(?#add(depositedToken0), ?#add(depositedToken1));
-            };
+        sysGlobalLock := true;
+        try{
+            let saga = _getSaga();
+            // check parameters
+            await* _checkParameters(isInitAdd, _account, _token0, _token1);
+            // deposit
+            var depositedToken0: Amount = 0;
+            var depositedToken1: Amount = 0;
+            // _putFallbacking(_account); // Prevents calling fallback() during execution.
             try{
-                ignore await* _fetchPoolBalance(); // sysTransactionLock
+                depositedToken0 := await* _deposit(#token0, _icrc1Account, _token0); // transfer token to pool
+                ignore _putEvent(#deposit({account=_icrc1Account; token0=_token0; token1=0}), ?_account);
+                depositedToken1 := await* _deposit(#token1, _icrc1Account, _token1); // transfer token to pool
+                ignore _putEvent(#deposit({account=_icrc1Account; token0=0; token1=_token1}), ?_account);
+                // _removeFallbacking(_account);
             }catch(e){
-                sysTransactionLock := false;
                 isException := true;
-                exceptMessage := "413: Exception on fetching pool balance. ("# Error.message(e) #")";
+                // _removeFallbacking(_account);
+                exceptMessage := "412: Exception on deposit. ("# Error.message(e) #")";
             };
+            // drc20/icrc2 approve
+            if (isInitAdd and depositedToken0 > token0Fee and depositedToken1 > token1Fee){
+                try{
+                    await* _tokensApprove();
+                    depositedToken0 -= token0Fee;
+                    depositedToken1 -= token1Fee;
+                }catch(e){
+                    isException := true;
+                    exceptMessage := "400: An error occurred in token0.drc20_approve(). ("# Error.message(e) #")";
+                };
+            };
+
             if (sysTransactionLock){
                 isException := true;
-                exceptMessage := "401: The system transaction is locked, please try again later.  ";
+                exceptMessage := "401: The system transaction is locked, please try again later. ";
             };
-            if (not(isException)){
-                let unitNetValue = _getNAV(null, false);
+            // get unit net value and set shares
+            var addLiquidityToken0: Amount = 0;
+            var addLiquidityToken1: Amount = 0;
+            var sharesTest: Nat = 0;
+            if (not(isException) and depositedToken0 > 0 and depositedToken1 > 0){
                 if (isInitAdd){
-                    addLiquidityToken0 := depositedToken0;
-                    addLiquidityToken1 := depositedToken1;
-                    sharesTest := shareUnitSize * depositedToken0 / unitNetValue.token0;
-                    _updateAccountShares(_account, #add(sharesTest));
-                    _updatePoolShares(#add(sharesTest));
-                }else{
-                    // _updatePoolLocalBalance(?#add(depositedToken0), null);
-                    // _updatePoolLocalBalance(null, ?#add(depositedToken1));
-                    addLiquidityToken0 := depositedToken0;
-                    sharesTest := shareUnitSize * addLiquidityToken0 / unitNetValue.token0;
-                    addLiquidityToken1 := sharesTest * unitNetValue.token1 / shareUnitSize;
-                    if (addLiquidityToken1 > depositedToken1){
+                    _updatePoolLocalBalance(?#add(depositedToken0), ?#add(depositedToken1));
+                };
+                try{
+                    ignore await* _fetchPoolBalance(); // sysTransactionLock
+                }catch(e){
+                    isException := true;
+                    exceptMessage := "413: Exception on fetching pool balance. ("# Error.message(e) #")";
+                };
+                if (sysTransactionLock){
+                    isException := true;
+                    exceptMessage := "401: The system transaction is locked, please try again later.  ";
+                };
+                if (not(isException)){
+                    let unitNetValue = _getNAV(null, false);
+                    if (isInitAdd){
+                        addLiquidityToken0 := depositedToken0;
                         addLiquidityToken1 := depositedToken1;
-                        sharesTest := shareUnitSize * addLiquidityToken1 / unitNetValue.token1;
-                        addLiquidityToken0 := sharesTest * unitNetValue.token0 / shareUnitSize;
+                        sharesTest := shareUnitSize * depositedToken0 / unitNetValue.token0;
+                        _updateAccountShares(_account, #add(sharesTest));
+                        _updatePoolShares(#add(sharesTest));
+                    }else{
+                        // _updatePoolLocalBalance(?#add(depositedToken0), null);
+                        // _updatePoolLocalBalance(null, ?#add(depositedToken1));
+                        addLiquidityToken0 := depositedToken0;
+                        sharesTest := shareUnitSize * addLiquidityToken0 / unitNetValue.token0;
+                        addLiquidityToken1 := sharesTest * unitNetValue.token1 / shareUnitSize;
+                        if (addLiquidityToken1 > depositedToken1){
+                            addLiquidityToken1 := depositedToken1;
+                            sharesTest := shareUnitSize * addLiquidityToken1 / unitNetValue.token1;
+                            addLiquidityToken0 := sharesTest * unitNetValue.token0 / shareUnitSize;
+                        };
+                        _updateAccountShares(_account, #add(sharesTest));
+                        _updatePoolShares(#add(sharesTest));
+                        _updateAccountVolUsed(_account, addLiquidityToken1);
                     };
-                    _updateAccountShares(_account, #add(sharesTest));
-                    _updatePoolShares(#add(sharesTest));
-                    _updateAccountVolUsed(_account, addLiquidityToken1);
                 };
             };
-        };
-        var toids: [Nat] = [];
-        // refund
-        if (depositedToken0 > addLiquidityToken0 + token0Fee){
-            let toid = saga.create("refund_0", #Forward, null, null);
-            let value = Nat.sub(depositedToken0, addLiquidityToken0);
-            if (isInitAdd){ 
-                _updatePoolLocalBalance(?#sub(value), null); 
-                _updatePoolBalance(?#sub(value), null); 
+            var toids: [Nat] = [];
+            // refund
+            if (depositedToken0 > addLiquidityToken0 + token0Fee){
+                let toid = saga.create("refund_0", #Forward, null, null);
+                let value = Nat.sub(depositedToken0, addLiquidityToken0);
+                if (isInitAdd){ 
+                    _updatePoolLocalBalance(?#sub(value), null); 
+                    _updatePoolBalance(?#sub(value), null); 
+                };
+                ignore _sendToken0(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [value], ?_account, null);
+                saga.close(toid);
+                toids := Tools.arrayAppend(toids, [toid]);
             };
-            ignore _sendToken0(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [value], ?_account, null);
-            saga.close(toid);
-            toids := Tools.arrayAppend(toids, [toid]);
-        };
-        if (depositedToken1 > addLiquidityToken1 + token1Fee){
-            let toid = saga.create("refund_1", #Forward, null, null);
-            let value = Nat.sub(depositedToken1, addLiquidityToken1);
-            if (isInitAdd){ 
-                _updatePoolLocalBalance(null, ?#sub(value)); 
-                _updatePoolBalance(null, ?#sub(value)); 
+            if (depositedToken1 > addLiquidityToken1 + token1Fee){
+                let toid = saga.create("refund_1", #Forward, null, null);
+                let value = Nat.sub(depositedToken1, addLiquidityToken1);
+                if (isInitAdd){ 
+                    _updatePoolLocalBalance(null, ?#sub(value)); 
+                    _updatePoolBalance(null, ?#sub(value)); 
+                };
+                ignore _sendToken1(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [value], ?_account, null);
+                saga.close(toid);
+                toids := Tools.arrayAppend(toids, [toid]);
             };
-            ignore _sendToken1(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [value], ?_account, null);
-            saga.close(toid);
-            toids := Tools.arrayAppend(toids, [toid]);
-        };
-        // GridOrder
-        var gridToid : Nat = 0;
-        if (addLiquidityToken0 > 0 and addLiquidityToken1 > 0){
-            if (not(isInitAdd)){
-                _updatePoolLocalBalance(?#add(addLiquidityToken0), ?#add(addLiquidityToken1));
-                _updatePoolBalance(?#add(addLiquidityToken0), ?#add(addLiquidityToken1));
-            };
-            let rebalanceThreshold0 = poolBalance.balance0 * rebalanceThresholdPct / 100;
-            let rebalanceThreshold1 = poolBalance.balance1 * rebalanceThresholdPct / 100;
-            if (poolLocalBalance.balance0 > rebalanceThreshold0 or poolLocalBalance.balance1 > rebalanceThreshold1){ 
-                let value0 = Nat.sub(Nat.max(poolLocalBalance.balance0, rebalanceThreshold0 / 2), rebalanceThreshold0 / 2); // fixed a bug
-                let value1 = Nat.sub(Nat.max(poolLocalBalance.balance1, rebalanceThreshold1 / 2), rebalanceThreshold1 / 2); // fixed a bug
-                if (not(gridOrderDeleted and gridOrderDeleted2) and (value0 > token0Fee * 2 or value1 > token1Fee * 2)){
-                    let toid = _depositToDex(_account, value0, value1, true); // sysTransactionLock
-                    gridToid := toid;
-                    toids := Tools.arrayAppend(toids, [toid]);
+            // GridOrder
+            var gridToid : Nat = 0;
+            if (addLiquidityToken0 > 0 and addLiquidityToken1 > 0){
+                if (not(isInitAdd)){
+                    _updatePoolLocalBalance(?#add(addLiquidityToken0), ?#add(addLiquidityToken1));
+                    _updatePoolBalance(?#add(addLiquidityToken0), ?#add(addLiquidityToken1));
+                };
+                let rebalanceThreshold0 = poolBalance.balance0 * rebalanceThresholdPct / 100;
+                let rebalanceThreshold1 = poolBalance.balance1 * rebalanceThresholdPct / 100;
+                if (poolLocalBalance.balance0 > rebalanceThreshold0 or poolLocalBalance.balance1 > rebalanceThreshold1){ 
+                    let value0 = Nat.sub(Nat.max(poolLocalBalance.balance0, rebalanceThreshold0 / 2), rebalanceThreshold0 / 2); // fixed a bug
+                    let value1 = Nat.sub(Nat.max(poolLocalBalance.balance1, rebalanceThreshold1 / 2), rebalanceThreshold1 / 2); // fixed a bug
+                    if (not(gridOrderDeleted and gridOrderDeleted2) and (value0 > token0Fee * 2 or value1 > token1Fee * 2)){
+                        let toid = _depositToDex(_account, value0, value1, true); // sysTransactionLock
+                        gridToid := toid;
+                        toids := Tools.arrayAppend(toids, [toid]);
+                    };
                 };
             };
-        };
-        // exception
-        if (isException){
+            // exception
+            if (isException){
+                await* _ictcSagaRun(gridToid, false);
+                ignore _putEvent(#add(#err({account = _icrc1Account; depositToken0 = depositedToken0; depositToken1 = depositedToken1; toids=toids})), ?_account);
+                throw Error.reject(exceptMessage);
+            };
+            // fallback
+            try{
+                let r = await* _fallback(_icrc1Account);
+                ignore _putEvent(#fallback({account = _icrc1Account; token0 = r.0; token1 = r.1; toids=r.2}), ?_account);
+            }catch(e){
+                // throw Error.reject(Error.message(e)); // debug
+            };
+            // run ictc
             await* _ictcSagaRun(gridToid, false);
-            ignore _putEvent(#add(#err({account = _icrc1Account; depositToken0 = depositedToken0; depositToken1 = depositedToken1; toids=toids})), ?_account);
-            throw Error.reject(exceptMessage);
-        };
-        // fallback
-        try{
-            let r = await* _fallback(_icrc1Account);
-            ignore _putEvent(#fallback({account = _icrc1Account; token0 = r.0; token1 = r.1; toids=r.2}), ?_account);
+            // return 
+            ignore _putEvent(#add(#ok({account = _icrc1Account; shares = sharesTest; token0 = addLiquidityToken0; token1 = addLiquidityToken1; toids=toids})), ?_account);
+            sysGlobalLock := false;
+            return sharesTest;
         }catch(e){
-            // throw Error.reject(Error.message(e)); // debug
+            sysGlobalLock := false;
+            throw Error.reject("419: An exception occurred in the operation: " # Error.message(e)); 
         };
-        // run ictc
-        await* _ictcSagaRun(gridToid, false);
-        // return 
-        ignore _putEvent(#add(#ok({account = _icrc1Account; shares = sharesTest; token0 = addLiquidityToken0; token1 = addLiquidityToken1; toids=toids})), ?_account);
-        return sharesTest;
     };
 
     /// Removes liquidity.  
@@ -1810,79 +1831,89 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (_shares < minShares){
             throw Error.reject("417: The share entered must not be less than the minimum share "# Float.toText(_natToFloat(minShares) / _natToFloat(10 ** Nat8.toNat(shareDecimals))) #"."); 
         };
-        let saga = _getSaga();
-        // Reconstruction:
-            // get available balance 
-            let (available0InPool, available1InPool, shouldRunGridOrder1, shouldRunGridOrder2) = await* _getAvailableBalances(_shares);
-            // shares to amounts (Fee: 10 * tokenFee + 0.01% * Value)
-            var values = _sharesToAmount(_shares);
-            if (values.value0 > available0InPool or values.value1 > available1InPool){
-                throw Error.reject("414: The number of shares entered is not available. Try to reduce the number of shares."); 
-            };
-            // withdraw from Dex
-            if (values.value0 > poolLocalBalance.balance0 or values.value1 > poolLocalBalance.balance1){
-                let value0 = if (values.value0 > token0Fee){ Nat.max(Nat.min(Nat.sub(values.value0, token0Fee), Nat.sub(poolBalance.balance0, poolLocalBalance.balance0)), poolBalance.balance0 * rebalanceThresholdPct / 2 / 100) }else{ 0 };
-                let value1 = if (values.value1 > token1Fee){ Nat.max(Nat.min(Nat.sub(values.value1, token1Fee), Nat.sub(poolBalance.balance1, poolLocalBalance.balance1)), poolBalance.balance1 * rebalanceThresholdPct / 2 / 100) }else{ 0 };
-                if (value0 > 0 or value1 > 0){
-                    let (v0, v1) = await* _withdrawFromDex(value0, value1); // sysTransactionLock
-                    try{
-                        let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
-                    }catch(e){
-                        sysTransactionLock := false;
-                        throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+
+        if (sysGlobalLock){
+            throw Error.reject("418: Another transaction was not completed, please try again later."); 
+        };
+        sysGlobalLock := true;
+        try{
+            let saga = _getSaga();
+            // Reconstruction:
+                // get available balance 
+                let (available0InPool, available1InPool, shouldRunGridOrder1, shouldRunGridOrder2) = await* _getAvailableBalances(_shares);
+                // shares to amounts (Fee: 10 * tokenFee + 0.01% * Value)
+                var values = _sharesToAmount(_shares);
+                if (values.value0 > available0InPool or values.value1 > available1InPool){
+                    throw Error.reject("414: The number of shares entered is not available. Try to reduce the number of shares."); 
+                };
+                // withdraw from Dex
+                if (values.value0 > poolLocalBalance.balance0 or values.value1 > poolLocalBalance.balance1){
+                    let value0 = if (values.value0 > token0Fee){ Nat.max(Nat.min(Nat.sub(values.value0, token0Fee), Nat.sub(poolBalance.balance0, poolLocalBalance.balance0)), poolBalance.balance0 * rebalanceThresholdPct / 2 / 100) }else{ 0 };
+                    let value1 = if (values.value1 > token1Fee){ Nat.max(Nat.min(Nat.sub(values.value1, token1Fee), Nat.sub(poolBalance.balance1, poolLocalBalance.balance1)), poolBalance.balance1 * rebalanceThresholdPct / 2 / 100) }else{ 0 };
+                    if (value0 > 0 or value1 > 0){
+                        let (v0, v1) = await* _withdrawFromDex(value0, value1); // sysTransactionLock
+                        try{
+                            let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
+                        }catch(e){
+                            throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
+                        };
                     };
                 };
+                // check again
+                if (sysTransactionLock){
+                    throw Error.reject("401: The system transaction is locked, please try again later."); 
+                };
+                values := _sharesToAmount(_shares);
+                if (values.value0 > 10 * token0Fee + values.value0 * withdrawalFee / 1000000){
+                    resValue0 := Nat.sub(values.value0, 10 * token0Fee + values.value0 * withdrawalFee / 1000000);
+                };
+                if (values.value1 > 10 * token1Fee + values.value1 * withdrawalFee / 1000000){
+                    resValue1 := Nat.sub(values.value1, 10 * token1Fee + values.value1 * withdrawalFee / 1000000);
+                };
+                if (resValue0 == 0 and resValue1 == 0){
+                    throw Error.reject("414: The number of shares entered is not available."); 
+                };
+            // End: reconstruction
+            sharesAvailable := _getAccountShares(_account).0;
+            // Remove liquidity
+            if ((resValue0 > 0 or resValue1 > 0) and _shares <= sharesAvailable){
+                // burn account's shares
+                _updateAccountShares(_account, #sub(_shares));
+                _updatePoolShares(#sub(_shares));
+                // ictc: transfer
+                _updatePoolLocalBalance(?#sub(resValue0 + token0Fee), ?#sub(resValue1 + token1Fee));
+                _updatePoolBalance(?#sub(resValue0 + token0Fee), ?#sub(resValue1 + token1Fee));
+                let toid = saga.create("remove_liquidity", #Forward, null, null); 
+                if (resValue0 > 0){
+                    let ttids = _sendToken0(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [resValue0 + token0Fee], ?_account, null);
+                };
+                if (resValue1 > 0){
+                    let ttids = _sendToken1(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [resValue1 + token1Fee], ?_account, null);
+                };
+                ignore _putEvent(#withdraw({account=_icrc1Account; token0=resValue0; token1=resValue1; toid=?toid}), ?_account);
+                // update grid order
+                if (not(gridOrderDeleted) and (shouldRunGridOrder1 or resValue0 > poolBalance.balance0 * resetGridThresholdPct / 100 or resValue1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
+                    let ttid2 = _ictcUpdateGridOrder(#First, toid, #Running);
+                    ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_account);
+                };
+                if (not(gridOrderDeleted2) and (shouldRunGridOrder2 or resValue0 > poolBalance.balance0 * resetGridThresholdPct / 100 or resValue1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
+                    let ttid2 = _ictcUpdateGridOrder(#Second, toid, #Running);
+                    ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_account);
+                };
+                saga.close(toid);
+                ignore _putEvent(#remove(#ok({account = _icrc1Account; shares = _shares; token0 = resValue0; token1 = resValue1; toid=?toid})), ?_account);
+                await* _ictcSagaRun(toid, true);
+            }else if (resValue0 > 0 or resValue1 > 0){
+                ignore _putEvent(#remove(#err({account = _icrc1Account; addPoolToken0 = resValue0; addPoolToken1 = resValue1; toid=null})), ?_account);
+                resValue0 := 0;
+                resValue1 := 0;
             };
-            // check again
-            if (sysTransactionLock){
-                throw Error.reject("401: The system transaction is locked, please try again later."); 
-            };
-            values := _sharesToAmount(_shares);
-            if (values.value0 > 10 * token0Fee + values.value0 * withdrawalFee / 1000000){
-                resValue0 := Nat.sub(values.value0, 10 * token0Fee + values.value0 * withdrawalFee / 1000000);
-            };
-            if (values.value1 > 10 * token1Fee + values.value1 * withdrawalFee / 1000000){
-                resValue1 := Nat.sub(values.value1, 10 * token1Fee + values.value1 * withdrawalFee / 1000000);
-            };
-            if (resValue0 == 0 and resValue1 == 0){
-                throw Error.reject("414: The number of shares entered is not available."); 
-            };
-        // End: reconstruction
-        sharesAvailable := _getAccountShares(_account).0;
-        // Remove liquidity
-        if ((resValue0 > 0 or resValue1 > 0) and _shares <= sharesAvailable){
-            // burn account's shares
-            _updateAccountShares(_account, #sub(_shares));
-            _updatePoolShares(#sub(_shares));
-            // ictc: transfer
-            _updatePoolLocalBalance(?#sub(resValue0 + token0Fee), ?#sub(resValue1 + token1Fee));
-            _updatePoolBalance(?#sub(resValue0 + token0Fee), ?#sub(resValue1 + token1Fee));
-            let toid = saga.create("remove_liquidity", #Forward, null, null); 
-            if (resValue0 > 0){
-                let ttids = _sendToken0(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [resValue0 + token0Fee], ?_account, null);
-            };
-            if (resValue1 > 0){
-                let ttids = _sendToken1(toid, Blob.fromArray(sa_zero), [], [_icrc1Account], [resValue1 + token1Fee], ?_account, null);
-            };
-            ignore _putEvent(#withdraw({account=_icrc1Account; token0=resValue0; token1=resValue1; toid=?toid}), ?_account);
-            // update grid order
-            if (not(gridOrderDeleted) and (shouldRunGridOrder1 or resValue0 > poolBalance.balance0 * resetGridThresholdPct / 100 or resValue1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
-                let ttid2 = _ictcUpdateGridOrder(#First, toid, #Running);
-                ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_account);
-            };
-            if (not(gridOrderDeleted2) and (shouldRunGridOrder2 or resValue0 > poolBalance.balance0 * resetGridThresholdPct / 100 or resValue1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
-                let ttid2 = _ictcUpdateGridOrder(#Second, toid, #Running);
-                ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_account);
-            };
-            saga.close(toid);
-            ignore _putEvent(#remove(#ok({account = _icrc1Account; shares = _shares; token0 = resValue0; token1 = resValue1; toid=?toid})), ?_account);
-            await* _ictcSagaRun(toid, true);
-        }else if (resValue0 > 0 or resValue1 > 0){
-            ignore _putEvent(#remove(#err({account = _icrc1Account; addPoolToken0 = resValue0; addPoolToken1 = resValue1; toid=null})), ?_account);
-            resValue0 := 0;
-            resValue1 := 0;
+            sysGlobalLock := false;
+            return (resValue0, resValue1);
+        }catch(e){
+            sysGlobalLock := false;
+            throw Error.reject("419: An exception occurred in the operation: " # Error.message(e)); 
         };
-        return (resValue0, resValue1);
     };
 
     /// Returns the LP's liquidity share and time-weighted value.
@@ -1922,6 +1953,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         paused: Bool;
         initialized: Bool;
         sysTransactionLock: Bool;
+        sysGlobalLock: ?Bool;
         visibility: {#Public; #Private};
         creator: AccountId;
         withdrawalFee: Float;
@@ -1947,6 +1979,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             paused = paused;
             initialized = initialized;
             sysTransactionLock = sysTransactionLock;
+            sysGlobalLock = ?sysGlobalLock;
             visibility = visibility;
             creator = creator;
             withdrawalFee = _natToFloat(withdrawalFee) / 1000000;
@@ -2066,17 +2099,29 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
 
     /// Lock or unlock system transaction lock. Operate with caution! 
     /// Only need to call this method to unlock if there is a deadlock situation.
-    public shared(msg) func transactionLock(_act: {#lock; #unlock}) : async Bool{
+    public shared(msg) func transactionLock(_sysTransactionLock: ?{#lock; #unlock}, _sysGlobalLock: ?{#lock; #unlock}) : async Bool{
         assert(_onlyOwner(msg.caller) and paused);
-        switch(_act){
-            case(#lock){
+        switch(_sysTransactionLock){
+            case(?#lock){
                 sysTransactionLock := true;
-                ignore _putEvent(#lock({message = ?"sys transaction lock"}), ?Tools.principalToAccountBlob(msg.caller, null));
+                ignore _putEvent(#lock({message = ?"system transaction lock"}), ?Tools.principalToAccountBlob(msg.caller, null));
             };
-            case(#unlock){
+            case(?#unlock){
                 sysTransactionLock := false;
-                ignore _putEvent(#unlock({message = ?"sys transaction unlock"}), ?Tools.principalToAccountBlob(msg.caller, null));
+                ignore _putEvent(#unlock({message = ?"system transaction unlock"}), ?Tools.principalToAccountBlob(msg.caller, null));
             };
+            case(_){};
+        };
+        switch(_sysGlobalLock){
+            case(?#lock){
+                sysGlobalLock := true;
+                ignore _putEvent(#lock({message = ?"system global lock"}), ?Tools.principalToAccountBlob(msg.caller, null));
+            };
+            case(?#unlock){
+                sysGlobalLock := false;
+                ignore _putEvent(#unlock({message = ?"system global unlock"}), ?Tools.principalToAccountBlob(msg.caller, null));
+            };
+            case(_){};
         };
         return true;
     };

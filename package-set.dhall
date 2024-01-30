@@ -132,7 +132,7 @@ let
     , { dependencies = [ "base", "sha224" ]
       , name = "icl"
       , repo = "https://github.com/iclighthouse/icl-vessel"
-      , version = "07bae186a523ed93d1d80b10f0829ba03a64868f"
+      , version = "bdcb8724a3b4051dd68febe4187601681d73d53b"
       }
     ] : List Package
 

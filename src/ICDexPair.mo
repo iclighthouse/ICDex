@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.49";
+    private let version_: Text = "0.12.51";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -3507,14 +3507,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         switch(_token){
             case(#token0){
-                assert(balance.token0.available >= _amount);
+                assert(balance.token0.available >= _amount); // There shouldn't be an exception here.
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = {locked = balance.token0.locked + _amount; available = Nat.sub(balance.token0.available, _amount) }; 
                     token1 = balance.token1;
                 }).0;
             };
             case(#token1){
-                assert(balance.token1.available >= _amount);
+                assert(balance.token1.available >= _amount); // There shouldn't be an exception here.
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = balance.token0;
                     token1 = {locked = balance.token1.locked + _amount; available = Nat.sub(balance.token1.available, _amount) }; 
@@ -3530,14 +3530,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         switch(_token){
             case(#token0){
-                assert(balance.token0.locked >= _amount);
+                assert(balance.token0.locked >= _amount); // There shouldn't be an exception here.
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = {locked = Nat.sub(balance.token0.locked, _amount); available = balance.token0.available + _amount }; 
                     token1 = balance.token1;
                 }).0;
             };
             case(#token1){
-                assert(balance.token1.locked >= _amount);
+                assert(balance.token1.locked >= _amount); // There shouldn't be an exception here.
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = balance.token0;
                     token1 = {locked = Nat.sub(balance.token1.locked, _amount); available = balance.token1.available + _amount }; 
@@ -3589,8 +3589,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         switch(_token, _amount){
             case(#token0, #locked(amount)){
                 if (amount == 0){ return balance; };
-                assert(icdex_poolBalance.token0 >= amount);
-                assert(balance.token0.locked >= amount);
+                assert(icdex_poolBalance.token0 >= amount); // There shouldn't be an exception here.
+                assert(balance.token0.locked >= amount); // There shouldn't be an exception here.
                 icdex_poolBalance := {token0 = Nat.sub(icdex_poolBalance.token0, amount); token1 = icdex_poolBalance.token1 };
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = {locked = Nat.sub(balance.token0.locked, amount); available = balance.token0.available }; 
@@ -3599,8 +3599,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(#token0, #available(amount)){
                 if (amount == 0){ return balance; };
-                assert(icdex_poolBalance.token0 >= amount);
-                assert(balance.token0.available >= amount);
+                assert(icdex_poolBalance.token0 >= amount); // There shouldn't be an exception here.
+                assert(balance.token0.available >= amount); // There shouldn't be an exception here.
                 icdex_poolBalance := {token0 = Nat.sub(icdex_poolBalance.token0, amount); token1 = icdex_poolBalance.token1 };
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = {locked = balance.token0.locked; available = Nat.sub(balance.token0.available, amount) }; 
@@ -3609,8 +3609,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(#token1, #locked(amount)){
                 if (amount == 0){ return balance; };
-                assert(icdex_poolBalance.token1 >= amount);
-                assert(balance.token1.locked >= amount);
+                assert(icdex_poolBalance.token1 >= amount); // There shouldn't be an exception here.
+                assert(balance.token1.locked >= amount); // There shouldn't be an exception here.
                 icdex_poolBalance := {token0 = icdex_poolBalance.token0; token1 = Nat.sub(icdex_poolBalance.token1, amount) };
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = balance.token0;
@@ -3619,8 +3619,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(#token1, #available(amount)){
                 if (amount == 0){ return balance; };
-                assert(icdex_poolBalance.token1 >= amount);
-                assert(balance.token1.available >= amount);
+                assert(icdex_poolBalance.token1 >= amount); // There shouldn't be an exception here.
+                assert(balance.token1.available >= amount); // There shouldn't be an exception here.
                 icdex_poolBalance := {token0 = icdex_poolBalance.token0; token1 = Nat.sub(icdex_poolBalance.token1, amount) };
                 icdex_keepingBalances := Trie.put(icdex_keepingBalances, keyb(_a), Blob.equal, {
                     token0 = balance.token0;
@@ -3779,7 +3779,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let balances = _getAccountBalance(account);
         var value0: Nat = Option.get(_value0, balances.token0.available);
         var value1: Nat = Option.get(_value1, balances.token1.available);
-        assert(value0 <= balances.token0.available and value1 <= balances.token1.available);
+        if(value0 > balances.token0.available or value1 > balances.token1.available){
+            return (0, 0 ,0);
+        };
         let saga = _getSaga();
         var toid : Nat = 0;
         var resValue0: Nat = 0;
@@ -5429,9 +5431,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
       Management section
     ============================== */
 
-    /// Synchronizing token0 and token1 transfer fees
+    /// Synchronizing token0 and token1 info.
     public shared(msg) func sync() : async (){
         assert(_onlyOwner(msg.caller));
+        await* _init();
         await* _getGas(true);
     };
 
@@ -5444,21 +5447,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     public shared(msg) func config(_config: DexConfig) : async Bool{
         assert(_onlyOwner(msg.caller));
         assert(_asyncMessageSize() < 300);
-        if (Option.isSome(_config.UNIT_SIZE) and Option.get(_config.UNIT_SIZE, 0) != setting.UNIT_SIZE){
-            icdex_lastPrice := { quantity = #Sell(0); price = 0 };
-            let saga = _getSaga();
-            for ((k,v) in Trie.iter(icdex_orders)){
-                let toid = saga.create("cancel", #Forward, ?k, null);
-                let ttids = _cancel(toid, k, ?OrderBook.side(v.orderPrice));
-                saga.close(toid);
-                if (ttids.size() == 0){
-                    ignore saga.doneEmpty(toid);
-                };
-            };
-            // drc205; 
-            await* _callDrc205Store(false, true);
-            // ictc
-            await* _ictcSagaRun(0, true);
+        if (Option.isSome(_config.UNIT_SIZE) and _config.UNIT_SIZE != ?setting.UNIT_SIZE){ // Changes of UNIT_SIZE are not permitted after trading has begun.
+            assert(Trie.size(icdex_orders) == 0);
         };
         setting := {
             UNIT_SIZE: Nat = Option.get(_config.UNIT_SIZE, setting.UNIT_SIZE);
