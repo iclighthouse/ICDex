@@ -984,6 +984,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Fetch ICDexMaker's balance in a trading pair: Updates the total pool balance and returns the available balance.
+    // Note: sysTransactionLock is required to be false.
     private func _fetchPoolBalance() : async* (available0: Amount, available1: Amount){ // sysTransactionLock
         if (sysTransactionLock){
             throw Error.reject("401: The system transaction is locked, please try again later.");
@@ -1227,6 +1228,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Refactored: Withdrawals from trading pair
+    // Note: sysTransactionLock is required to be false.
     private func _withdrawFromDex(_token0: Amount, _token1: Amount): async* (token0: Amount, token1: Amount){ // sysTransactionLock
         let pair: actor{
             withdraw2: shared (_value0: ?Amount, _value1: ?Amount, _sa: ?Sa) -> async (value0: Amount, value1: Amount, status: {#Completed; #Pending});
@@ -1320,6 +1322,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Refactored: Deposit to trading pair
+    // Note: Before calling it, sysTransactionLock is required to be false.
     private func _depositToDex(_accountId: AccountId, _token0: Amount, _token1: Amount, _updateGrid: Bool) : (Toid: Nat){ // sysTransactionLock
         assert(not(sysTransactionLock));
         sysTransactionLock := true;
@@ -1535,16 +1538,19 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // A reconstruction function for remove() that gets the available balance of the pool.
+    // Note: sysTransactionLock is required to be false.
     private func _getAvailableBalances(_shares: Amount): async* (Amount, Amount, Bool, Bool){
         let saga = _getSaga();
         var available0InPool: Amount = 0;
         var available1InPool: Amount = 0;
+        if (sysTransactionLock){
+            throw Error.reject("401: The system transaction is locked, please try again later."); 
+        };
         try{
             let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
             available0InPool := v0;
             available1InPool := v1;
         }catch(e){
-            sysTransactionLock := false;
             throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
         };
         if (sysTransactionLock){
@@ -1558,12 +1564,14 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let ttid = _ictcUpdateGridOrder(#First, toid, #Stopped);
             await* _ictcSagaRun(toid, true);
             shouldRunGridOrder1 := true;
+            if (sysTransactionLock){
+                throw Error.reject("401: The system transaction is locked, please try again later."); 
+            };
             try{
                 let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
                 available0InPool := v0;
                 available1InPool := v1;
             }catch(e){
-                sysTransactionLock := false;
                 throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
             };
         };
@@ -1572,12 +1580,14 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             let ttid = _ictcUpdateGridOrder(#Second, toid, #Stopped);
             await* _ictcSagaRun(toid, true);
             shouldRunGridOrder2 := true;
+            if (sysTransactionLock){
+                throw Error.reject("401: The system transaction is locked, please try again later."); 
+            };
             try{
                 let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
                 available0InPool := v0;
                 available1InPool := v1;
             }catch(e){
-                sysTransactionLock := false;
                 throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
             };
         };
@@ -1681,7 +1691,6 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             try{
                 ignore await* _fetchPoolBalance(); // sysTransactionLock
             }catch(e){
-                sysTransactionLock := false;
                 isException := true;
                 exceptMessage := "413: Exception on fetching pool balance. ("# Error.message(e) #")";
             };
@@ -1828,7 +1837,6 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                     try{
                         let (v0, v1) = await* _fetchPoolBalance(); // sysTransactionLock
                     }catch(e){
-                        sysTransactionLock := false;
                         throw Error.reject("413: Exception on fetching pool balance. ("# Error.message(e) #")"); 
                     };
                 };
