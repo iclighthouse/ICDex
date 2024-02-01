@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.51";
+    private let version_: Text = "0.12.52";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -1425,10 +1425,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     let remaining: OrderPrice = OrderBook.setQuantity(order.remaining, 0, ?0); 
                     _update(_txid, ?remaining, ?toid, null, ?{gas0=0; gas1=gas1}, ?{fee0=0; fee1=fee1}, null, ?(0, currencyAmount, toid));
                 };
+                if (_exchangeMode(account, ?order.nonce) == #TunnelMode){
+                    _dropSubAccount(toid, _txid);
+                };
             };
             case(_){};
         };
-        _dropSubAccount(toid, _txid);
         return ttids;
     };
 
@@ -4389,7 +4391,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                                 case(_){};
                             };
                         };
-                        icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, _soid, null, null, ?#set({ buy1 = buy1; sell1 = sell1 }));
+                        icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, _soid, null, null, ?#set({ buy1 = buy1; sell1 = sell1 }), null);
                     };
                     case(_){};
                 };
@@ -4534,10 +4536,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         _update(_txid, null, null, null, null, ?{fee0 = feeToken0; fee1 = feeToken1}, null, null);
                         switch(_side, sto.strategy){
                             case(#Buy, #GridOrder(grid)){
-                                icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, soid, null, null, ?#add({ buy1 = _quantity; sell1 = 0 }));
+                                icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, soid, null, null, ?#add({ buy1 = _quantity; sell1 = 0 }), null);
                             };
                             case(#Sell, #GridOrder(grid)){
-                                icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, soid, null, null, ?#add({ buy1 = 0; sell1 = _quantity }));
+                                icdex_stOrderRecords := STO.updateGridOrder(icdex_stOrderRecords, soid, null, null, ?#add({ buy1 = 0; sell1 = _quantity }), null);
                             };
                             case(_){};
                         };
@@ -4729,6 +4731,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         ppmFactor = ?ppmFactor; //*
                     };
                     level1Filled = null;
+                    filter = null;
                     gridPrices = {midPrice = null; buy = []; sell = [] };
                 }));
                 soid := icdex_soid;
@@ -4873,7 +4876,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                             amount = amount;
                             ppmFactor = ?ppmFactor;
                         },
-                        null, null);
+                        null, null, null);
                         soid := _soid;
                     };
                     case(#IcebergOrder(io), #IcebergOrder(arg)){
