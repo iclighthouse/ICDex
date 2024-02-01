@@ -224,6 +224,17 @@ The first liquidity must be added by the creator, requiring the amount of token0
 dfx canister --network ic call __ICDexMaker-canister-id__ add '(10_000_000_000: nat, 10_000_000_000: nat, null)'
 ```
 
+## Security items that need to be configured through proposals after launching on SNS
+
+- ICDexRouter.sys_config().  
+Where icDAO is to be configured as SNS governance canister-id and sysToken is to be configured as ICL ledger canister-id issued by SNS.
+
+- ICDexRouter.setControllers().
+Trading pairs (ICDexPair) listed before the launch of SNS may have controllers that contain the developer's principal and need to be rechecked and reset.
+
+- ICDexRouter.maker_setControllers().
+OAMMs (ICDexMaker) created before the launch of SNS may have controllers that contain the developer's principal and need to be rechecked and reset.
+
 ## Docs
 
 https://github.com/iclighthouse/ICDex/tree/main/docs
