@@ -61,6 +61,7 @@ module {
     public type STStrategy = STO.STStrategy;
     public type STStats = STO.STStats;
     public type STStatus = STO.STStatus;
+    public type PendingOrders = { buy: [(?Txid, Price, quantity: Nat)]; sell: [(?Txid, Price, quantity: Nat)] };
     // StopLossOrder
     public type StopLossOrder = STO.StopLossOrder; // stop-loss-order
     public type Condition = STO.Condition;
@@ -70,6 +71,12 @@ module {
     public type GridSetting = STO.GridSetting;
     public type GridPrices = STO.GridPrices;
     public type GridOrder = STO.GridOrder;
+    public type GridFilter = {
+        gridTop : Price;
+        buyingBlankLocked : [(gridTop: Price, upperLimit: Price)];
+        gridBottom : Price;
+        sellingBlankLocked: [(lowerLimit: Price, gridBottom: Price)];
+    };
     // IcebergOrder
     public type IcebergOrderSetting = STO.IcebergOrderSetting;
     public type IcebergOrder = STO.IcebergOrder;
@@ -422,19 +429,8 @@ module {
     public func isPendingOrder(_data: STOrderRecords, _soid: Soid, _side: {#Buy; #Sell}, _price: Price) : (Bool, ?Txid){
         switch(get(_data, _soid)){
             case(?(sto)){
-                // var hSpread: Nat = 1;
-                // switch(sto.strategy){
-                //     case(#GridOrder(grid)){
-                //         hSpread := getSpread(#upward, grid.setting.spread, _price) / 2;
-                //     };
-                // };
                 if (_side == #Buy){
                     for((optTxid, price, quantity) in sto.pendingOrders.buy.vals()){
-                        // let valueMin = Nat.sub(Nat.max(price,hSpread), hSpread);
-                        // let valueMax = price + hSpread;
-                        // if (_price >= valueMin and _price <= valueMax){
-                        //     return (true, optTxid);
-                        // };
                         if (price == _price){
                             return (true, optTxid);
                         };
@@ -442,11 +438,6 @@ module {
                 };
                 if (_side == #Sell){
                     for((optTxid, price, quantity) in sto.pendingOrders.sell.vals()){
-                        // let valueMin = Nat.sub(Nat.max(price,hSpread), hSpread);
-                        // let valueMax = price + hSpread;
-                        // if (_price >= valueMin and _price <= valueMax){
-                        //     return (true, optTxid);
-                        // };
                         if (price == _price){
                             return (true, optTxid);
                         };
@@ -487,17 +478,100 @@ module {
     /// GridOrder: Determines whether a grid price exists within the current active grid price range.
     public func isExistingPrice(/*_prices: [Price],*/ _price: Price, _pendingOrders: [(?Txid, Price, Nat)], _spreadSetting: STO.GridOrderSetting) : Bool{
         // update-231226: fix a issue that will be over-ordered under special circumstances. Solution: Modified filtering policy.
-        // if (_prices.size() > 0){
             let hSpread = getSpread(#upward, _spreadSetting.spread, _price) / 2;
-            // let vFirst = Nat.max(_prices[0], hSpread); // > 0
-            // let vLast = Nat.max(_prices[Nat.sub(_prices.size(),1)], hSpread); // > 0
-            // let min = Nat.sub(Nat.min(vFirst, vLast), hSpread);
-            // let max = Nat.max(vFirst, vLast) + hSpread;
             return Option.isSome(Array.find(_pendingOrders, func (t: (?Txid, Price, Nat)): Bool{
                 _price >= Nat.sub(Nat.max(t.1, hSpread/2), hSpread/2) and _price <= t.1 + hSpread/2;
             }));
-        // };
-        // return false;
+    };
+
+    /// GridOrder: Prices filter
+    private func pricesFilter(_prices: GridPrices, _filter: ?GridFilter, _pendings: PendingOrders, _topLimitPrice: Price, _bottomLimitPrice: Price) : 
+    (GridPrices, ?GridFilter){
+        var gridTop: Price = 0;
+        var buyingBlankLocked : [(gridTop: Price, upperLimit: Price)] = [];
+        var gridBottom: Price = 0;
+        var sellingBlankLocked : [(lowerLimit: Price, gridBottom: Price)] = [];
+        switch(_filter){
+            case(?v){ 
+                gridTop := v.gridTop; 
+                buyingBlankLocked := v.buyingBlankLocked; 
+                gridBottom := v.gridBottom; 
+                sellingBlankLocked := v.sellingBlankLocked; 
+            };
+            case(_){};
+        };
+        let midPrice = Option.get(_prices.midPrice, 0);
+        if (buyingBlankLocked.size() > 0 and midPrice > 0){
+            var temp = buyingBlankLocked;
+            buyingBlankLocked := [];
+            for ((blankStart, upperLimit) in temp.vals()){
+                if (blankStart < Nat.min(midPrice, upperLimit)){
+                    buyingBlankLocked := Tools.arrayAppend(buyingBlankLocked, [(blankStart, Nat.min(midPrice, upperLimit))]);
+                };
+            };
+        };
+        if (sellingBlankLocked.size() > 0 and midPrice > 0){
+            var temp = sellingBlankLocked;
+            sellingBlankLocked := [];
+            for ((lowerLimit, blankStart) in temp.vals()){
+                if (blankStart > Nat.max(midPrice, lowerLimit)){
+                    sellingBlankLocked := Tools.arrayAppend(sellingBlankLocked, [(Nat.max(midPrice, lowerLimit), blankStart)]);
+                };
+            };
+        };
+        if (_prices.buy.size() > 0 and gridTop > 0 and _prices.buy[0] > gridTop){
+            let upperLimit = (if (midPrice > 0){ midPrice }else{ _prices.buy[0] });
+            buyingBlankLocked := Tools.arrayAppend(buyingBlankLocked, [(gridTop, upperLimit)]);
+        };
+        if (_prices.sell.size() > 0 and gridBottom > 0 and _prices.sell[0] < gridBottom){
+            let lowerLimit = (if (midPrice > 0){ midPrice }else{ _prices.sell[0] });
+            sellingBlankLocked := Tools.arrayAppend(sellingBlankLocked, [(lowerLimit, gridBottom)]);
+        };
+        var newBuyPrices: [Price] = [];
+        var newSellPrices: [Price] = [];
+        for (price in _prices.buy.vals()){
+            if (Option.isNull(Array.find(buyingBlankLocked, func (t: (Price, Price)): Bool{ price > t.0 and price < t.1 }))){
+                newBuyPrices := Tools.arrayAppend(newBuyPrices, [price]);
+            };
+        };
+        for (price in _prices.sell.vals()){
+            if (Option.isNull(Array.find(sellingBlankLocked, func (t: (Price, Price)): Bool{ price > t.0 and price < t.1 }))){
+                newSellPrices := Tools.arrayAppend(newSellPrices, [price]);
+            };
+        };
+        let prices: GridPrices = { buy = newBuyPrices; sell = newSellPrices; midPrice = _prices.midPrice };
+        if (prices.sell.size() > 0){
+            gridTop := 0;
+        };
+        for (price in prices.sell.vals()){
+            gridTop := Nat.max(gridTop, price); 
+        };
+        if (prices.buy.size() > 0){
+            gridBottom := 0;
+        };
+        for (price in prices.buy.vals()){
+            if (gridBottom == 0){
+                gridBottom := price;
+            }else{
+                gridBottom := Nat.min(gridBottom, price); 
+            };
+        };
+        for ((optTxid, price, quantity) in _pendings.sell.vals()){
+            if (price < _topLimitPrice or _topLimitPrice == 0){
+                gridTop := Nat.max(gridTop, price); // new gridTop
+            };
+        };
+        for ((optTxid, price, quantity) in _pendings.buy.vals()){
+            if (price > _bottomLimitPrice){
+                gridBottom := Nat.min(gridBottom, price); // new gridBottom
+            };
+        };
+        return (prices, ?{ 
+            gridTop = gridTop; 
+            buyingBlankLocked = buyingBlankLocked; 
+            gridBottom = gridBottom; 
+            sellingBlankLocked = sellingBlankLocked; 
+        });
     };
     
     /// Returns the number of pro-orders for a trader.
@@ -656,7 +730,8 @@ module {
     };
 
     /// GridOrder: Updates a pro-order (GridOrder) strategy.
-    public func updateGridOrder(_data: STOrderRecords, _soid: Soid, _setting: ?GridSetting, _gridPrices: ?GridPrices, _level1Filled: ?{#set: {buy1: Amount; sell1: Amount}; #add: {buy1: Amount; sell1: Amount}}) : STOrderRecords{
+    public func updateGridOrder(_data: STOrderRecords, _soid: Soid, _setting: ?GridSetting, _gridPrices: ?GridPrices, 
+    _level1Filled: ?{#set: {buy1: Amount; sell1: Amount}; #add: {buy1: Amount; sell1: Amount}}, _filter: ?GridFilter) : STOrderRecords{
         var data = _data;
         switch(get(data, _soid)){
             case(?(po)){
@@ -679,6 +754,7 @@ module {
                         strategy := #GridOrder({
                             setting = Option.get(_setting, go.setting);
                             level1Filled = level1Filled;
+                            filter = (switch(_filter){ case(?filter){ _filter }; case(_){ go.filter }});
                             gridPrices = Option.get(_gridPrices, go.gridPrices);
                         });
                     };
@@ -714,6 +790,7 @@ module {
                         strategy := #GridOrder({
                             setting = grid.setting;
                             level1Filled = grid.level1Filled;
+                            filter = grid.filter;
                             gridPrices = {midPrice = grid.gridPrices.midPrice; buy = []; sell = [] };
                         });
                     };
@@ -1102,15 +1179,17 @@ module {
                     case(?v){ level1Filled := v; };
                     case(_){};
                 };
-                let prices = getGridPrices(sto, price);
+                var prices = getGridPrices(sto, price);
                 var insufficientBalance : Bool = false;
                 if (prices.midPrice != grid.gridPrices.midPrice){
                     level1Filled := { buy1 = 0; sell1 = 0 };
                 };
                 // cancel
+                var bottomLimitPrice: Price = 0;
                 if (prices.buy.size() > 0){
                     let invalidOrders = getInvalidOrders(sto.pendingOrders.buy, #Buy, grid.setting, prices.buy[Nat.sub(prices.buy.size(),1)]);
                     for ((optTxid, price, quantity) in invalidOrders.vals()){
+                        bottomLimitPrice := Nat.max(bottomLimitPrice, price);
                         switch(optTxid){
                             case(?txid){
                                 // ignore _cancelOrder(txid, ?#Buy);
@@ -1123,9 +1202,11 @@ module {
                         };
                     };
                 };
+                var topLimitPrice: Price = 0;
                 if (prices.sell.size() > 0){
                     let invalidOrders = getInvalidOrders(sto.pendingOrders.sell, #Sell, grid.setting, prices.sell[Nat.sub(prices.sell.size(),1)]);
                     for ((optTxid, price, quantity) in invalidOrders.vals()){
+                        topLimitPrice := (if (topLimitPrice == 0){ price }else{ Nat.min(topLimitPrice, price) });
                         switch(optTxid){
                             case(?txid){
                                 // ignore _cancelOrder(txid, ?#Sell);
@@ -1138,6 +1219,9 @@ module {
                         };
                     };
                 };
+                // filter
+                let (newPrices, newFilter) = pricesFilter(prices, grid.filter, sto.pendingOrders, topLimitPrice, bottomLimitPrice);
+                prices := newPrices;
                 // pre-order
                 var toBeLockedValue0: Nat = 0;
                 var tempTotalBalance0_sell: Nat = balances.token0.available + balances.token0.locked;
@@ -1201,7 +1285,7 @@ module {
                     buyCount += 1;
                 };
                 // update data
-                data := updateGridOrder(data, _soid, null, ?prices, ?#set(level1Filled)); // 240108: Solve the issue of not updating `Prices` on boundaries.
+                data := updateGridOrder(data, _soid, null, ?prices, ?#set(level1Filled), newFilter); // 240108: Solve the issue of not updating `Prices` on boundaries.
                 if (res.size() > 0){
                     data := updateTriggerTime(data, _soid);
                 }else if (insufficientBalance and _now() > sto.triggerTime + 24 * 3600){
