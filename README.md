@@ -64,8 +64,8 @@ dfx build --network ic ICDexRouter
 cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 3867cdc4194b4ca308ddd093e8d5924e596995cb8a26623ed59b9b49d38c8a12
-- Version: 0.12.27
+- Module hash: 54e844bf5a29c8adc8b41c5c96c26a07fd1d99c10ae7f3bf91ebbd61dfce7fe5
+- Version: 0.12.28
 - Build: {
     "args": "--compacting-gc"
 }
@@ -94,8 +94,8 @@ dfx build --network ic ICDexMaker
 cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm wasms/
 ```
 - Code: "src/ICDexMaker.mo"
-- Module hash: 44ea65c7899c5dd401b9f29bd7965aa1d8765b22212059243b6f1c6327801feb
-- Version: 0.5.8
+- Module hash: 96ce5cf5d8ad4a5f7a631879384e1136c801999a2e5169738234ec1f14113fd1
+- Version: 0.5.9
 - Build: {
     "args": "--compacting-gc", 
     "optimize": "size"
@@ -226,14 +226,58 @@ dfx canister --network ic call __ICDexMaker-canister-id__ add '(10_000_000_000: 
 
 ## Security items that need to be configured through proposals after launching on SNS
 
+### System configurations
+
 - ICDexRouter.sys_config().  
 Where icDAO is to be configured as SNS governance canister-id and sysToken is to be configured as ICL ledger canister-id issued by SNS.
 
-- ICDexRouter.setControllers().
-Trading pairs (ICDexPair) listed before the launch of SNS may have controllers that contain the developer's principal and need to be rechecked and reset.
+### Controllers (Owners) of canisters
 
-- ICDexRouter.maker_setControllers().
+(Note: Impact on security of funds.)
+
+ICDexRouter is controlled by SNS governance canister, the list of ICDexPair and ICDexMaker can be queried by getPairs(), maker_getPublicMakers(), maker_getPrivateMakers() of ICDexRouter.
+
+- Controllers of ICDexPair
+Trading pairs (ICDexPair) listed before the launch of SNS may have controllers that contain the developer's principal and need to be rechecked and reset.
+    - ICDexRouter.setControllers().
+
+- Controllers of ICDexMaker
 OAMMs (ICDexMaker) created before the launch of SNS may have controllers that contain the developer's principal and need to be rechecked and reset.
+    - ICDexRouter.maker_setControllers().
+
+### ICTC Admins
+
+(Note: Impact on security of funds.)
+
+By default, ICTC Admins are not added. ictc Admins are authorized to provide fast manual compensation for failed ICTC transaction orders, and it is generally not recommended to authorize them in this way. The ICTC related methods are invoked directly through DAO governance under normal circumstances.
+
+- Query ICTC Admins
+    - ICDexPair.ictc_getAdmins()
+    - ICDexMaker.ictc_getAdmins()
+- Add/remove ICTC Admins (through DAO proposal)
+    - ICDexPair.ictc_addAdmin()
+    - ICDexMaker.ictc_addAdmin()
+    - ICDexPair.ictc_removeAdmin()
+    - ICDexMaker.ictc_removeAdmin()
+
+### Creators of ICDexPair and ICDexMaker
+
+Creator has no special permissions, except the following.
+- Creator of public ICDexMaker: He needs to add the first liquidity to ICDexMaker to activate it.
+- Creator of private ICDexMaker: He has access to his private ICDexMaker for upgrades and such.
+
+### Funder of IDO
+
+For IDO-enabled trading pairs, set up a project-side Funder account via the DAO proposal, who can configure IDO parameters and place orders during the validity period. This permission will be invalidated once the trading pair has officially started trading.
+- Query: ICDexPair.IDO_getConfig()
+- Set (through DAO proposal): ICDexRouter.pair_IDOSetFunder()
+
+### Funder of AuctionMode
+
+When a trading pair is set up in Auction mode via the DAO proposal, a Funder is specified and only he can place sell orders, other users can only place buy orders.
+- Query: ICDexPair.getAuctionMode()
+- Set (through DAO proposal): ICDexRouter.pair_setAuctionMode()
+
 
 ## Docs
 
