@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.8";
+    private let version_: Text = "0.5.9";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1325,51 +1325,48 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     // Refactored: Deposit to trading pair
     // Note: Before calling it, sysTransactionLock is required to be false.
     private func _depositToDex(_accountId: AccountId, _token0: Amount, _token1: Amount, _updateGrid: Bool) : (Toid: Nat){ // sysTransactionLock
-        assert(not(sysTransactionLock)); // This line of code is used to find bugs. normally, it is required to ensure that sysTransactionLock=false before calling it.
-        sysTransactionLock := true;
-        let saga = _getSaga();
-        var ttidSize : Nat = 0;
-        let toid = saga.create("dex_deposit", #Backward, null, ?(func (_toName: Text, _toid: SagaTM.Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
-            if (_status == #Done or _status == #Recovered){
+        if (not(sysTransactionLock)){ // If sysTransactionLock is true, _depositToDex() is not executed and there are no asset security issues.
+            sysTransactionLock := true;
+            let saga = _getSaga();
+            var ttidSize : Nat = 0;
+            let toid = saga.create("dex_deposit", #Backward, null, ?(func (_toName: Text, _toid: SagaTM.Toid, _status: SagaTM.OrderStatus, _data: ?Blob) : async (){
+                if (_status == #Done or _status == #Recovered){
+                    sysTransactionLock := false;
+                };
+            }));
+            // deposit tasks
+            ttidSize := _ictcDepositToDex(toid, ?_accountId, _token0, _token1);
+            // grid order task
+            if (_updateGrid){
+                if (Option.isNull(gridSoid) and not(gridOrderDeleted)){
+                    let ttid2 = _ictcCreateGridOrder(#First, toid);
+                    ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
+                    ttidSize += 1;
+                }else if (not(gridOrderDeleted) and (_token0 > poolBalance.balance0 * resetGridThresholdPct / 100 or _token1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
+                    let ttid3 = _ictcUpdateGridOrder(#First, toid, #Running);
+                    ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_accountId);
+                    ttidSize += 1;
+                };
+                if (Option.isNull(gridSoid2) and not(gridOrderDeleted2)){
+                    let ttid4 = _ictcCreateGridOrder(#Second, toid);
+                    ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
+                    ttidSize += 1;
+                }else if (not(gridOrderDeleted2) and (_token0 > poolBalance.balance0 * resetGridThresholdPct / 100 or _token1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
+                    let ttid5 = _ictcUpdateGridOrder(#Second, toid, #Running);
+                    ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_accountId);
+                    ttidSize += 1;
+                };
+            };
+            saga.close(toid);
+            if (ttidSize == 0){
                 sysTransactionLock := false;
+                ignore saga.doneEmpty(toid);
             };
-        }));
-        // deposit tasks
-        ttidSize := _ictcDepositToDex(toid, ?_accountId, _token0, _token1);
-        // grid order task
-        if (_updateGrid){
-            if (Option.isNull(gridSoid) and not(gridOrderDeleted)){
-                let ttid2 = _ictcCreateGridOrder(#First, toid);
-                ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
-                ttidSize += 1;
-            }else if (not(gridOrderDeleted) and (_token0 > poolBalance.balance0 * resetGridThresholdPct / 100 or _token1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
-                let ttid3 = _ictcUpdateGridOrder(#First, toid, #Running);
-                ignore _putEvent(#updateGridOrder({soid=gridSoid; toid=?toid}), ?_accountId);
-                ttidSize += 1;
-            };
-            if (Option.isNull(gridSoid2) and not(gridOrderDeleted2)){
-                let ttid4 = _ictcCreateGridOrder(#Second, toid);
-                ignore _putEvent(#createGridOrder({toid=?toid}), ?_accountId);
-                ttidSize += 1;
-            }else if (not(gridOrderDeleted2) and (_token0 > poolBalance.balance0 * resetGridThresholdPct / 100 or _token1 > poolBalance.balance1 * resetGridThresholdPct / 100)){
-                let ttid5 = _ictcUpdateGridOrder(#Second, toid, #Running);
-                ignore _putEvent(#updateGridOrder({soid=gridSoid2; toid=?toid}), ?_accountId);
-                ttidSize += 1;
-            };
+            return toid;
+        }else{
+            return 0;
         };
-        saga.close(toid);
-        if (ttidSize == 0){
-            sysTransactionLock := false;
-            ignore saga.doneEmpty(toid);
-        };
-        return toid;
     };
-
-    // Pushes a transaction to ICTC to update the grid order, returning the transaction id.
-    // update-231217: Change transaction #Forward to #Backward to enable automatic compensation on exceptions so that ICDexMaker is not suspended.
-    // private func _updateGridOrder(_accountId: AccountId, _token0: Amount, _token1: Amount) : SagaTM.Toid{ // sysTransactionLock
-    //     return _depositToDex(_accountId, _token0, _token1, true);
-    // };
 
     // Updates the amount of liquidity an account has utilized.
     private func _updateAccountVolUsed(_accountId: AccountId, _addVol: Amount): (){ // Amount of token1
@@ -1640,8 +1637,6 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         let _account = Tools.principalToAccountBlob(msg.caller, _sa);
         let _icrc1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa)};
         assert(visibility == #Public or _onlyCreator(_account));
-        let isInitAdd: Bool = not(initialized) or poolShares == 0;
-        assert(not(isInitAdd) or _onlyCreator(_account)); // Can only be initialized by the creator
         var isException: Bool = false;
         var exceptMessage: Text = "";
         if (not(initialized)){
@@ -1653,6 +1648,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         };
         sysGlobalLock := true;
         try{
+            let isInitAdd: Bool = not(initialized) or poolShares == 0;
+            assert(not(isInitAdd) or _onlyCreator(_account)); // Can only be initialized by the creator
             let saga = _getSaga();
             // check parameters
             await* _checkParameters(isInitAdd, _account, _token0, _token1);

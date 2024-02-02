@@ -197,7 +197,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.27";
+    private let version_: Text = "0.12.28";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -385,25 +385,24 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 decimals = 8;
                 std = #icp;
             };
-        }else{
+        };
+        try{
+            let token: DRC20.Self = actor(Principal.toText(_canisterId));
+            return {
+                symbol = await token.drc20_symbol();
+                decimals = await token.drc20_decimals();
+                std = #drc20;
+            };
+        } catch(e){
             try{
-                let token: DRC20.Self = actor(Principal.toText(_canisterId));
+                let token: ICRC1.Self = actor(Principal.toText(_canisterId));
                 return {
-                    symbol = await token.drc20_symbol();
-                    decimals = await token.drc20_decimals();
-                    std = #drc20;
+                    symbol = await token.icrc1_symbol();
+                    decimals = await token.icrc1_decimals();
+                    std = #icrc1;
                 };
             } catch(e){
-                try{
-                    let token: ICRC1.Self = actor(Principal.toText(_canisterId));
-                    return {
-                        symbol = await token.icrc1_symbol();
-                        decimals = await token.icrc1_decimals();
-                        std = #icrc1;
-                    };
-                } catch(e){
-                    throw Error.reject("Error: "# Error.message(e)); 
-                };
+                throw Error.reject("Error: "# Error.message(e)); 
             };
         };
     };
