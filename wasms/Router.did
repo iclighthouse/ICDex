@@ -77,6 +77,10 @@ type Event = variant {
     act : variant { lock; unlock };
     maker : principal;
   };
+  makerGlobalLock : record {
+    act : variant { lock; unlock };
+    maker : principal;
+  };
   timerStart : record { intervalSeconds : nat };
   pairChangeOwner : record { pair : principal; newOwner : principal };
   nftSetVipMaker : record {
@@ -376,7 +380,7 @@ type ICDexRouter = service {
   maker_resetLocalBalance : (principal) -> (PoolBalance);
   maker_setControllers : (principal, principal, vec principal) -> (bool);
   maker_setPause : (principal, bool) -> (bool);
-  maker_transactionLock : (principal, variant { lock; unlock }) -> (bool);
+  maker_transactionLock : (principal, opt variant { lock; unlock }, opt variant { lock; unlock }) -> (bool);
   maker_update : (principal, principal, opt text, text) -> (opt principal);
   maker_updateAll : (text, bool) -> (
       record {
@@ -476,7 +480,7 @@ type ICDexRouter = service {
   sys_order : (principal, TokenStd, nat, principal, OrderPrice) -> (
       TradingResult,
     );
-  sys_withdraw : (principal, TokenStd, principal, nat) -> ();
+  sys_withdraw : (principal, TokenStd, record{owner: principal; subaccount: opt blob}, nat) -> ();
   timerStart : (nat) -> ();
   timerStop : () -> ();
   update : (principal, text) -> (opt PairCanister);

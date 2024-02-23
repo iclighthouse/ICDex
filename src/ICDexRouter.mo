@@ -197,7 +197,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.28";
+    private let version_: Text = "0.12.29";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -558,7 +558,76 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         };
     };
 
-    /// Publicly create a trading pair by paying creatingPairFee.
+    private func _checkTokenImplTxnApi(_token: Principal) : async* Bool{
+        if (_token == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")){
+            return true;
+        };
+        type Account = { owner : Principal; subaccount : ?Blob };
+        type Transaction = {
+            burn : ?{
+                from : Account;
+                memo : ?Blob;
+                created_at_time : ?Nat64;
+                amount : Nat;
+                spender : ?Account;
+            };
+            kind : Text;
+            mint : ?{
+                to : Account;
+                memo : ?Blob;
+                created_at_time : ?Nat64;
+                amount : Nat;
+            };
+            approve : ?{
+                fee : ?Nat;
+                from : Account;
+                memo : ?Blob;
+                created_at_time : ?Nat64;
+                amount : Nat;
+                expected_allowance : ?Nat;
+                expires_at : ?Nat64;
+                spender : Account;
+            };
+            timestamp : Nat64;
+            transfer : ?{
+                to : Account;
+                fee : ?Nat;
+                from : Account;
+                memo : ?Blob;
+                created_at_time : ?Nat64;
+                amount : Nat;
+                spender : ?Account;
+            };
+        };
+        type GetTransactionsResponse = {
+            first_index : Nat;
+            log_length : Nat;
+            transactions : [Transaction];
+            archived_transactions : [{
+                callback : shared query { start : Nat; length : Nat } -> async {
+                    transactions : [Transaction];
+                };
+                start : Nat;
+                length : Nat;
+            }];
+        };
+        let icrc3: actor{ get_transactions : shared query { start : Nat; length : Nat } -> async GetTransactionsResponse } = actor(Principal.toText(_token));
+        let drc202: actor{ drc202_canisterId : shared query () -> async Principal } = actor(Principal.toText(_token));
+        var tokenImplTxnApi: Bool = false;
+        try{
+            let res = await icrc3.get_transactions({ start = 0; length = 1 });
+            tokenImplTxnApi := true;
+        }catch(e){
+            try{
+                let res = await drc202.drc202_canisterId();
+                tokenImplTxnApi := true;
+            }catch(e){};
+        };
+        return tokenImplTxnApi;
+    };
+
+    /// Publicly create a trading pair by paying creatingPairFee.  
+    /// Requires that the token should implement the DRC202 standard or implements the SNS ledger method `get_transactions : shared query GetBlocksRequest -> async GetTransactionsResponse`.
     ///
     /// Arguments:
     /// - token0: Principal. Base token canister-id.
@@ -569,7 +638,10 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// - canister: PairCanister. Trading pair canister-id.
     public shared(msg) func pubCreate(_token0: Principal, _token1: Principal, _openingTimeNS: Time.Time): async (canister: PairCanister){
         assert(not(_isExistedByToken(_token0, _token1)));
-        assert(_openingTimeNS > Time.now());
+        // assert(_openingTimeNS > Time.now());
+        if (not(await* _checkTokenImplTxnApi(_token0)) or not(await* _checkTokenImplTxnApi(_token1))){
+            throw Error.reject("Error: Requires that the token should implement the DRC202 standard or implements the SNS ledger method `get_transactions : shared query GetBlocksRequest -> async GetTransactionsResponse`."); 
+        };
         let token: ICRC1.Self = actor(Principal.toText(sysToken));
         let arg: ICRC1.TransferFromArgs = {
             spender_subaccount = null; // *
@@ -777,7 +849,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// - canister: PairCanister. Trading pair canister-id.
     public shared(msg) func create(_token0: Principal, _token1: Principal, _openingTimeNS: Time.Time, _unitSize: ?Nat64, _initCycles: ?Nat): async (canister: PairCanister){
         assert(_onlyOwner(msg.caller));
-        assert(_openingTimeNS > Time.now());
+        // assert(_openingTimeNS > Time.now());
         let canisterId = await* _create(_token0, _token1, _unitSize, _initCycles);
         let pairActor: ICDexPrivate.Self = actor(Principal.toText(canisterId));
         ignore await pairActor.setPause(false, ?_openingTimeNS);
@@ -1502,11 +1574,11 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
 
     /// Withdraw the token to the specified account.  
     /// Withdrawals can only be made to a DAO address, or to a blackhole address (destruction), not to a private address.
-    public shared(msg) func sys_withdraw(_token: Principal, _tokenStd: TokenStd, _to: Principal, _value: Nat) : async (){ 
+    public shared(msg) func sys_withdraw(_token: Principal, _tokenStd: TokenStd, _to: {owner: Principal; subaccount: ?Blob}, _value: Nat) : async (){ 
         assert(_onlyOwner(msg.caller));
-        assert(_to == icDao or _to == blackhole);
-        let account = Tools.principalToAccountBlob(_to, null);
-        let address = Tools.principalToAccountHex(_to, null);
+        assert(_to.owner == icDao or _to.owner == blackhole);
+        let account = Tools.principalToAccountBlob(_to.owner, _toSaNat8(_to.subaccount));
+        let address = Tools.principalToAccountHex(_to.owner, _toSaNat8(_to.subaccount));
         var _txid : {#txid: Txid; #index: Nat} = #index(0);
         if (_tokenStd == #drc20){
             let token: DRC20.Self = actor(Principal.toText(_token));
@@ -1522,7 +1594,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 amount = _value;
                 fee = null;
                 from_subaccount = null;
-                to = {owner = _to; subaccount = null};
+                to = _to;
                 created_at_time = null;
             };
             let res = await token.icrc1_transfer(args);
@@ -1546,7 +1618,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
                 case(_){ throw Error.reject("Transfer error."); };
             };
         };
-        ignore _putEvent(#sysWithdraw({ token = _token; to = _to; value = _value; txid = _txid }), ?Tools.principalToAccountBlob(msg.caller, null));
+        ignore _putEvent(#sysWithdraw({ token = _token; to = _to.owner; value = _value; txid = _txid }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
     /// Placing an order in a trading pair as a trader.
@@ -1818,28 +1890,30 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         switch(Trie.get(nfts, keyb(accountId), Blob.equal)){
             case(?(item)){ 
                 for(nft in item.vals()){
-                    let collId = nft.4;
-                    let nftId = nft.1;
-                    let nftActor: ERC721.Self = actor(Principal.toText(collId));
-                    let args: ERC721.TransferRequest = {
-                        from = #principal(Principal.fromActor(this));
-                        to = nft.0;
-                        token = nftId;
-                        amount = nft.2;
-                        memo = Blob.fromArray([]);
-                        notify = false;
-                        subaccount = null;
-                    };
-                    let res = await nftActor.transfer(args);
-                    switch(res){
-                        case(#ok(balance)){
-                            _NFTRemove(accountId, nft.1);
-                            // Hooks used to unbind all
-                            await* _hook_NFTUnbindAllMaker(nft.1);
+                    if (_nftId == null or _nftId == ?nft.1){
+                        let collId = nft.4;
+                        let nftId = nft.1;
+                        let nftActor: ERC721.Self = actor(Principal.toText(collId));
+                        let args: ERC721.TransferRequest = {
+                            from = #principal(Principal.fromActor(this));
+                            to = nft.0;
+                            token = nftId;
+                            amount = nft.2;
+                            memo = Blob.fromArray([]);
+                            notify = false;
+                            subaccount = null;
                         };
-                        case(#err(e)){};
+                        let res = await nftActor.transfer(args);
+                        switch(res){
+                            case(#ok(balance)){
+                                _NFTRemove(accountId, nft.1);
+                                // Hooks used to unbind all
+                                await* _hook_NFTUnbindAllMaker(nft.1);
+                            };
+                            case(#err(e)){};
+                        };
+                        ignore _putEvent(#nftWithdraw({ collId = collId; nftId = nftId; args = args; result = res }), null);
                     };
-                    ignore _putEvent(#nftWithdraw({ collId = collId; nftId = nftId; args = args; result = res }), null);
                 };
              };
             case(_){};
@@ -2261,7 +2335,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             let maker : actor{
                 approveToPair : shared (_token: Principal, _std: TokenStd, _amount: Nat) -> async Bool;
             } = actor(Principal.toText(makerCanister));
-            ignore await maker.approveToPair(sysToken, #icrc1, 2 ** 255);
+            ignore await maker.approveToPair(sysToken, #icrc1, 2 ** 127);
 
             // cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
             await* monitor.putCanister(makerCanister);
@@ -2470,11 +2544,18 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     };
 
     /// Lock or unlock an Automated Market Maker (ICDexMaker) system transaction lock.
-    public shared(msg) func maker_transactionLock(_maker: Principal, _act: {#lock; #unlock}) : async Bool{ 
+    public shared(msg) func maker_transactionLock(_maker: Principal, _sysTransactionLock: ?{#lock; #unlock}, _sysGlobalLock: ?{#lock; #unlock}) : async Bool{ 
         assert(_onlyOwner(msg.caller));
         let makerActor: Maker.Self = actor(Principal.toText(_maker));
-        let res = await makerActor.transactionLock(_act);
-        ignore _putEvent(#makerTransactionLock({ maker = _maker; act = _act }), ?Tools.principalToAccountBlob(msg.caller, null));
+        let res = await makerActor.transactionLock(_sysTransactionLock, _sysGlobalLock);
+        switch(_sysTransactionLock){
+            case(?act){ ignore _putEvent(#makerTransactionLock({ maker = _maker; act = act }), ?Tools.principalToAccountBlob(msg.caller, null)); };
+            case(_){};
+        };
+        switch(_sysGlobalLock){
+            case(?act){ ignore _putEvent(#makerGlobalLock({ maker = _maker; act = act }), ?Tools.principalToAccountBlob(msg.caller, null)); };
+            case(_){};
+        };
         return res;
     };
 

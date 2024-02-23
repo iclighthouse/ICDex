@@ -1120,7 +1120,7 @@ Returns an account's participation qualification status. If account `_a` is not 
 func sync() : async ()
 ```
 
-Synchronizing token0 and token1 info.
+Synchronizing token0 and token1 transfer fees
 
 ## Function `getConfig`
 ``` motoko no-repl

@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.52";
+    private let version_: Text = "0.12.53";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -2099,7 +2099,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Escrow funds into the trading pair canister for new order.
     // Combined handle of tunnel and pool models
-    private func _txPrepare(_side:{#token0; #token1}, _icrc1Account: ICRC1.Account, _txid: Txid, _orderAmount: Amount, _nonce: Nonce) : async* ([Toid], amountLockedInPool: Amount){
+    private func _txPrepare(_side:{#token0; #token1}, _icrc1Account: ICRC1.Account, _txid: Txid, _orderAmount: Amount, _nonce: Nonce, _isProOrder: Bool) : async* ([Toid], amountLockedInPool: Amount){
         var _fee : Nat = 0;
         var _canisterId : Principal = Principal.fromActor(this);
         var _std : Types.TokenStd = #drc20;
@@ -2157,7 +2157,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         var tempLockedAmount : Nat = 0;
         // transferFrom
-        if (valueFromPoolUserBalance + valueFromTxBalance < _orderAmount){ 
+        if (valueFromPoolUserBalance + valueFromTxBalance < _orderAmount and not(_isProOrder)){ 
             let v = Nat.sub(_orderAmount, valueFromPoolUserBalance + valueFromTxBalance);
             try{
                 await* _transferFrom(_canisterId, _icrc1Account, toTxICRC1Account, v, ?_txid);
@@ -2168,6 +2168,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             }catch(e){
                 throw Error.reject("408: Insufficient token balance. If you are trading with PoolMode, you should deposit an additional fee of token. " # Error.message(e));
             };
+        }else if (valueFromPoolUserBalance + valueFromTxBalance < _orderAmount and _isProOrder){
+            throw Error.reject("408: Insufficient token balance. If you are trading with PoolMode, you should deposit an additional fee of token.");
         };
         // from: pool -> to: pool / TxAccount
         if (valueFromPoolUserBalance > 0){
@@ -2244,14 +2246,14 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // New order funding preparation function. Prevents too many failed transactions and does not use ICTC processing.
     // Note: Check prepared balances only after the order has been recorded. (Prevents asynchronous fallback)
-    private func _prepareBalance(icrc1Account: ICRC1.Account, txid: Txid, order: OrderPrice, nonce: Nonce) : async* ([Toid], lockedAmount0: Amount, lockedAmount1: Amount){
+    private func _prepareBalance(icrc1Account: ICRC1.Account, txid: Txid, order: OrderPrice, nonce: Nonce, isProOrder: Bool) : async* ([Toid], lockedAmount0: Amount, lockedAmount1: Amount){
         let account = Tools.principalToAccountBlob(icrc1Account.owner, _toSaNat8(icrc1Account.subaccount));
         var logToids : [Toid] = [];
         var lockedAmount0: Nat = 0;
         var lockedAmount1: Nat = 0;
         if (OrderBook.side(order) == #Buy){
             try{
-                let (toids, lockedAmount) = await* _txPrepare(#token1, icrc1Account, txid, OrderBook.amount(order), nonce);
+                let (toids, lockedAmount) = await* _txPrepare(#token1, icrc1Account, txid, OrderBook.amount(order), nonce, isProOrder);
                 logToids := Tools.arrayAppend(logToids, toids);
                 lockedAmount1 := lockedAmount;
             }catch(e){
@@ -2259,7 +2261,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
         }else{ //#Sell
             try{
-                let (toids, lockedAmount) = await* _txPrepare(#token0, icrc1Account, txid, OrderBook.quantity(order), nonce);
+                let (toids, lockedAmount) = await* _txPrepare(#token0, icrc1Account, txid, OrderBook.quantity(order), nonce, isProOrder);
                 logToids := Tools.arrayAppend(logToids, toids);
                 lockedAmount0 := lockedAmount;
             }catch(e){
@@ -2520,7 +2522,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var lockedAmount0: Nat = 0;
         var lockedAmount1: Nat = 0;
         try{
-            let (toids, lockedTemp0, lockedTemp1) = await* _prepareBalance(icrc1Account, txid, order, nonce);
+            let (toids, lockedTemp0, lockedTemp1) = await* _prepareBalance(icrc1Account, txid, order, nonce, _isProOrder);
             logToids := Tools.arrayAppend(logToids, toids);
             lockedAmount0 := lockedTemp0;
             lockedAmount1 := lockedTemp1;
@@ -3980,7 +3982,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         poFee2 = 0.0005; // When an order from pro-order is filled, token0/token1 will be charged proportionally as a fee.
         sloFee1 = 100_000_000; // ICL (smallest_units). Fixed costs when configuring the stop-loss-order strategy
         sloFee2 = 0.0005; // When an order from stop-loss-order is filled, token0/token1 will be charged proportionally as a fee.
-        gridMaxPerSide = 4; // Maximum number of grids on one side of the grid order. This configuration for vip-maker is multiplied by 2.
+        gridMaxPerSide = 3; // Maximum number of grids on one side of the grid order. This configuration for vip-maker is multiplied by 2.
         proCountMax = 5; // Maximum number of pro-orders allowed to be created per trader.
         stopLossCountMax = 10; // Maximum number of stop-loss-orders allowed to be created per trader.
     };
@@ -4414,7 +4416,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (Option.isSome(_soid)){ 
             let thisSoid = Option.get(_soid, 0);
             let (status, preOpenOrders) = _stoTrigger(thisSoid);
-            openingOrders := Tools.arrayAppend(openingOrders, preOpenOrders);
+            openingOrders := Tools.arrayAppend(preOpenOrders, openingOrders);
             if (status != #Running){
                 icdex_stOrderRecords := STO.updateStatus(icdex_stOrderRecords, thisSoid, status);
             };
@@ -4603,7 +4605,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /// - #Arith: Arithmetic.
     /// - #Geom: Geometric (ppm).
     /// - ppmFactor: Default grid order amount factor, initialized when the strategy is created. `ppmFactor = 1000000 * 1/n * (n ** (1/10))`, 
-    ///     Where n is `(n1 + n2) / 2`, and n1, n2 is between 2 and 200. n1 is the number of grids between the latest price and the lowerLimit, 
+    ///     Where n is `(n1 + n2) / 2`, and n1, n2 is between 50 and 200. n1 is the number of grids between the latest price and the lowerLimit, 
     ///     and n2 is the number of grids between the latest price and the upperLimit.
     ///
     /// Arguments:

@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.9";
+    private let version_: Text = "0.5.10";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -307,7 +307,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var gridSpread: Nat = Nat.max(initArgs.spreadRate, 1_000); // ppm. Inter-grid spread ratio for grid orders. e.g. 10_000, it means 1%.
     private stable var gridSoid : ?Nat = null; // If the grid order has been successfully created, save the strategy id.
     private stable var gridOrderDeleted : Bool = false; // Grid order is deleted by DAO.
-    private stable var gridSpread2: Nat = gridSpread * 5; // The second grid order takes a 5x grid spread.
+    private stable var gridSpread2: Nat = Nat.min(gridSpread * 5, 300_000); // The second grid order takes a 5x grid spread.
     private stable var gridSoid2 : ?Nat = null; 
     private stable var gridOrderDeleted2 : Bool = false; 
     private let rebalanceThresholdPct: Nat = 10; // 10%
@@ -1105,7 +1105,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (token0Std == #drc20){ // token0: drc20
             let token: DRC20.Self = actor(Principal.toText(token0Principal));
             try{
-                switch(await token.drc20_approve(_accountIdToHex(dexAccount), 2 ** 255, null, null, null)){
+                switch(await token.drc20_approve(_accountIdToHex(dexAccount), 2 ** 127, null, null, null)){
                     case(#ok(txid)){};
                     case(#err(e)){
                         throw Error.reject("An error occurred in token0.drc20_approve(). ("# debug_show(e) #")");
@@ -1120,7 +1120,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 switch(await token.icrc2_approve({
                     from_subaccount = null;
                     spender = dexICRC1Account;
-                    amount = 2 ** 255; 
+                    amount = 2 ** 127; 
                     expected_allowance = null; 
                     expires_at = null;
                     fee = null;
@@ -1137,7 +1137,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         if (token1Std == #drc20){ // token1: drc20
             let token: DRC20.Self = actor(Principal.toText(token1Principal));
             try{
-                switch(await token.drc20_approve(_accountIdToHex(dexAccount), 2 ** 255, null, null, null)){
+                switch(await token.drc20_approve(_accountIdToHex(dexAccount), 2 ** 127, null, null, null)){
                     case(#ok(txid)){};
                     case(#err(e)){
                         throw Error.reject("An error occurred in token1.drc20_approve(). ("# debug_show(e) #")");
@@ -1152,7 +1152,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                 switch(await token.icrc2_approve({
                     from_subaccount = null;
                     spender = dexICRC1Account;
-                    amount = 2 ** 255; 
+                    amount = 2 ** 127; 
                     expected_allowance = null; 
                     expires_at = null;
                     fee = null;
