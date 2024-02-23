@@ -93,15 +93,6 @@ module {
         //     #icrc2_transfer_from : (ICRC2New.TransferFromArgs);
         // };
         #ICDex: {
-            // #trade : (_order: ICDex.OrderPrice, _orderType: ICDex.OrderType, _expiration: ?Int, _nonce: ?Nat, _sa: ?ICDex.Sa, _data: ?ICDex.Data);
-            #trade_b: (_order: ICDex.OrderPrice, _orderType: ICDex.OrderType, _expiration: ?Int, _nonce: ?Nat, _sa: ?ICDex.Sa, _data: ?ICDex.Data, _brokerage: ?{broker: Principal; rate: Float});
-            // #tradeMKT : (_token: Principal, _value: ICDex.Amount, _nonce: ?Nat, _sa: ?ICDex.Sa, _data: ?ICDex.Data);
-            #tradeMKT_b: (_token: Principal, _value: ICDex.Amount, _limitPrice: ?Nat, _nonce: ?ICDex.Nonce, _sa: ?ICDex.Sa, _data: ?ICDex.Data, _brokerage: ?{broker: Principal; rate: Float});
-            #cancel : (_nonce: Nat, _sa: ?ICDex.Sa);
-            #cancelByTxid : (_txid: Blob, _sa: ?ICDex.Sa);
-            #cancelAll : ({#management: ?ICDex.AccountId; #self_sa: ?ICDex.Sa}, ?{#Sell; #Buy});
-            // #fallback : (_nonce: Nat, _sa: ?ICDex.Sa);
-            // #fallbackByTxid : (_txid: Blob, _sa: ?ICDex.Sa);
             #deposit : (_token: {#token0; #token1}, _value: Nat, _sa: ?ICDex.Sa);
             #depositFallback : (_sa: ?ICDex.Sa);
             #withdraw : (_value0: ?ICDex.Amount, _value1: ?ICDex.Amount, _sa: ?ICDex.Sa);
@@ -170,15 +161,6 @@ module {
         //     #icrc2_transfer_from : ({ #Ok : Nat; #Err : ICRC2New.TransferFromError });
         // };
         #ICDex: {
-            // #trade : ICDex.TradingResult;
-            #trade_b: ICDex.TradingResult;
-            // #tradeMKT : ICDex.TradingResult;
-            #tradeMKT_b: ICDex.TradingResult;
-            #cancel : ();
-            #cancelByTxid : ();
-            #cancelAll : ();
-            // #fallback : Bool;
-            // #fallbackByTxid : Bool;
             #deposit : ();
             #depositFallback : (value0: Nat, value1: Nat);
             #withdraw : (value0: Nat, value1: Nat);
@@ -531,114 +513,6 @@ module {
                         let dex: ICDex.Self = actor(calleeId);
                         if (cycles > 0){ Cycles.add(cycles); };
                         switch(method){
-                            // case(#trade(_order, _orderType, _expiration, _nonce, _sa, _data)){
-                            //     var result: ICDex.TradingResult = #err({code=#UndefinedError; message="No call."}); // Receipt
-                            //     try{
-                            //         // do
-                            //         result := await dex.trade(_order, _orderType, _expiration, _nonce, _sa, _data);
-                            //         // check & return
-                            //         switch(result){
-                            //             case(#ok(res)){ return (#Done, ?#ICDex(#trade(result)), null); };
-                            //             case(#err(e)){ return (#Error, ?#ICDex(#trade(result)), ?{code=#future(9903); message="Calling Err."; }); };
-                            //         };
-                            //     } catch (e){
-                            //         return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                            //     };
-                            // };
-                            case(#trade_b(_order, _orderType, _expiration, _nonce, _sa, _data, _brokerage)){
-                                var result: ICDex.TradingResult = #err({code=#UndefinedError; message="No call."}); // Receipt
-                                try{
-                                    // do
-                                    result := await dex.trade_b(_order, _orderType, _expiration, _nonce, _sa, _data, _brokerage);
-                                    // check & return
-                                    switch(result){
-                                        case(#ok(res)){ return (#Done, ?#ICDex(#trade_b(result)), null); };
-                                        case(#err(e)){ return (#Error, ?#ICDex(#trade_b(result)), ?{code=#future(9903); message="Calling Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            // case(#tradeMKT(_token, _value, _nonce, _sa, _data)){
-                            //     var result: ICDex.TradingResult = #err({code=#UndefinedError; message="No call."}); // Receipt
-                            //     try{
-                            //         // do
-                            //         result := await dex.tradeMKT(_token, _value, _nonce, _sa, _data);
-                            //         // check & return
-                            //         switch(result){
-                            //             case(#ok(res)){ return (#Done, ?#ICDex(#tradeMKT(result)), null); };
-                            //             case(#err(e)){ return (#Error, ?#ICDex(#tradeMKT(result)), ?{code=#future(9903); message="Calling Err."; }); };
-                            //         };
-                            //     } catch (e){
-                            //         return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                            //     };
-                            // };
-                            case(#tradeMKT_b(_token, _value, _limitPrice, _nonce, _sa, _data, _brokerage)){
-                                var result: ICDex.TradingResult = #err({code=#UndefinedError; message="No call."}); // Receipt
-                                try{
-                                    // do
-                                    result := await dex.tradeMKT_b(_token, _value, _limitPrice, _nonce, _sa, _data, _brokerage);
-                                    // check & return
-                                    switch(result){
-                                        case(#ok(res)){ return (#Done, ?#ICDex(#tradeMKT_b(result)), null); };
-                                        case(#err(e)){ return (#Error, ?#ICDex(#tradeMKT_b(result)), ?{code=#future(9903); message="Calling Err."; }); };
-                                    };
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#cancel(_nonce, _sa)){
-                                try{
-                                    // do
-                                    await dex.cancel(_nonce, _sa);
-                                    // check & return
-                                    return (#Done, ?#ICDex(#cancel), null);
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#cancelByTxid(_txid, _sa)){
-                                try{
-                                    // do
-                                    await dex.cancelByTxid(_txid, _sa);
-                                    // check & return
-                                    return (#Done, ?#ICDex(#cancelByTxid), null);
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            case(#cancelAll(_args, _side)){
-                                try{
-                                    // do
-                                    await dex.cancelAll(_args, _side);
-                                    // check & return
-                                    return (#Done, ?#ICDex(#cancelAll), null);
-                                } catch (e){
-                                    return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                                };
-                            };
-                            // case(#fallback(_nonce, _sa)){
-                            //     var result: Bool = false; // Receipt
-                            //     try{
-                            //         // do
-                            //         result := await dex.fallback(_nonce, _sa);
-                            //         // check & return
-                            //         return (#Done, ?#ICDex(#fallback(result)), null);
-                            //     } catch (e){
-                            //         return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                            //     };
-                            // };
-                            // case(#fallbackByTxid(_txid, _sa)){
-                            //     var result: Bool = false; // Receipt
-                            //     try{
-                            //         // do
-                            //         result := await dex.fallbackByTxid(_txid, _sa);
-                            //         // check & return
-                            //         return (#Done, ?#ICDex(#fallbackByTxid(result)), null);
-                            //     } catch (e){
-                            //         return (#Error, null, ?{code=Error.code(e); message=Error.message(e); });
-                            //     };
-                            // };
                             case(#deposit(_token, _value, _sa)){
                                 try{
                                     // do

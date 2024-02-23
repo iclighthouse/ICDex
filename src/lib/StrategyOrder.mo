@@ -181,7 +181,7 @@ module {
     };
 
     /// GridOrder: Default grid order amount factor, initialized when the strategy is created. `ppmFactor = 1000000 * 1/n * (n ** (1/10))`, 
-    /// Where n is `(n1 + n2) / 2`, and n1, n2 is between 2 and 200. n1 is the number of grids between the latest price and the lowerLimit, 
+    /// Where n is `(n1 + n2) / 2`, and n1, n2 is between 50 and 200. n1 is the number of grids between the latest price and the lowerLimit, 
     /// and n2 is the number of grids between the latest price and the upperLimit.
     public func getPpmFactor(_initPrice: Price, _spread: {#Arith: Price; #Geom: Ppm }, _lowerPrice: Price, _upperPrice: Price) : Ppm{
         var price : Price = 0;
@@ -195,7 +195,7 @@ module {
             price := price + spread;
             spread := getSpread(#upward, _spread, price);
         };
-        if (gridCount_sell < 2) { gridCount_sell := 2; };
+        if (gridCount_sell < 50) { gridCount_sell := 50; };
         price := _initPrice;
         spread := getSpread(#downward, _spread, price);
         while(price > spread and Nat.sub(price, spread) >= _lowerPrice and gridCount_buy < 200){
@@ -203,7 +203,7 @@ module {
             price := Nat.sub(price, spread);
             spread := getSpread(#downward, _spread, price);
         };
-        if (gridCount_buy < 2) { gridCount_buy := 2; };
+        if (gridCount_buy < 50) { gridCount_buy := 50; };
         let n = (gridCount_sell + gridCount_buy) / 2;
         return OB.floatToNat(OB.natToFloat(n) ** (1.0 / 10.0) * 1000000.0) / n; 
     };

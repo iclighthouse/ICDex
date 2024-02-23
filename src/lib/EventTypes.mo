@@ -102,6 +102,7 @@ module {
         #makerSetControllers: { pair: Principal; maker: Principal; controllers: [Principal] };
         #makerConfig: { maker: Principal; config: Maker.Config };
         #makerTransactionLock: { maker: Principal; act: {#lock; #unlock} };
+        #makerGlobalLock: { maker: Principal; act: {#lock; #unlock} };
         #makerStart: { maker: Principal};
         #makerSuspend: { maker: Principal};
         #makerResetLocalBalance: { maker: Principal; balance: Maker.PoolBalance };
