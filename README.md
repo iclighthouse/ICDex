@@ -64,8 +64,8 @@ dfx build --network ic ICDexRouter
 cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 0x94b22f24fd31b8a0db13482da419b70a5bffd8e4ddfed70a775c336bf8345d57
-- Version: 0.12.29
+- Module hash: b44be4c7b302ea00aca6d406b5f6632f2f526f87a943b563bb63043680b1685e
+- Version: 0.12.30
 - Build: {
     "args": "--compacting-gc"
 }
@@ -81,8 +81,8 @@ cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
 ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: acaf53b8e364cb5997cfc0b4b8749f6c271766611fac0184048187cf3cb2792b
-- Version: 0.12.53
+- Module hash: 79daf742875073aca32b0fecc5270b82675453a62cb85641da6083117243a048
+- Version: 0.12.54
 - Build: {
     "args": "--incremental-gc"
 }

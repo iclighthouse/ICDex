@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.53";
+    private let version_: Text = "0.12.54";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -1305,14 +1305,20 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 let account = Tools.principalToAccountBlob(_toIcrc1Account[i].owner, _toSaNat8(_toIcrc1Account[i].subaccount));
                 let isKeptFunds = _isKeepingBalanceInPair(account);
                 if (isKeptFunds){
-                    valueTransferToPool += _value[i];
-                    localTransferArgs_post := Tools.arrayAppend(localTransferArgs_post, [(#add, account, _tokenSide, #available(_value[i]))]);
-                }else{
+                    if (localTransferArgs_pre.size() == 0){ // from TxAccount
+                        valueTransferToPool += _value[i];
+                    };
+                    if (localTransferArgs_pre.size() > 0){ // from the account's balance locked in the pool
+                        localTransferArgs_post := Tools.arrayAppend(localTransferArgs_post, [(#add, account, _tokenSide, #available(_value[i]))]);
+                    }else if (_value[i] > fee){ // from TxAccount
+                        localTransferArgs_post := Tools.arrayAppend(localTransferArgs_post, [(#add, account, _tokenSide, #available(Nat.sub(_value[i], fee)))]);
+                    };
+                }else if (_value[i] > fee){
                     toIcrc1Accounts := Tools.arrayAppend(toIcrc1Accounts, [_toIcrc1Account[i]]);
                     values := Tools.arrayAppend(values, [_value[i]]);
                 };
             };
-            if (valueTransferToPool > 0 and localTransferArgs_pre.size() == 0){ // to: Pool
+            if (valueTransferToPool > fee and localTransferArgs_pre.size() == 0){ // to: Pool
                 toIcrc1Accounts := Tools.arrayAppend(toIcrc1Accounts, [{owner = Principal.fromActor(this); subaccount = ?Blob.fromArray(sa_zero)}]);
                 values := Tools.arrayAppend(values, [valueTransferToPool]);
             };
@@ -1328,7 +1334,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 _accountIdToHex(Tools.principalToAccountBlob(t.owner, _toSaNat8(t.subaccount)))
             });
             let valueArr = Array.map<Nat, Nat>(values, func (t:Nat): Nat{
-                Nat.sub(t, fee);
+                if (t > fee){ Nat.sub(t, fee) } else { 0 };
             });
             let task = _buildTask(sub, tokenPrincipal, #DRC20(#transferBatch(accountArr, valueArr, null, sa, _transferData)), _preTtids);
             let ttid = saga.push(_toid, task, null, _callback);
@@ -1339,23 +1345,25 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 let accountPrincipal = toIcrc1Accounts[i].owner;
                 let account = Tools.principalToAccountBlob(toIcrc1Accounts[i].owner, _toSaNat8(toIcrc1Accounts[i].subaccount));
                 let icrc1Account = toIcrc1Accounts[i];
-                let value = Nat.sub(values[i], fee);
-                if (std == #drc20){
-                    let task = _buildTask(sub, tokenPrincipal, #DRC20(#transfer(_accountIdToHex(account), value, null, sa, _transferData)), _preTtids);
-                    let ttid = saga.push(_toid, task, null, _callback);
-                    ttids := Tools.arrayAppend(ttids, [ttid]);
-                } else {
-                    let args : ICRC1.TransferArgs = {
-                        memo = _transferData;
-                        amount = value;
-                        fee = ?fee;
-                        from_subaccount = sub;
-                        to = icrc1Account;
-                        created_at_time = null;
+                if (values[i] > fee){
+                    let value = Nat.sub(values[i], fee);
+                    if (std == #drc20){
+                        let task = _buildTask(sub, tokenPrincipal, #DRC20(#transfer(_accountIdToHex(account), value, null, sa, _transferData)), _preTtids);
+                        let ttid = saga.push(_toid, task, null, _callback);
+                        ttids := Tools.arrayAppend(ttids, [ttid]);
+                    } else {
+                        let args : ICRC1.TransferArgs = {
+                            memo = _transferData;
+                            amount = value;
+                            fee = ?fee;
+                            from_subaccount = sub;
+                            to = icrc1Account;
+                            created_at_time = null;
+                        };
+                        let task = _buildTask(sub, tokenPrincipal, #ICRC1New(#icrc1_transfer(args)), _preTtids);
+                        let ttid = saga.push(_toid, task, null, _callback);
+                        ttids := Tools.arrayAppend(ttids, [ttid]);
                     };
-                    let task = _buildTask(sub, tokenPrincipal, #ICRC1New(#icrc1_transfer(args)), _preTtids);
-                    let ttid = saga.push(_toid, task, null, _callback);
-                    ttids := Tools.arrayAppend(ttids, [ttid]);
                 };
                 i += 1;
             };
@@ -5443,6 +5451,12 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         await* _getGas(true);
     };
 
+    /// Rename
+    public shared(msg) func rename() : async (){
+        assert(_onlyOwner(msg.caller));
+        name_ := "icdex:" # token0Symbol # "/" # token1Symbol;
+    };
+
     /// Returns the basic configuration of the pair.
     public query func getConfig() : async DexSetting{
         return setting;
@@ -5545,19 +5559,32 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
     };
 
-    private stable var hasMerged : Bool = false;
-
     /// Migrate total volume and K-chart data from old trading pair. It can only be migrated once.
     public shared(msg) func mergePair(_pair: Principal) : async Bool{
         assert(_onlyOwner(msg.caller));
-        assert(not(hasMerged));
+        // assert(not(hasMerged));
         type Pair = actor{
-            stats : shared query() -> async {price:Float; change24h:Float; vol24h:Vol; totalVol:Vol};
+            stats : shared query () -> async {price:Float; change24h:Float; vol24h:Vol; totalVol:Vol};
             getQuotes : shared query (_ki: Nat) -> async [KBar];
+            info : shared query () -> async {
+                name: Text;
+                version: Text;
+                decimals: Nat8;
+                owner: Principal;
+                paused: Bool;
+                setting: DexSetting;
+                token0: TokenInfo;
+                token1: TokenInfo;
+            };
         };
         let pair: Pair = actor(Principal.toText(_pair));
+        let info = await pair.info();
+        // Requires UNIT_SIZE, token0 canister-id, token1 canister-id to be consistent with the previous pair.
+        assert(info.setting.UNIT_SIZE == setting.UNIT_SIZE and info.token0.0 == _token0Canister() and info.token1.0 == _token1Canister());
         let vol = (await pair.stats()).totalVol;
-        icdex_totalVol := { value0 = icdex_totalVol.value0 + vol.value0; value1 = icdex_totalVol.value1 + vol.value1 };
+        if (icdex_totalVol.value0 < vol.value0){
+            icdex_totalVol := { value0 = icdex_totalVol.value0 + vol.value0; value1 = icdex_totalVol.value1 + vol.value1 };
+        };
         let kis : [Nat] = [60, 60*5, 3600, 3600*24, 3600*24*7, 3600*24*30];
         for (ki in kis.vals()){
             var kbars = await pair.getQuotes(ki);
@@ -5580,7 +5607,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 case(_){};
             };
         };
-        hasMerged := true;
         return true;
     };
 
@@ -5994,6 +6020,25 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let ttid = saga.redo(_toid, _ttid);
         await* _ictcSagaRun(_toid, true);
         return ttid;
+    };
+
+    /// Update the task with default callback.  
+    /// Warning: proceed with caution!
+    public shared(msg) func ictc_updateTT(_toid: SagaTM.Toid, _ttid: SagaTM.Ttid, _task: (_callee: Principal, _callType: SagaTM.CallType, _preTtids: [SagaTM.Ttid]), 
+    _comp: ?(_callee: Principal, _callType: SagaTM.CallType, _preTtids: [SagaTM.Ttid])) : async ?SagaTM.Ttid{
+        assert(_onlyOwner(msg.caller) or _onlyIctcAdmin(msg.caller));
+        let saga = _getSaga();
+        saga.open(_toid);
+        let taskRequest = _buildTask(null, _task.0, _task.1, _task.2);
+        var compRequest : ?SagaTM.PushTaskRequest = null;
+        switch(_comp){
+            case(?(callee, callType, preTtids)){
+                compRequest := ?_buildTask(null, callee, callType, preTtids);
+            };
+            case(_){};
+        };
+        let ttid = saga.update(_toid, _ttid, taskRequest, compRequest, null);
+        return ?ttid;
     };
 
     /// Set status of a pending task  

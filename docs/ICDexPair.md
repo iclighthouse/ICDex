@@ -941,7 +941,7 @@ Notes (applicable to all strategy order related methods):
 - #Arith: Arithmetic.
 - #Geom: Geometric (ppm).
 - ppmFactor: Default grid order amount factor, initialized when the strategy is created. `ppmFactor = 1000000 * 1/n * (n ** (1/10))`, 
-    Where n is `(n1 + n2) / 2`, and n1, n2 is between 2 and 200. n1 is the number of grids between the latest price and the lowerLimit, 
+    Where n is `(n1 + n2) / 2`, and n1, n2 is between 50 and 200. n1 is the number of grids between the latest price and the lowerLimit, 
     and n2 is the number of grids between the latest price and the upperLimit.
 
 Arguments:
@@ -1120,7 +1120,14 @@ Returns an account's participation qualification status. If account `_a` is not 
 func sync() : async ()
 ```
 
-Synchronizing token0 and token1 transfer fees
+Synchronizing token0 and token1 info.
+
+## Function `rename`
+``` motoko no-repl
+func rename() : async ()
+```
+
+Rename
 
 ## Function `getConfig`
 ``` motoko no-repl
@@ -1417,6 +1424,14 @@ func ictc_redoTT(_toid : SagaTM.Toid, _ttid : SagaTM.Ttid) : async ?SagaTM.Ttid
 ```
 
 Try the task again.  
+Warning: proceed with caution!
+
+## Function `ictc_updateTT`
+``` motoko no-repl
+func ictc_updateTT(_toid : SagaTM.Toid, _ttid : SagaTM.Ttid, _task : (_callee : Principal, _callType : SagaTM.CallType, _preTtids : [SagaTM.Ttid]), _comp : ?(_callee : Principal, _callType : SagaTM.CallType, _preTtids : [SagaTM.Ttid])) : async ?SagaTM.Ttid
+```
+
+Update the task with default callback.  
 Warning: proceed with caution!
 
 ## Function `ictc_doneTT`
