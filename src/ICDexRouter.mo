@@ -197,7 +197,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.29";
+    private let version_: Text = "0.12.30";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -209,6 +209,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     private var blackhole: Principal = Principal.fromText("7hdtw-jqaaa-aaaak-aaccq-cai");
     // Governance canister-id, can be reconfigured.
     private stable var icDao: Principal = initDAO;
+    private stable var icDaoBoard: Principal = initDAO;
     // Aggregator: External trading pair catalog listings, which are not substantive dependencies of ICDex, can be reconfigured.
     private stable var aggregator: Text = "i2ied-uqaaa-aaaar-qaaza-cai"; // pwokq-miaaa-aaaak-act6a-cai
     if (icdex_debug){
@@ -260,7 +261,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         return Int.abs(Time.now() / 1_000_000_000);
     };
     private func _onlyOwner(_caller: Principal) : Bool { 
-        return _caller == icDao or Principal.isController(_caller);
+        return _caller == icDao or _caller == icDaoBoard or Principal.isController(_caller);
     };  // assert(_onlyOwner(msg.caller));
     private func _notPaused() : Bool { 
         return not(pause);
@@ -436,9 +437,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         // create
         let addCycles : Nat = Option.get(_initCycles, canisterCyclesInit);
         Cycles.add(addCycles);
-        var controllers: [Principal] = [icDao, blackhole, Principal.fromActor(this)];
+        var controllers: [Principal] = [icDao, icDaoBoard, blackhole, Principal.fromActor(this)];
         if (icdex_debug){
-            controllers := [icDao, blackhole, Principal.fromActor(this), installMsg.caller];
+            controllers := [icDao, icDaoBoard, blackhole, Principal.fromActor(this), installMsg.caller];
         };
         let canister = await ic.create_canister({ settings = ?{ 
             compute_allocation = null;
@@ -1555,11 +1556,6 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
       System management
     ========================= */
 
-    /// Returns the canister-id of the DAO
-    public query func getDAO() : async Principal{  
-        return icDao;
-    };
-
     /// Returns the version of ICDexRouter
     public query func version() : async Text{  
         return version_;
@@ -1576,7 +1572,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Withdrawals can only be made to a DAO address, or to a blackhole address (destruction), not to a private address.
     public shared(msg) func sys_withdraw(_token: Principal, _tokenStd: TokenStd, _to: {owner: Principal; subaccount: ?Blob}, _value: Nat) : async (){ 
         assert(_onlyOwner(msg.caller));
-        assert(_to.owner == icDao or _to.owner == blackhole);
+        assert(_to.owner == icDao or _to.owner == icDaoBoard or _to.owner == blackhole);
         let account = Tools.principalToAccountBlob(_to.owner, _toSaNat8(_to.subaccount));
         let address = Tools.principalToAccountHex(_to.owner, _toSaNat8(_to.subaccount));
         var _txid : {#txid: Txid; #index: Nat} = #index(0);
@@ -1681,6 +1677,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         aggregator: ?Principal;
         blackhole: ?Principal;
         icDao: ?Principal;
+        icDaoBoard: ?Principal;
         nftPlanetCards: ?Principal;
         sysToken: ?Principal;
         sysTokenFee: ?Nat;
@@ -1691,6 +1688,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         aggregator := Principal.toText(Option.get(_args.aggregator, Principal.fromText(aggregator)));
         blackhole := Option.get(_args.blackhole, blackhole);
         icDao := Option.get(_args.icDao, icDao);
+        icDaoBoard := Option.get(_args.icDaoBoard, icDaoBoard);
         nftPlanetCards := Option.get(_args.nftPlanetCards, nftPlanetCards);
         sysToken := Option.get(_args.sysToken, sysToken);
         sysTokenFee := Option.get(_args.sysTokenFee, sysTokenFee);
@@ -1704,6 +1702,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         aggregator: Principal;
         blackhole: Principal;
         icDao: Principal;
+        icDaoBoard: Principal;
         nftPlanetCards: Principal;
         sysToken: Principal;
         sysTokenFee: Nat;
@@ -1714,6 +1713,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             aggregator = Principal.fromText(aggregator);
             blackhole = blackhole;
             icDao = icDao;
+            icDaoBoard = icDaoBoard;
             nftPlanetCards = nftPlanetCards;
             sysToken = sysToken;
             sysTokenFee = sysTokenFee;
@@ -2284,7 +2284,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         // create
         try{
             Cycles.add(canisterCyclesInit);
-            var controllers: [Principal] = [icDao, blackhole, Principal.fromActor(this)]; 
+            var controllers: [Principal] = [icDao, icDaoBoard, blackhole, Principal.fromActor(this)]; 
             if (_arg.allow == #Private){
                 controllers := Tools.arrayAppend(controllers, [msg.caller]);
             };

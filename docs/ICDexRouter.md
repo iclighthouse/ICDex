@@ -138,7 +138,8 @@ sufficient Cycles balance or ICP balance.
 func pubCreate(_token0 : Principal, _token1 : Principal, _openingTimeNS : Time.Time) : async (canister : PairCanister)
 ```
 
-Publicly create a trading pair by paying creatingPairFee.
+Publicly create a trading pair by paying creatingPairFee.  
+Requires that the token should implement the DRC202 standard or implements the SNS ledger method `get_transactions : shared query GetBlocksRequest -> async GetTransactionsResponse`.
 
 Arguments:
 - token0: Principal. Base token canister-id.
@@ -544,16 +545,16 @@ func dex_addCompetition(_id : ?Nat, _name : Text, _content : Text, _start : Time
 
 This is a feature to be opened in the future. Register a trading competition with a third party for display.
 
-## Function `getDAO`
+## Function `version`
 ``` motoko no-repl
-func getDAO() : async Principal
+func version() : async Text
 ```
 
-Returns the canister-id of the DAO
+Returns the version of ICDexRouter
 
 ## Function `sys_withdraw`
 ``` motoko no-repl
-func sys_withdraw(_token : Principal, _tokenStd : TokenStd, _to : Principal, _value : Nat) : async ()
+func sys_withdraw(_token : Principal, _tokenStd : TokenStd, _to : { owner : Principal; subaccount : ?Blob }, _value : Nat) : async ()
 ```
 
 Withdraw the token to the specified account.  
@@ -575,14 +576,14 @@ Cancel own orders as a trader.
 
 ## Function `sys_config`
 ``` motoko no-repl
-func sys_config(_args : { aggregator : ?Principal; blackhole : ?Principal; icDao : ?Principal; nftPlanetCards : ?Principal; sysToken : ?Principal; sysTokenFee : ?Nat; creatingPairFee : ?Nat; creatingMakerFee : ?Nat }) : async ()
+func sys_config(_args : { aggregator : ?Principal; blackhole : ?Principal; icDao : ?Principal; icDaoBoard : ?Principal; nftPlanetCards : ?Principal; sysToken : ?Principal; sysTokenFee : ?Nat; creatingPairFee : ?Nat; creatingMakerFee : ?Nat }) : async ()
 ```
 
 Configure the system parameters of the ICDexRouter.
 
 ## Function `sys_getConfig`
 ``` motoko no-repl
-func sys_getConfig() : async { aggregator : Principal; blackhole : Principal; icDao : Principal; nftPlanetCards : Principal; sysToken : Principal; sysTokenFee : Nat; creatingPairFee : Nat; creatingMakerFee : Nat }
+func sys_getConfig() : async { aggregator : Principal; blackhole : Principal; icDao : Principal; icDaoBoard : Principal; nftPlanetCards : Principal; sysToken : Principal; sysTokenFee : Nat; creatingPairFee : Nat; creatingMakerFee : Nat }
 ```
 
 Returns the configuration items of ICDexRouter.
@@ -750,7 +751,7 @@ Configure an Automated Market Maker (ICDexMaker).
 
 ## Function `maker_transactionLock`
 ``` motoko no-repl
-func maker_transactionLock(_maker : Principal, _act : {#lock; #unlock}) : async Bool
+func maker_transactionLock(_maker : Principal, _sysTransactionLock : ?{#lock; #unlock}, _sysGlobalLock : ?{#lock; #unlock}) : async Bool
 ```
 
 Lock or unlock an Automated Market Maker (ICDexMaker) system transaction lock.

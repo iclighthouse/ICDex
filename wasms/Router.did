@@ -333,7 +333,6 @@ type ICDexRouter = service {
       },
     ) -> (nat);
   drc207 : () -> (DRC207Support) query;
-  getDAO : () -> (principal) query;
   getICDexMakerWasmVersion : () -> (text, nat) query;
   getICDexMakerWasmVersionHistory : () -> (vec record { text; nat }) query;
   getICDexPairWasmVersion : () -> (text, nat) query;
@@ -460,6 +459,7 @@ type ICDexRouter = service {
         aggregator : opt principal;
         sysTokenFee : opt nat;
         icDao : opt principal;
+        icDaoBoard : opt principal;
         nftPlanetCards : opt principal;
         creatingMakerFee : opt nat;
         sysToken : opt principal;
@@ -472,6 +472,7 @@ type ICDexRouter = service {
         aggregator : principal;
         sysTokenFee : nat;
         icDao : principal;
+        icDaoBoard : principal;
         nftPlanetCards : principal;
         creatingMakerFee : nat;
         sysToken : principal;

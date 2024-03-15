@@ -288,7 +288,7 @@ Resturns the amount of pool shares for all users.
 
 ## Function `info`
 ``` motoko no-repl
-func info() : async { version : Text; name : Text; paused : Bool; initialized : Bool; sysTransactionLock : Bool; visibility : {#Public; #Private}; creator : AccountId; withdrawalFee : Float; poolThreshold : Amount; volFactor : Nat; gridSoid : [?Nat]; shareDecimals : Nat8; pairInfo : { pairPrincipal : Principal; pairUnitSize : Nat; token0 : (Principal, Text, ICDex.TokenStd); token1 : (Principal, Text, ICDex.TokenStd) }; gridSetting : { gridLowerLimit : Price; gridUpperLimit : Price; gridSpread : Price } }
+func info() : async { version : Text; name : Text; paused : Bool; initialized : Bool; sysTransactionLock : Bool; sysGlobalLock : ?Bool; visibility : {#Public; #Private}; creator : AccountId; withdrawalFee : Float; poolThreshold : Amount; volFactor : Nat; gridSoid : [?Nat]; shareDecimals : Nat8; pairInfo : { pairPrincipal : Principal; pairUnitSize : Nat; token0 : (Principal, Text, ICDex.TokenStd); token1 : (Principal, Text, ICDex.TokenStd) }; gridSetting : { gridLowerLimit : Price; gridUpperLimit : Price; gridSpread : Price } }
 ```
 
 Returns ICDexMaker information.
@@ -317,7 +317,7 @@ Configure the ICDexMaker.
 
 ## Function `transactionLock`
 ``` motoko no-repl
-func transactionLock(_act : {#lock; #unlock}) : async Bool
+func transactionLock(_sysTransactionLock : ?{#lock; #unlock}, _sysGlobalLock : ?{#lock; #unlock}) : async Bool
 ```
 
 Lock or unlock system transaction lock. Operate with caution! 
