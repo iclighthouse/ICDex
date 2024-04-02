@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.56";
+    private let version_: Text = "0.12.57";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -2296,7 +2296,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The quantity of the order MUST be an integer multiple of UNIT_SIZE ("# Nat.toText(setting.UNIT_SIZE) #").";});
         };
         if (OrderBook.side(order) == #Buy and _orderType != #MKT and OrderBook.quantity(order) * order.price / setting.UNIT_SIZE > OrderBook.amount(order) ){
-            return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The amount of the order MUST be equal to the quantity * price.";});
+            return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The amount of the order MUST be equal to the quantity * price / UNIT_SIZE.";});
         };
         if (_orderType != #MKT and OrderBook.quantity(order) * Nat.max(order.price, icdex_lastPrice.price) / setting.UNIT_SIZE <= _getFee1() ){
             return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The quantity of the order is too small.";});
@@ -2460,6 +2460,20 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (not(initialized)){ await* _init(); await* _getGas(true); };
         let prePrice = icdex_lastPrice.price;
         var order = _order;
+        if (OrderBook.quantity(order) > 0 and OrderBook.quantity(order) / setting.UNIT_SIZE * setting.UNIT_SIZE != OrderBook.quantity(order)){
+            if (OrderBook.side(order) == #Buy){
+                order := {
+                    quantity = #Buy((OrderBook.quantity(order) / setting.UNIT_SIZE * setting.UNIT_SIZE, OrderBook.amount(order))); 
+                    price = order.price 
+                };
+            }else{
+                order := {quantity = #Sell(OrderBook.quantity(order) / setting.UNIT_SIZE * setting.UNIT_SIZE); price = order.price };
+            };
+        };
+        if (_orderType != #MKT and OrderBook.side(order) == #Buy and OrderBook.quantity(order) == 0 and OrderBook.amount(order) > 0 and order.price > 0){
+            let token0Quantity = OrderBook.amount(order) / order.price * setting.UNIT_SIZE;
+            order := { quantity = #Buy((token0Quantity, OrderBook.amount(order))); price = order.price };
+        };
         if (OrderBook.side(order) == #Buy and OrderBook.quantity(order) > 0 and OrderBook.amount(order) == 0){
             let token1Amount = OrderBook.quantity(order) * order.price / setting.UNIT_SIZE;
             order := {quantity = #Buy((OrderBook.quantity(order), token1Amount)); price = order.price };
