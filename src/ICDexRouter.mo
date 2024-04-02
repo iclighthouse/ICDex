@@ -197,7 +197,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.30";
+    private let version_: Text = "0.12.31";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -1569,7 +1569,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     // };
 
     /// Withdraw the token to the specified account.  
-    /// Withdrawals can only be made to a DAO address, or to a blackhole address (destruction), not to a private address.
+    /// Withdrawals can only be made to a DAO address, or to a blackhole address (destruction), not to a private address.  
+    /// Withdrawing tokens to the SNS governance canister-id is equivalent to burning tokens.
     public shared(msg) func sys_withdraw(_token: Principal, _tokenStd: TokenStd, _to: {owner: Principal; subaccount: ?Blob}, _value: Nat) : async (){ 
         assert(_onlyOwner(msg.caller));
         assert(_to.owner == icDao or _to.owner == icDaoBoard or _to.owner == blackhole);
@@ -1653,6 +1654,79 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         };
         let res = await pair.trade(_order, #LMT, null,null,null,null);
         ignore _putEvent(#sysTrade({ pair = _pair; tokenTxid = _txid; order = _order; orderType = #LMT; result = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        switch(res){
+            case(#ok(v)){};
+            case(#err(e)){ throw Error.reject(e.message); };
+        };
+        return res;
+    };
+
+    /// Batch conversion of fees in ICDexRouter.
+    public shared(msg) func sys_conversionFees(_args: [{
+        pair: Principal;
+        debitToken: ?{#token0; #token1};
+        approvalSupported: ?Bool
+    }]) : async [ICDexTypes.TradingResult]{
+        assert(_onlyOwner(msg.caller));
+        let address = Tools.principalToAccountHex(Principal.fromActor(this), null);
+        var res: [ICDexTypes.TradingResult] = [];
+        for (arg in _args.vals()){
+            try{
+                let pairAddress = Tools.principalToAccountHex(arg.pair, null);
+                let pair: ICDexTypes.Self = actor(Principal.toText(arg.pair));
+                let pairInfo = await pair.info();
+                var debitToken = pairInfo.token0.0;
+                if (arg.debitToken == ?#token1){
+                    debitToken := pairInfo.token1.0;
+                };
+                let token: ICRC1.Self = actor(Principal.toText(debitToken));
+                var tradeValue: Nat = await token.icrc1_balance_of({owner = Principal.fromActor(this); subaccount = null});
+                let fee = await token.icrc1_fee();
+                if (tradeValue > fee * 10){
+                    var txid : {#txid: Txid; #index: Nat} = #index(0);
+                    if (arg.approvalSupported == ?true){
+                        let res = await token.icrc2_approve({
+                            from_subaccount = null;
+                            spender = {owner = arg.pair; subaccount = null};
+                            amount = 2 ** 127; 
+                            expected_allowance = null; 
+                            expires_at = null;
+                            fee = null;
+                            memo = null;
+                            created_at_time = null;
+                        });
+                        switch(res){
+                            case(#Ok(index)){ txid := #index(index) };
+                            case(_){ throw Error.reject("Approve error."); };
+                        };
+                    }else{
+                        let prepares = await pair.getTxAccount(address);
+                        let tx_icrc1Account = prepares.0;
+                        let args : ICRC1.TransferArgs = {
+                            memo = null;
+                            amount = tradeValue;
+                            fee = ?fee;
+                            from_subaccount = null;
+                            to = tx_icrc1Account;
+                            created_at_time = null;
+                        };
+                        let res = await token.icrc1_transfer(args);
+                        switch(res){
+                            case(#Ok(index)){ txid := #index(index) };
+                            case(_){ throw Error.reject("Transfer error."); };
+                        };
+                    };
+                    tradeValue := Nat.sub(tradeValue, fee * 2);
+                    let r = await pair.tradeMKT_b(debitToken, tradeValue, null, null, null, null, null);
+                    var order: ICDexTypes.OrderPrice = {quantity = #Sell(tradeValue); price = 0};
+                    if (debitToken != pairInfo.token0.0){
+                        order := {quantity = #Buy(0, tradeValue); price = 0};
+                    };
+                    ignore _putEvent(#sysTrade({ pair = arg.pair; tokenTxid = txid; order = order; orderType = #MKT; result = r }), ?Tools.principalToAccountBlob(msg.caller, null));
+                    res := Tools.arrayAppend(res, [r]);
+                };
+            }catch(e){};
+        };
         return res;
     };
 

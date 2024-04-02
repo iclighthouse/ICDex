@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.54";
+    private let version_: Text = "0.12.56";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -1836,7 +1836,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         var icdexFee: Nat = 0;
         var gas = _getFee0();
         if (_isToken1) { gas := _getFee1(); };
-        var cancelFee = Nat.min(Nat.max(_value * _getTradingFee() / 5 / 1_000_000, gas*2), gas*1000); // charge TradingFee*20%, limit gas*2 ~ gas*1000
+        var cancelFee = Nat.min(Nat.max(_value * _getTradingFee() / 5 / 1_000_000, gas*2), gas*100); // charge TradingFee*20%, limit gas*2 ~ gas*100
         if (cancelFee > amount){
             icdexFee := amount;
             amount := 0;
@@ -2145,9 +2145,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             valueFromPoolUserBalance := Nat.min(poolUserBalance, _orderAmount);
             if (mode == #TunnelMode and valueFromPoolUserBalance > _fee){
-                poolUserBalance := Nat.min(Nat.sub(poolUserBalance, _fee), _orderAmount);
+                valueFromPoolUserBalance := Nat.min(Nat.sub(poolUserBalance, _fee), _orderAmount);
             }else if (mode == #TunnelMode and valueFromPoolUserBalance <= _fee){
-                poolUserBalance := 0;
+                valueFromPoolUserBalance := 0;
             };
         };
         if (valueFromPoolUserBalance < _orderAmount and (_std == #icrc1 or _std == #icp)){ // For compatibility with tokens without ICRC2
@@ -2284,7 +2284,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (data.size() > 256){
             return ?#err({ code=#UndefinedError; message="410: The length of _data must be less than 256B"; });
         };
-        if (_pendingSize(?account) >= _maxPendings(account, isProOrder) and _orderType == #LMT and not(icdex_debug)){
+        if (_pendingSize(?account) >= _maxPendings(account, isProOrder) and _orderType == #LMT and 
+        ((OrderBook.side(order) == #Sell and order.price >= icdex_lastPrice.price) or (OrderBook.side(order) == #Buy and order.price <= icdex_lastPrice.price))){
             return ?#err({code=#UndefinedError; message="411: The maximum number of pending status orders allowed per account is "# Nat.toText(_maxPendings(account, isProOrder));});
         };
         if (_pendingSize(null) >= maxTotalPendingNumber and _orderType == #LMT and 
@@ -2292,19 +2293,19 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             return ?#err({code=#UndefinedError; message="412: The maximum total number of pending orders in the system is "# Nat.toText(maxTotalPendingNumber) #". Now only MKT order, or order quoted in the range of +/- 5% of the latest price is accepted.";});
         };
         if (OrderBook.quantity(order) > 0 and OrderBook.quantity(order) / setting.UNIT_SIZE * setting.UNIT_SIZE != OrderBook.quantity(order) ){
-            return ?#err({code=#InvalidAmount; message="402: Invalid Amount";});
+            return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The quantity of the order MUST be an integer multiple of UNIT_SIZE ("# Nat.toText(setting.UNIT_SIZE) #").";});
         };
-        if (OrderBook.side(order) == #Buy and _orderType != #MKT and OrderBook.quantity(order) * order.price / setting.UNIT_SIZE != OrderBook.amount(order) ){
-            return ?#err({code=#InvalidAmount; message="402: Invalid Amount";});
+        if (OrderBook.side(order) == #Buy and _orderType != #MKT and OrderBook.quantity(order) * order.price / setting.UNIT_SIZE > OrderBook.amount(order) ){
+            return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The amount of the order MUST be equal to the quantity * price.";});
         };
-        if (_orderType != #MKT and OrderBook.quantity(order) * order.price / setting.UNIT_SIZE <= _getFee1() ){
-            return ?#err({code=#InvalidAmount; message="402: Invalid Amount";});
+        if (_orderType != #MKT and OrderBook.quantity(order) * Nat.max(order.price, icdex_lastPrice.price) / setting.UNIT_SIZE <= _getFee1() ){
+            return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The quantity of the order is too small.";});
         };
         if (OrderBook.side(order) == #Buy and OrderBook.amount(order) <= _getFee1() ){
-            return ?#err({code=#InvalidAmount; message="402: Invalid Amount";});
+            return ?#err({code=#InvalidAmount; message="402: Invalid Amount. The amount of the order is too small.";});
         };
         if (Option.isSome(Trie.get(icdex_orders, keyb(txid), Blob.equal))){ // The txid should not exist in the order book
-            return ?#err({code=#UndefinedError; message="413: Order Duplicate";});
+            return ?#err({code=#UndefinedError; message="413: Duplicate Order.";});
         }; 
         if (expirationDuration < 1800*ns_ or expirationDuration > ExpirationDuration){
             return ?#err({code=#UndefinedError; message="404: The parameter `_expiration` is invalid and needs to be between 1_800_000_000_000 and "# Int.toText(ExpirationDuration) #" nanoseconds.";});
@@ -2609,6 +2610,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         icdex_priceWeighted := _getPriceWeighted(icdex_priceWeighted);
         icdex_lastPrice := Option.get(res.fillPrice, icdex_lastPrice);
         icdex_klines2 := OrderBook.putBatch(icdex_klines2, res.filled, setting.UNIT_SIZE);
+        icdex_klines2 := OrderBook.putBatch(icdex_klines2, res.filled, setting.UNIT_SIZE); // A match contains two orders
         _putLatestFilled(txid, res.filled, OrderBook.side(order));
         if (_inIDO() and status == #Closed){
             _updateIDOData(account, OrderBook.quantity(order) - OrderBook.quantity(res.remaining));
@@ -3886,6 +3888,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /// - enKeepingBalance: Bool. Whether to turn on KeepingBalanceInTraderAccount.
     public shared(msg) func accountConfig(_exMode: {#PoolMode; #TunnelMode}, _enKeepingBalance: Bool, _sa: ?Sa) : async (){
         let account = Tools.principalToAccountBlob(msg.caller, _sa);
+        if (not(_accountIctcDone(account))){
+            throw Error.reject("Wait for your ICTC transactions to execute and try again.");
+        };
         // Default:
         if (account == Tools.principalToAccountBlob(icdexRouter, null)){ // Fee recipient
             assert(_enKeepingBalance == true);
