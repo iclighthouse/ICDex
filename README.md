@@ -81,8 +81,8 @@ cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
 ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: 78cbdb40a3f859f443835b51504096790a241c5b420515dd1e9cf586f2b8badf
-- Version: 0.12.57
+- Module hash: b19a773cb72ce1dcd5ada60979d8388ef89db84b9ab58f6cbc9a3ebce14575ed
+- Version: 0.12.58
 - Build: {
     "args": "--incremental-gc"
 }

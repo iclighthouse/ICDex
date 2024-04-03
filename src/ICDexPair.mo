@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.57";
+    private let version_: Text = "0.12.58";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -2150,7 +2150,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 valueFromPoolUserBalance := 0;
             };
         };
-        if (valueFromPoolUserBalance < _orderAmount and (_std == #icrc1 or _std == #icp)){ // For compatibility with tokens without ICRC2
+        if (valueFromPoolUserBalance < _orderAmount){ // For compatibility with tokens without ICRC2
             if (_side == #token0){
                 txBalance := await* _getBaseBalance(_txid);
             }else{
