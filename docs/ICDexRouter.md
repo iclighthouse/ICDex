@@ -558,7 +558,8 @@ func sys_withdraw(_token : Principal, _tokenStd : TokenStd, _to : { owner : Prin
 ```
 
 Withdraw the token to the specified account.  
-Withdrawals can only be made to a DAO address, or to a blackhole address (destruction), not to a private address.
+Withdrawals can only be made to a DAO address, or to a blackhole address (destruction), not to a private address.  
+Withdrawing tokens to the SNS governance canister-id is equivalent to burning tokens.
 
 ## Function `sys_order`
 ``` motoko no-repl
@@ -566,6 +567,13 @@ func sys_order(_token : Principal, _tokenStd : TokenStd, _value : Nat, _pair : P
 ```
 
 Placing an order in a trading pair as a trader.
+
+## Function `sys_conversionFees`
+``` motoko no-repl
+func sys_conversionFees(_args : [{ pair : Principal; debitToken : ?{#token0; #token1}; approvalSupported : ?Bool }]) : async [ICDexTypes.TradingResult]
+```
+
+Batch conversion of fees in ICDexRouter.
 
 ## Function `sys_cancelOrder`
 ``` motoko no-repl

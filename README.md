@@ -64,8 +64,8 @@ dfx build --network ic ICDexRouter
 cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: b44be4c7b302ea00aca6d406b5f6632f2f526f87a943b563bb63043680b1685e
-- Version: 0.12.30
+- Module hash: b251952c1fece949a16877ee9372f99093ee7cae70261f50abcdba447a5cc47b
+- Version: 0.12.31
 - Build: {
     "args": "--compacting-gc"
 }
@@ -81,8 +81,8 @@ cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
 ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: 79daf742875073aca32b0fecc5270b82675453a62cb85641da6083117243a048
-- Version: 0.12.54
+- Module hash: b19a773cb72ce1dcd5ada60979d8388ef89db84b9ab58f6cbc9a3ebce14575ed
+- Version: 0.12.58
 - Build: {
     "args": "--incremental-gc"
 }
@@ -229,7 +229,7 @@ dfx canister --network ic call __ICDexMaker-canister-id__ add '(10_000_000_000: 
 ### System configurations
 
 - ICDexRouter.sys_config().  
-Where icDAO is to be configured as SNS governance canister-id and sysToken is to be configured as ICL ledger canister-id issued by SNS.
+Where icDAO is to be configured as SNS governance canister-id and sysToken is to be configured as ICL ledger canister-id issued.
 
 ### Controllers (Owners) of canisters
 
