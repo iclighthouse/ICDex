@@ -33,6 +33,7 @@ module {
         #sysWithdraw: { token: Principal; to: Principal; value: Nat; txid: {#txid: Txid; #index: Nat} };
         #sysTrade: { pair: Principal; tokenTxid : {#txid: Txid; #index: Nat}; order: Pair.OrderPrice; orderType: Pair.OrderType; result: Pair.TradingResult };
         #sysCancelOrder: { pair: Principal; txid: ?Txid };
+        #sysCall: { canister: Principal; method: Text; args: Blob; reply: Blob };
         #timerStart: { intervalSeconds: Nat };
         #timerStop;
         #createPairByUser: { token0: Principal; token1: Principal; pairCanisterId: Principal };
