@@ -596,6 +596,15 @@ func sys_getConfig() : async { aggregator : Principal; blackhole : Principal; ic
 
 Returns the configuration items of ICDexRouter.
 
+## Function `sys_call`
+``` motoko no-repl
+func sys_call(_canisterId : Principal, _methodName : Text, _args : Blob) : async (reply : Blob)
+```
+
+Calls specified canister's methods, such as trading pairs, using ICDexRouter as a proxy for governance purposes.  
+This is a generic ICDex governance method with the disadvantage that the parameters are in binary unreadable form.  
+Proposals that call this method, where its parameters are not clear, please vote to reject.
+
 ## Function `NFTs`
 ``` motoko no-repl
 func NFTs() : async [(AccountId, [NFT])]

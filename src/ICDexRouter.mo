@@ -137,6 +137,7 @@ import Array "mo:base/Array";
 import Binary "mo:icl/Binary";
 import Blob "mo:base/Blob";
 import Cycles "mo:base/ExperimentalCycles";
+import ICFunc "mo:base/ExperimentalInternetComputer";
 import DRC20 "mo:icl/DRC20";
 import ICRC1 "mo:icl/ICRC1";
 import DRC207 "mo:icl/DRC207";
@@ -197,7 +198,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.31";
+    private let version_: Text = "0.12.32";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -1794,6 +1795,16 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             creatingPairFee = creatingPairFee;
             creatingMakerFee = creatingMakerFee;
         };
+    };
+
+    /// Calls specified canister's methods, such as trading pairs, using ICDexRouter as a proxy for governance purposes.  
+    /// This is a generic ICDex governance method with the disadvantage that the parameters are in binary unreadable form.  
+    /// Proposals that call this method, where its parameters are not clear, please vote to reject.
+    public shared(msg) func sys_call(_canisterId: Principal, _methodName: Text, _args: Blob) : async (reply : Blob){
+        assert(_onlyOwner(msg.caller));
+        let res = await ICFunc.call(_canisterId, _methodName, _args);
+        ignore _putEvent(#sysCall({ canister = _canisterId; method = _methodName; args = _args; reply = res }), ?Tools.principalToAccountBlob(msg.caller, null));
+        return res;
     };
 
     /* =======================
