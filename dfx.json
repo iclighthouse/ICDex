@@ -3,18 +3,20 @@
     "ICDexPair": {
       "main": "src/ICDexPair.mo",
       "type": "motoko",
-      "args" : "--incremental-gc"
+      "args" : "--incremental-gc",
+      "gzip" : true
     },
     "ICDexMaker": {
       "main": "src/ICDexMaker.mo",
       "type": "motoko",
-      "args" : "--compacting-gc"
+      "args" : "--compacting-gc",
+      "gzip" : true
     },
     "ICDexRouter": {
       "main": "src/ICDexRouter.mo",
       "type": "motoko",
       "args" : "--compacting-gc",
-      "optimize": "size"
+      "gzip" : true
     },
     "ICLtest": {
       "main": "tokens/Token.mo",
