@@ -198,7 +198,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.32";
+    private let version_: Text = "0.12.33";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -228,6 +228,8 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     private stable var pairs: Trie.Trie<PairCanister, SwapPair> = Trie.empty(); // Trading Pair Information List
     private stable var ICDexPairWasmHistory: [(wasm: [Nat8], version: Text, isFinal: Bool)] = [];
     private stable var IDOPairs = List.nil<Principal>(); // List of trading pairs with IDO enabled
+    // List of vip-makers added by proposal
+    private stable var vipMakers: Trie.Trie<Principal, [AccountId]> = Trie.empty();
     // ICDexMaker
     private stable var ICDexMakerWasmHistory: [(wasm: [Nat8], version: Text, isFinal: Bool)] = [];
     // List of public maker canisters (Everyone can add liquidity)
@@ -628,6 +630,27 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         return tokenImplTxnApi;
     };
 
+    private func _putVipMaker(_pair: Principal, _a: AccountId) : (){
+        switch(Trie.get(vipMakers, keyp(_pair), Principal.equal)){
+            case(?(items)){ 
+                let _items = Array.filter(items, func(t: AccountId): Bool{ t != _a });
+                vipMakers := Trie.put(vipMakers, keyp(_pair), Principal.equal, Tools.arrayAppend(_items, [_a])).0 
+            };
+            case(_){ 
+                vipMakers := Trie.put(vipMakers, keyp(_pair), Principal.equal, [_a]).0 
+            };
+        };
+    };
+    private func _removeVipMaker(_pair: Principal, _a: AccountId) : (){
+        switch(Trie.get(vipMakers, keyp(_pair), Principal.equal)){
+            case(?(items)){
+                let _items = Array.filter(items, func(t: AccountId): Bool{ t != _a });
+                vipMakers := Trie.put(vipMakers, keyp(_pair), Principal.equal, _items).0;
+            };
+            case(_){};
+        };
+    };
+
     /// Publicly create a trading pair by paying creatingPairFee.  
     /// Requires that the token should implement the DRC202 standard or implements the SNS ledger method `get_transactions : shared query GetBlocksRequest -> async GetTransactionsResponse`.
     ///
@@ -958,6 +981,36 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             let f = await _syncFee(canister);
         };
     };
+
+    /// Synchronize the vip-maker records of all pairs into the ICDexRouter.
+    public shared(msg) func syncVipMakers() : async (){
+        assert(_onlyOwner(msg.caller));
+        type PairActor = actor{
+            makerList : shared query (_page: ?ICDexTypes.ListPage, _size: ?ICDexTypes.ListSize) -> async TrieList<AccountId, {vol: ICDexTypes.Vol; commission: ICDexTypes.Vol; orders: Nat; filledCount: Nat;}>;
+            makerRebate : shared query (_maker: Address) -> async (rebateRate: Float, feeRebate: Float);
+        };
+        for ((pairCanisterId, pairInfo) in Trie.iter(pairs)){
+            let pair: PairActor = actor(Principal.toText(pairCanisterId));
+            var res : [(AccountId, {vol: ICDexTypes.Vol; commission: ICDexTypes.Vol; orders: Nat; filledCount: Nat;})] = [];
+            var iPage: Nat = 1;
+            var completed: Bool = false;
+            while (not(completed)){
+                let r = await pair.makerList(?iPage, null);
+                res := Tools.arrayAppend(res, r.data);
+                if (r.totalPage <= iPage){
+                    completed := true;
+                }else{
+                    iPage += 1;
+                };
+            };
+            vipMakers := Trie.remove(vipMakers, keyp(pairCanisterId), Principal.equal).0;
+            for(item in res.vals()){
+                if ((await pair.makerRebate(_accountIdToHex(item.0))).0 > 0){
+                    _putVipMaker(pairCanisterId, item.0);
+                };
+            };
+        };
+    };
     
     /* =======================
       Data snapshots (backup & recovery)
@@ -1243,6 +1296,31 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let paris =  _getPairsByToken(_token0, ?_token1);
 
     };
+
+    /// Returns vip-makers for the specified trading pair, or all records if no trading pair is specified.
+    public query func getVipMakers(_pair: ?Principal): async [(pair: Principal, account: AccountId)]{
+        var res : [(pair: Principal, account: AccountId)] = [];
+        switch(_pair){
+            case(?pair){
+                switch(Trie.get(vipMakers, keyp(pair), Principal.equal)){
+                    case(?(items)){
+                        for (item in items.vals()){
+                            res := Tools.arrayAppend(res, [(pair, item)]);
+                        };
+                    };
+                    case(_){};
+                };
+            };
+            case(_){
+                for ((pair, items) in Trie.iter(vipMakers)){
+                    for (item in items.vals()){
+                        res := Tools.arrayAppend(res, [(pair, item)]);
+                    };
+                };
+            };
+        };
+        return res;
+    };
     
     /* =======================
       Governance on trading pairs
@@ -1496,16 +1574,20 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Set up vip-maker qualification and configure rebate rate.
     public shared(msg) func pair_setVipMaker(_app: Principal, _account: Address, _rate: Nat) : async (){
         assert(_onlyOwner(msg.caller));
+        let accountId = _getAccountId(_account);
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.setVipMaker(_account, _rate);
+        _putVipMaker(_app, accountId);
         ignore _putEvent(#pairSetVipMaker({ pair = _app; account = _account; rebateRate = _rate }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
     /// Removes vip-maker qualification.
     public shared(msg) func pair_removeVipMaker(_app: Principal, _account: Address) : async (){
         assert(_onlyOwner(msg.caller));
+        let accountId = _getAccountId(_account);
         let pair: ICDexPrivate.Self = actor(Principal.toText(_app));
         await pair.removeVipMaker(_account);
+        _removeVipMaker(_app, accountId);
         ignore _putEvent(#pairRemoveVipMaker({ pair = _app; account = _account }), ?Tools.principalToAccountBlob(msg.caller, null));
     };
 
@@ -2063,10 +2145,12 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             case(?(items)){ 
                 assert(items.size() < maxNumberBindingPerNft);
                 let _items = Array.filter(items, func(t: (Principal, AccountId)): Bool{ t.0 != _pair or t.1 != _a });
-                nftBindingMakers := Trie.put(nftBindingMakers, keyt(_nftId), Text.equal, Tools.arrayAppend(_items, [(_pair, _a)])).0 
+                nftBindingMakers := Trie.put(nftBindingMakers, keyt(_nftId), Text.equal, Tools.arrayAppend(_items, [(_pair, _a)])).0;
+                _putVipMaker(_pair, _a);
             };
             case(_){ 
-                nftBindingMakers := Trie.put(nftBindingMakers, keyt(_nftId), Text.equal, [(_pair, _a)]).0 
+                nftBindingMakers := Trie.put(nftBindingMakers, keyt(_nftId), Text.equal, [(_pair, _a)]).0;
+                _putVipMaker(_pair, _a);
             };
         };
         await* _remote_setVipMaker(_nftId, _pair, _a);
@@ -2076,6 +2160,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             case(?(items)){
                 let _items = Array.filter(items, func(t: (Principal, AccountId)): Bool{ t.0 != _pair or t.1 != _a });
                 nftBindingMakers := Trie.put(nftBindingMakers, keyt(_nftId), Text.equal, _items).0;
+                _removeVipMaker(_pair, _a);
             };
             case(_){};
         };
@@ -2092,11 +2177,19 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         };
     };
 
-    /// Returns vip-makers to which an NFT has been bound.
+    /// Returns vip-makers to which an NFT has been bound. If nftId is the empty string "", all records are returned.
     public query func NFTBindingMakers(_nftId: Text) : async [(pair: Principal, account: AccountId)]{
-        switch(Trie.get(nftBindingMakers, keyt(_nftId), Text.equal)){
-            case(?(items)){ return items };
-            case(_){ return []; };
+        if (_nftId == ""){
+            var res : [(pair: Principal, account: AccountId)] = [];
+            for ((nftId, items) in Trie.iter(nftBindingMakers)){
+                res := Tools.arrayAppend(res, items);
+            };
+            return res;
+        }else{
+            switch(Trie.get(nftBindingMakers, keyt(_nftId), Text.equal)){
+                case(?(items)){ return items };
+                case(_){ return []; };
+            };
         };
     };
 

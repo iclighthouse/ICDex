@@ -61,44 +61,42 @@ dfx canister --network ic install Token1 --argument '(record { totalSupply=10000
 ```
 dfx canister --network ic create ICDexRouter --controller __your principal__
 dfx build --network ic ICDexRouter
-cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm wasms/
+cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm.gz wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 7c6da14b76d3b9d389465c8816a942da015fbcda8620701475e564b39f69dce3
-- Version: 0.12.32
+- Module hash: 8b21fcd8adc5ff3200dcf7acd4d293705c5af6f230df6d8052e38bde2c4041ec
+- Version: 0.12.33
 - Build: {
-    "args": "--compacting-gc"
+    "args": "--compacting-gc",
+    "gzip": true
 }
 
 ### 2. ICDexPair
 ```
 dfx canister --network ic create ICDexPair --controller __your principal__
 dfx build --network ic ICDexPair
-cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm wasms/
-```
-- Replace the compressed candid with ic-wasm.
-```
-ic-wasm wasms/ICDexPair.wasm -o wasms/ICDexPair.wasm metadata candid:service -f wasms/Pair.did -v public
+cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm.gz wasms/
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: b19a773cb72ce1dcd5ada60979d8388ef89db84b9ab58f6cbc9a3ebce14575ed
-- Version: 0.12.58
+- Module hash: cf3e475b3317fcc72bee81f354efb6900070aa681d5d28f3dcf5c8798e06df68
+- Version: 0.12.59
 - Build: {
-    "args": "--incremental-gc"
+    "args": "--incremental-gc",
+    "gzip": true
 }
 
 ### 3. ICDexMaker
 ```
 dfx canister --network ic create ICDexMaker --controller __your principal__
 dfx build --network ic ICDexMaker
-cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm wasms/
+cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm.gz wasms/
 ```
 - Code: "src/ICDexMaker.mo"
-- Module hash: 96ce5cf5d8ad4a5f7a631879384e1136c801999a2e5169738234ec1f14113fd1
+- Module hash: 5362a6d0a107108259599ace43a79d437da9b2b065bf558d8317aefb7bedce16
 - Version: 0.5.10
 - Build: {
-    "args": "--compacting-gc", 
-    "optimize": "size"
+    "args": "--compacting-gc",
+    "gzip": true
 }
 
 ## Deployment of ICDex

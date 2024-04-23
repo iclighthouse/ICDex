@@ -274,6 +274,13 @@ func sync() : async ()
 
 Synchronize trading fees for all pairs.
 
+## Function `syncVipMakers`
+``` motoko no-repl
+func syncVipMakers() : async ()
+```
+
+Synchronize the vip-maker records of all pairs into the ICDexRouter.
+
 ## Function `getSnapshots`
 ``` motoko no-repl
 func getSnapshots(_pair : Principal) : async [ICDexTypes.Timestamp]
@@ -362,6 +369,13 @@ func route(_token0 : Principal, _token1 : Principal) : async [(PairCanister, Swa
 ```
 
 Returns the trading pairs based on the two tokens provided.
+
+## Function `getVipMakers`
+``` motoko no-repl
+func getVipMakers(_pair : ?Principal) : async [(pair : Principal, account : AccountId)]
+```
+
+Returns vip-makers for the specified trading pair, or all records if no trading pair is specified.
 
 ## Function `pair_pause`
 ``` motoko no-repl
@@ -638,7 +652,7 @@ The user withdraws the NFT to his wallet.
 func NFTBindingMakers(_nftId : Text) : async [(pair : Principal, account : AccountId)]
 ```
 
-Returns vip-makers to which an NFT has been bound.
+Returns vip-makers to which an NFT has been bound. If nftId is the empty string "", all records are returned.
 
 ## Function `NFTBindMaker`
 ``` motoko no-repl
