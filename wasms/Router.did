@@ -343,6 +343,7 @@ type ICDexRouter = service {
     ) query;
   getSnapshots : (principal) -> (vec Timestamp) query;
   getTokens : () -> (vec TokenInfo__1) query;
+  getVipMakers : (opt principal) -> (vec record { principal; AccountId }) query;
   get_account_events : (AccountId) -> (
       vec record { Event; Timestamp__1 },
     ) query;

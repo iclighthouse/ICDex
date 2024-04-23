@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.58";
+    private let version_: Text = "0.12.59";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -1398,7 +1398,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 var fee0: Nat = 0;
                 var fee1: Nat = 0;
                 // charge cancelling fee: cancelling order without any fills within 1h 
-                if (order.status == #Cancelled and Time.now() < order.time + 3600*ns_ and order.filled.size() == 0 and not(_isSTOrder(_txid))){
+                if (order.status == #Cancelled and Time.now() < order.time + 3600*ns_ and order.filled.size() == 0 and not(_isSTOrder(_txid)) and not(_onlyVipMaker(account))){
                     if (OrderBook.side(order.orderPrice) == #Sell and order.orderType == #LMT){
                         let amountAndFee = _chargeCancelFee(tokenAmount, false);
                         tokenAmount := amountAndFee.0;
