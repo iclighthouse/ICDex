@@ -91,7 +91,7 @@ the amount of token1 to be greater than token1_fee * 100000.
 ## 3 Fee model
 
 - Withdrawal fee: LP removes liquidity with a withdrawal fee, charged as a fixed fee plus a percentage of the withdrawal amount, 
-which is calculated as `Fee = 10 * tokenFee + withdrawalFeeRate * value`, where tokenFee is the transfer fee for the token, 
+which is calculated as `Fee = 10 * tokenFee + withdrawalFeeRate * value` (Public OAMMs), or `Fee = 4 * tokenFee` (Private OAMMs), where tokenFee is the transfer fee for the token, 
 withdrawalFeeRate is the fee rate, and value is the amount of the withdrawal.
 
 ## 4 Core functionality

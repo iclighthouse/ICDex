@@ -92,7 +92,7 @@
 /// ## 3 Fee model
 ///
 /// - Withdrawal fee: LP removes liquidity with a withdrawal fee, charged as a fixed fee plus a percentage of the withdrawal amount, 
-/// which is calculated as `Fee = 10 * tokenFee + withdrawalFeeRate * value`, where tokenFee is the transfer fee for the token, 
+/// which is calculated as `Fee = 10 * tokenFee + withdrawalFeeRate * value` (Public OAMMs), or `Fee = 4 * tokenFee` (Private OAMMs), where tokenFee is the transfer fee for the token, 
 /// withdrawalFeeRate is the fee rate, and value is the amount of the withdrawal.
 /// 
 /// ## 4 Core functionality
@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.10";
+    private let version_: Text = "0.5.11";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -277,7 +277,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     private stable var initialized: Bool = false;
     private stable var sysTransactionLock: Bool = false; // transaction lock
     private stable var sysGlobalLock: Bool = false; // global lock
-    private stable var withdrawalFee: Nat = 300; // ppm. 10000 means 1%.  (Fee: 10 * tokenFee + withdrawalFee * Value / 1000000)
+    private stable var withdrawalFee: Nat = (if (visibility == #Public) { 300 } else { 0 }); // ppm. 10000 means 1%.  (Fee: 10 * tokenFee + withdrawalFee * Value / 1000000)
     private stable var pairPrincipal: Principal = initArgs.pair; // Trading pair canister-id. An ICDexMaker can be bound to only one trading pair.
     private stable var token0Principal: Principal = initArgs.token0;
     private stable var token0Symbol: Text = "";
@@ -1861,11 +1861,20 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
                     throw Error.reject("401: The system transaction is locked, please try again later."); 
                 };
                 values := _sharesToAmount(_shares);
-                if (values.value0 > 10 * token0Fee + values.value0 * withdrawalFee / 1000000){
-                    resValue0 := Nat.sub(values.value0, 10 * token0Fee + values.value0 * withdrawalFee / 1000000);
+                var withdrawalFee0 : Nat = 0;
+                var withdrawalFee1 : Nat = 0;
+                if (visibility == #Public){
+                    withdrawalFee0 := 10 * token0Fee + values.value0 * withdrawalFee / 1000000;
+                    withdrawalFee1 := 10 * token1Fee + values.value1 * withdrawalFee / 1000000;
+                }else{
+                    withdrawalFee0 := 4 * token0Fee;
+                    withdrawalFee1 := 4 * token1Fee;
                 };
-                if (values.value1 > 10 * token1Fee + values.value1 * withdrawalFee / 1000000){
-                    resValue1 := Nat.sub(values.value1, 10 * token1Fee + values.value1 * withdrawalFee / 1000000);
+                if (values.value0 > withdrawalFee0){
+                    resValue0 := Nat.sub(values.value0, withdrawalFee0);
+                };
+                if (values.value1 > withdrawalFee1){
+                    resValue1 := Nat.sub(values.value1, withdrawalFee1);
                 };
                 if (resValue0 == 0 and resValue1 == 0){
                     throw Error.reject("414: The number of shares entered is not available."); 
