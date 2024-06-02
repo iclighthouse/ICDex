@@ -198,7 +198,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.33";
+    private let version_: Text = "0.12.35";
     private var ICP_FEE: Nat64 = 10_000; // e8s 
     private let ic: IC.Self = actor("aaaaa-aa");
     private var cfAccountId: AccountId = Blob.fromArray([]);
@@ -219,7 +219,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     // ICLighthouse Planet NFT, can be reconfigured.
     private stable var nftPlanetCards: Principal = Principal.fromText("goncb-kqaaa-aaaap-aakpa-cai");
     // ICDex's governance token that can be reconfigured.
-    private stable var sysToken: Principal = Principal.fromText("5573k-xaaaa-aaaak-aacnq-cai"); // will be configured as an SNS token
+    private stable var sysToken: Principal = Principal.fromText("hhaaz-2aaaa-aaaaq-aacla-cai"); // will be configured as an SNS token
     private stable var sysTokenFee: Nat = 1_000_000; // 0.01 ICL
     private stable var creatingPairFee: Nat = 500_000_000_000; // 5000 ICL
     private stable var creatingMakerFee: Nat = 5_000_000_000; // 50 ICL
@@ -1093,8 +1093,12 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         backupData := Tools.arrayAppend(backupData, [otherData]);
         let icdex_orders = await pair.backup(#icdex_orders);
         backupData := Tools.arrayAppend(backupData, [icdex_orders]);
-        let icdex_failedOrders = await pair.backup(#icdex_failedOrders);
-        backupData := Tools.arrayAppend(backupData, [icdex_failedOrders]);
+        try{
+            let icdex_failedOrders = await pair.backup(#icdex_failedOrders);
+            backupData := Tools.arrayAppend(backupData, [icdex_failedOrders]);
+        }catch(e){
+            backupData := Tools.arrayAppend(backupData, [#icdex_failedOrders([])]);
+        };
         let icdex_orderBook = await pair.backup(#icdex_orderBook);
         backupData := Tools.arrayAppend(backupData, [icdex_orderBook]);
         let icdex_klines2 = await pair.backup(#icdex_klines2);
@@ -1753,7 +1757,19 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         assert(_onlyOwner(msg.caller));
         let address = Tools.principalToAccountHex(Principal.fromActor(this), null);
         var res: [ICDexTypes.TradingResult] = [];
-        for (arg in _args.vals()){
+        var args = _args;
+        if (args.size() == 0){
+            for ((pairCid, pairInfo) in Trie.iter(pairs)){
+                if (pairInfo.token1.0 == Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai") and pairInfo.token0.0 != sysToken){
+                    args := Tools.arrayAppend(args, [{
+                        pair = pairCid;
+                        debitToken = null;
+                        approvalSupported = null
+                    }]);
+                };
+            };
+        };
+        for (arg in args.vals()){
             try{
                 let pairAddress = Tools.principalToAccountHex(arg.pair, null);
                 let pair: ICDexTypes.Self = actor(Principal.toText(arg.pair));
@@ -2463,9 +2479,9 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         try{
             Cycles.add(canisterCyclesInit);
             var controllers: [Principal] = [icDao, icDaoBoard, blackhole, Principal.fromActor(this)]; 
-            if (_arg.allow == #Private){
-                controllers := Tools.arrayAppend(controllers, [msg.caller]);
-            };
+            // if (_arg.allow == #Private){
+            //     controllers := Tools.arrayAppend(controllers, [msg.caller]);
+            // };
             let canister = await ic.create_canister({ settings = ?{ 
                 compute_allocation = null;
                 controllers = ?controllers;
@@ -2497,23 +2513,28 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             });
             if (_arg.allow == #Public){
                 _putPublicMaker(_arg.pair, makerCanister, accountId);
+                let pair: ICDexPrivate.Self = actor(Principal.toText(_arg.pair));
+                let rebateRate: Nat = 90;
+                let makerAccountId: Blob = Tools.principalToAccountBlob(makerCanister, null);
+                await pair.setVipMaker(Principal.toText(makerCanister), rebateRate);
+                _putVipMaker(_arg.pair, makerAccountId);
+                ignore _putEvent(#pairSetVipMaker({ pair = _arg.pair; account = Principal.toText(makerCanister); rebateRate = rebateRate }), ?Tools.principalToAccountBlob(msg.caller, null));
             }else{
                 _putPrivateMaker(_arg.pair, makerCanister, accountId);
+                let arg: ICRC1.TransferArgs = {
+                    from_subaccount = null;
+                    to = {owner = makerCanister; subaccount = null};
+                    amount = sysTokenFee;
+                    fee = null;
+                    memo = null;
+                    created_at_time = null;
+                };
+                ignore await token.icrc1_transfer(arg);
+                let maker : actor{
+                    approveToPair : shared (_token: Principal, _std: TokenStd, _amount: Nat) -> async Bool;
+                } = actor(Principal.toText(makerCanister));
+                ignore await maker.approveToPair(sysToken, #icrc1, 2 ** 127);
             };
-
-            let arg: ICRC1.TransferArgs = {
-                from_subaccount = null;
-                to = {owner = makerCanister; subaccount = null};
-                amount = sysTokenFee;
-                fee = null;
-                memo = null;
-                created_at_time = null;
-            };
-            ignore await token.icrc1_transfer(arg);
-            let maker : actor{
-                approveToPair : shared (_token: Principal, _std: TokenStd, _amount: Nat) -> async Bool;
-            } = actor(Principal.toText(makerCanister));
-            ignore await maker.approveToPair(sysToken, #icrc1, 2 ** 127);
 
             // cyclesMonitor := await* CyclesMonitor.put(cyclesMonitor, makerCanister);
             await* monitor.putCanister(makerCanister);

@@ -88,7 +88,7 @@ module {
 
     public class SagaTM(this: Principal, localCall: ?LocalCall, /*localCallAsync: ?LocalCallAsync,*/ defaultTaskCallback: ?Callback, defaultOrderCallback: ?OrderCallback) {
         let limitAtOnce: Nat = 500;
-        var autoClearTimeout: Int = 3*30*24*3600*1000000000; // 3 months
+        var autoClearTimeout: Int = 2*30*24*3600*1000000000; // 2 months
         var index: Toid = 1;
         var firstIndex: Toid = 1;
         var orders = TrieMap.TrieMap<Toid, Order>(Nat.equal, TA.natHash);
@@ -1059,7 +1059,9 @@ module {
         };
         public func clear(_expiration: ?Int, _delForced: Bool) : (){
             _clear(_expiration, _delForced);
-            actuator().clear(_expiration, _delForced);
+            for (i in Iter.range(1, 10)){
+                actuator().clear(_expiration, _delForced);
+            };
         };
         
         // The following methods are used for governance or manual compensation.
