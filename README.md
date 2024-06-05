@@ -78,8 +78,8 @@ dfx build --network ic ICDexPair
 cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm.gz wasms/
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: cf3e475b3317fcc72bee81f354efb6900070aa681d5d28f3dcf5c8798e06df68
-- Version: 0.12.59
+- Module hash: 04139afbca4f00948725f6b9842635593c57a31590f91928ddf1a6e64158a4fe
+- Version: 0.12.63
 - Build: {
     "args": "--incremental-gc",
     "gzip": true
@@ -92,8 +92,8 @@ dfx build --network ic ICDexMaker
 cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm.gz wasms/
 ```
 - Code: "src/ICDexMaker.mo"
-- Module hash: e855d43784e8c35dc2103db1f1e8b306212b0e5f91841e50d98da9d72b3c2b25
-- Version: 0.5.11
+- Module hash: b6ecfa063405c1109bdf38374630e0c78436d9a6a78bb0b1aac91a5b9e9c60f4
+- Version: 0.5.12
 - Build: {
     "args": "--compacting-gc",
     "gzip": true
