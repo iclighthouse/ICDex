@@ -1169,7 +1169,12 @@ Removes vip-maker qualification
 func setOrderFail(_txid : Text, _unlock0 : Amount, _unlock1 : Amount) : async Bool
 ```
 
-Sets an order with #Todo status as an error order
+
+## Function `setTodoOrdersFail`
+``` motoko no-repl
+func setTodoOrdersFail() : async Nat
+```
+
 
 ## Function `mergePair`
 ``` motoko no-repl
@@ -1556,13 +1561,6 @@ func withdraw_cycles(_amount : Nat) : async ()
 
 Withdraw cycles
 
-## Function `setUpgradeMode`
-``` motoko no-repl
-func setUpgradeMode(_mode : {#Base; #All}) : async ()
-```
-
-When the data is too large to be backed up, you can set the UpgradeMode to #Base
-
 ## Function `timerStart`
 ``` motoko no-repl
 func timerStart(_intervalSeconds : Nat) : async ()
@@ -1590,3 +1588,49 @@ func recovery(_request : BackupResponse) : async Bool
 ```
 
 Restore `BackupResponse` data to the canister's global variable.
+
+## Function `health`
+``` motoko no-repl
+func health(_account : Address) : async ?OrderHealth
+```
+
+Returns the health of the trader's ordering behaviour.
+
+In order to conserve cansiter's computational resources, we count the order behaviour of each trader and 
+limit the accounts that do not place healthy orders.  
+The following behaviours will be restricted from trading.
+- The number of consecutive failed orders reaches 20.
+Restriction rules:
+- The trading function of the account will be frozen after the triggering of the restriction conditions;
+- Each freeze = number of times * 12 hours (freezing time will be incremented).
+Reset rules:
+- 24 hours without cancelling an order, the corresponding count will be cleared;
+- Upon expiration of the freeze time.
+
+## Function `dataSize`
+``` motoko no-repl
+func dataSize() : async { icdex_orders : Nat; icdex_failedOrders : Nat; icdex_orderBook : (Nat, Nat); icdex_latestfilled : Nat; icdex_vols : Nat; icdex_nonces : Nat; icdex_pendingOrders : Nat; icdex_lastVisits : Nat; icdex_keepingBalances : Nat; icdex_stOrderRecords : Nat; icdex_userProOrderList : Nat; icdex_activeProOrderList : Nat; icdex_userStopLossOrderList : Nat; icdex_activeStopLossOrderList : (Nat, Nat); icdex_stOrderTxids : Nat; clearingTxids : Nat; timeSortedTxids : Nat; fallbacking_txids : Nat; accountWithdrawToids : Nat; accountHealth : Nat }
+```
+
+Returns the size of the global variable data
+
+## Function `clearFailedOrders`
+``` motoko no-repl
+func clearFailedOrders() : async ()
+```
+
+Clear failed order records.
+
+## Function `clearAccountHealth`
+``` motoko no-repl
+func clearAccountHealth() : async ()
+```
+
+Clear account health records.
+
+## Function `setUpgradeMode`
+``` motoko no-repl
+func setUpgradeMode(_mode : {#Base; #All}) : async ()
+```
+
+When the data is too large to be backed up, you can set the UpgradeMode to #Base

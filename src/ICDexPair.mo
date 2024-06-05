@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.59";
+    private let version_: Text = "0.12.63";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -513,9 +513,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private stable var lastStorageTime : Time.Time = 0;
     private var countAsyncMessage : Nat = 0;
     // The maximum number of orders the order book can accept, if this is exceeded, only quotes within +/-5% of the latest price will be accepted.
-    private let maxTotalPendingNumber : Nat = 20_000; 
+    private let maxTotalPendingNumber : Nat = 15_000; 
     // DRC205: External scalable storage of transaction records
-    private var drc205 = DRC205.DRC205({EN_DEBUG = icdex_debug; MAX_CACHE_TIME = 6 * 30 * 24 * 3600 * ns_; MAX_CACHE_NUMBER_PER = 1000; MAX_STORAGE_TRIES = 2; }); 
+    private var drc205 = DRC205.DRC205({EN_DEBUG = icdex_debug; MAX_CACHE_TIME = 3 * 30 * 24 * 3600 * ns_; MAX_CACHE_NUMBER_PER = 1000; MAX_STORAGE_TRIES = 2; }); 
     // Statistics on broker's volume and commissions
     private stable var stats_brokers: Trie.Trie<AccountId, {vol: Vol; commission: Vol; count: Nat; rate: Float}> = Trie.empty();
     // Statistics on vip-maker's volume and commissions
@@ -525,6 +525,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     private stable var initialized: Bool = false;
     private stable var fallbacking_txids = List.nil<(Txid, Time.Time)>(); // Orders in fallbacking
     private stable var accountWithdrawToids = List.nil<(AccountId, Toid, Time.Time)>(); // ICTC transaction orders being withdrawn
+    type OrderHealth = { fail: Nat; failedTime: Timestamp; freezeUntil: Timestamp; message: Text; freezingCount: Nat };
+    private let healthMaxFailureNumber: Nat = 20;
+    private stable var accountHealth : Trie.Trie<AccountId, OrderHealth> = Trie.empty();
 
     /* ===========================
       Local function section
@@ -1585,6 +1588,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 _saveOrderRecord(_txid, false, true); // set fail
                 icdex_failedOrders := Trie.put(icdex_failedOrders, keyb(_txid), Blob.equal, order).0;
                 icdex_orders := Trie.remove(icdex_orders, keyb(_txid), Blob.equal).0;
+                _putAccountHealth(order.account, 1);
                 // fix locked bug
                 if (_unlock0 > 0){
                     ignore _unlockAccountBalance(order.account, #token0, _unlock0);
@@ -1595,8 +1599,18 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(_){};
         };
+        var duration = ExpirationDuration / 2;
+        if (Trie.size(icdex_failedOrders) > 5000){
+            duration := 3600 * ns_;
+        }else if (Trie.size(icdex_failedOrders) > 3000){
+            duration := 24 * 3600 * ns_;
+        }else if (Trie.size(icdex_failedOrders) > 2000){
+            duration := 2 * 24 * 3600 * ns_;
+        }else if (Trie.size(icdex_failedOrders) > 1000){
+            duration := ExpirationDuration / 4;
+        };
         icdex_failedOrders := Trie.filter(icdex_failedOrders, func (k: Txid, v: TradingOrder):Bool{ 
-            Time.now() < v.time + ExpirationDuration * 2
+            Time.now() < v.time + duration
         });
     };
 
@@ -2629,6 +2643,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         if (_inIDO() and status == #Closed){
             _updateIDOData(account, OrderBook.quantity(order) - OrderBook.quantity(res.remaining));
         };
+        _putAccountHealth(account, 0); // no error
         // 4. ictc transaction
         if (toid > 0){
             _ictcForFilled(txid, toid, icrc1Account, nonce, res.filled, _brokerage);
@@ -2682,6 +2697,10 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         let account = Tools.principalToAccountBlob(_caller, _sa);
         await* _checkOverload(?account);
+        let (isHealthy, message) = _checkAccountHealth(account);
+        if (not(isHealthy)){
+            return #err({code=#UndefinedError; message="400: Your trading function was temporarily frozen. " # message;}); 
+        };
         let brokerageRate: Float = switch(_brokerage){ 
             case(?(b)){ b.rate };
             case(_){ 0.0 };
@@ -5552,9 +5571,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
 
     /// Sets an order with #Todo status as an error order
-    public shared(msg) func setOrderFail(_txid: Text, _unlock0: Amount, _unlock1: Amount) : async Bool{
-        // #Todo order
-        assert(_onlyOwner(msg.caller));
+    private func _setOrderFail(_txid: Text, _unlock0: Amount, _unlock1: Amount, _autoUnlock: Bool) : async* Bool{
+        // _autoUnlock: It is recommended to set it to false. 
+        // It is quite dangerous to automatically unlock the balance for #PoolMode orders, you have to make sure that the order has locked the corresponding funds before it fails.
         switch(Hex.decode(_txid)){
             case(#ok(txid_)){
                 let txid = Blob.fromArray(txid_);
@@ -5562,7 +5581,16 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     case(?(order)){
                         if (order.status == #Todo and order.filled.size() == 0 and order.toids.size() == 0){
                             let icrc1Account = _orderIcrc1Account(txid);
-                            _moveToFailedOrder(txid, _unlock0, _unlock1);
+                            var unlock0 : Nat = _unlock0;
+                            var unlock1 : Nat = _unlock1;
+                            let mode = _exchangeMode(order.account, ?order.nonce);
+                            if (mode == #PoolMode){
+                                switch(order.remaining.quantity){
+                                    case(#Buy(quantity, amount)){ if ((unlock1 == 0 and _autoUnlock) or unlock1 > amount) unlock1 := amount; };
+                                    case(#Sell(quantity)){ if ((unlock0 == 0 and _autoUnlock) or unlock0 > quantity) unlock0 := quantity; };
+                                };
+                            };
+                            _moveToFailedOrder(txid, unlock0, unlock1);
                             try{
                                 let r = await* _fallback(icrc1Account, txid, null);
                             }catch(e){
@@ -5577,6 +5605,21 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             case(_){ return false; };
         };
     };
+    public shared(msg) func setOrderFail(_txid: Text, _unlock0: Amount, _unlock1: Amount) : async Bool{
+        assert(_onlyOwner(msg.caller));
+        return await* _setOrderFail(_txid, _unlock0, _unlock1, false);
+    };
+
+    // public shared(msg) func setTodoOrdersFail() : async Nat{
+    //     assert(_onlyOwner(msg.caller));
+    //     var res: Nat = 0;
+    //     for ((txid, order) in Trie.iter(icdex_orders)){
+    //         if (order.status == #Todo and (await* _setOrderFail(Hex.encode(Blob.toArray(txid)), 0, 0, false))){
+    //             res += 1;
+    //         };
+    //     };
+    //     return res;
+    // };
 
     /// Migrate total volume and K-chart data from old trading pair. It can only be migrated once.
     public shared(msg) func mergePair(_pair: Principal) : async Bool{
@@ -5713,6 +5756,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         traderReferrerTemps := Trie.empty();
         ambassadors := Trie.empty();
         traderReferrers := Trie.empty();
+        icdex_failedOrders := Trie.empty();
+        accountHealth := Trie.empty();
     };
 
     /// debug: Returns the current grid-orders
@@ -6331,52 +6376,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
 
     /* ===========================
-      Upgrade section
-    ============================== */
-    private stable var __sagaDataNew: ?SagaTM.Data = null;
-    private stable var __drc205DataNew: ?DRC205.DataTempV2 = null;
-    private var __upgradeMode : {#Base; #All} = #All;
-
-    /// When the data is too large to be backed up, you can set the UpgradeMode to #Base
-    public shared(msg) func setUpgradeMode(_mode: {#Base; #All}) : async (){
-        assert(_onlyOwner(msg.caller));
-        __upgradeMode := _mode;
-    };
-
-    system func preupgrade() {
-        if (__upgradeMode == #All){
-            __sagaDataNew := ?_getSaga().getData();
-        }else{
-            __sagaDataNew := ?_getSaga().getDataBase();
-        };
-        // assert(List.size(__sagaData[0].actuator.tasks.0) == 0 and List.size(__sagaData[0].actuator.tasks.1) == 0);
-        if (__upgradeMode == #All){
-            __drc205DataNew := ?drc205.getData();
-        }else{
-            __drc205DataNew := ?drc205.getDataBase();
-        };
-        Timer.cancelTimer(timerId);
-    };
-
-    system func postupgrade() {
-        switch(__sagaDataNew){
-            case(?(data)){
-                _getSaga().setData(data);
-                __sagaDataNew := null;
-            };
-            case(_){};
-        };
-        switch(__drc205DataNew){
-            case(?(data)){
-                drc205.setData(data);
-                __drc205DataNew := null;
-            };
-            case(_){};
-        };
-        timerId := Timer.recurringTimer(#seconds(900), timerLoop);
-    };
-
-    /* ===========================
       Timer section
     ============================== */
     private func timerLoop() : async (){
@@ -6777,6 +6776,209 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
         };
         return true;
+    };
+
+    /* ===========================
+      Check account health
+    ============================== */
+    private func _checkAccountHealth(_accountId: AccountId) : (Bool, Text){
+        switch(Trie.get(accountHealth, keyb(_accountId), Blob.equal)){
+            case(?health){
+                if (_now() < health.freezeUntil){
+                    return (false, health.message);
+                }else if (health.freezeUntil > 0 and _now() >= health.freezeUntil){
+                    _resetAccountHealth(_accountId);
+                };
+                return (true, "");
+            };
+            case(_){
+                return (true, "");
+            };
+        };
+    };
+    private func _resetAccountHealth(_accountId: AccountId): (){
+        let now = _now();
+        let day1 : Nat = 24 * 3600;
+        switch(Trie.get(accountHealth, keyb(_accountId), Blob.equal)){
+            case(?health){
+                if (health.freezeUntil > 0 and now >= health.freezeUntil){
+                    accountHealth := Trie.put(accountHealth, keyb(_accountId), Blob.equal, 
+                        { fail = 0; failedTime = 0; freezeUntil = 0; message = ""; freezingCount = health.freezingCount }).0;
+                };
+                // if (health.freezeUntil == 0 and now > health.cancelledTime + day1){
+                //     accountHealth := Trie.put(accountHealth, keyb(_accountId), Blob.equal, 
+                //         { order = 0; cancel = 0; fail = health.fail; cancelledTime = 0; failedTime = health.failedTime; freezeUntil = 0; message = ""; freezingCount = health.freezingCount }).0;
+                // };
+                if (health.freezeUntil == 0 and now > health.failedTime + day1){
+                    accountHealth := Trie.put(accountHealth, keyb(_accountId), Blob.equal, 
+                        { fail = 0; failedTime = 0; freezeUntil = 0; message = ""; freezingCount = health.freezingCount }).0;
+                }
+            };
+            case(_){};
+        };
+    };
+    private func _putAccountHealth(_accountId: AccountId, _fail: Nat) : (){
+        let now = _now();
+        let frozenUnit: Timestamp = 12 * 3600;
+        var failedTime: Timestamp = 0;
+        var freezeUntil: Timestamp = 0;
+        var message: Text = "";
+        switch(Trie.get(accountHealth, keyb(_accountId), Blob.equal)){
+            case(?health){
+                var fail = health.fail + _fail;
+                failedTime := health.failedTime;
+                freezeUntil := health.freezeUntil;
+                message := health.message;
+                var freezingCount: Nat = health.freezingCount;
+                if (_fail > 0){
+                    failedTime := now;
+                };
+                if (_fail == 0){ // no error
+                    fail := 0;
+                };
+                if (_fail > 0 and fail > healthMaxFailureNumber){
+                    freezingCount += 1;
+                    freezeUntil := now + freezingCount * frozenUnit;
+                    message := "There were more than "# Nat.toText(healthMaxFailureNumber) #" failed orders. The account was frozen for "# Nat.toText(freezingCount * 12) #" hours.";
+                };
+                accountHealth := Trie.put(accountHealth, keyb(_accountId), Blob.equal, 
+                    { fail = fail; failedTime = failedTime; freezeUntil = freezeUntil; message = message; freezingCount = freezingCount }).0;
+                _resetAccountHealth(_accountId);
+            };
+            case(_){
+                if (_fail > 0){
+                    failedTime := now;
+                };
+                accountHealth := Trie.put(accountHealth, keyb(_accountId), Blob.equal, 
+                        { fail = _fail; failedTime = failedTime; freezeUntil = freezeUntil; message = message; freezingCount = 0 }).0;
+            };
+        };
+    };
+
+    /// Returns the health of the trader's ordering behaviour.
+    /// 
+    /// In order to conserve cansiter's computational resources, we count the order behaviour of each trader and 
+    /// limit the accounts that do not place healthy orders.  
+    /// The following behaviours will be restricted from trading.
+    /// - The number of consecutive failed orders reaches 20.
+    /// Restriction rules:
+    /// - The trading function of the account will be frozen after the triggering of the restriction conditions;
+    /// - Each freeze = number of times * 12 hours (freezing time will be incremented).
+    /// Reset rules:
+    /// - 24 hours without cancelling an order, the corresponding count will be cleared;
+    /// - Upon expiration of the freeze time.
+    public query func health(_account: Address): async ?OrderHealth{
+        let account = _getAccountId(_account);
+        return Trie.get(accountHealth, keyb(account), Blob.equal);
+    };
+
+    /* ===========================
+      For debug and cleaning
+    ============================== */
+
+    /// Returns the size of the global variable data
+    public query func dataSize(): async {
+        icdex_orders: Nat;
+        icdex_failedOrders : Nat;
+        icdex_orderBook : (Nat, Nat);
+        icdex_latestfilled : Nat;
+        icdex_vols: Nat;
+        icdex_nonces: Nat;
+        icdex_pendingOrders : Nat;
+        icdex_lastVisits: Nat;
+        icdex_keepingBalances: Nat;
+        icdex_stOrderRecords : Nat;
+        icdex_userProOrderList : Nat;
+        icdex_activeProOrderList : Nat;
+        icdex_userStopLossOrderList: Nat;
+        icdex_activeStopLossOrderList : (Nat, Nat);
+        icdex_stOrderTxids: Nat;
+        clearingTxids: Nat;
+        timeSortedTxids: Nat;
+        fallbacking_txids : Nat;
+        accountWithdrawToids : Nat;
+        accountHealth: Nat;
+    }{
+        {
+            icdex_orders = Trie.size(icdex_orders);
+            icdex_failedOrders = Trie.size(icdex_failedOrders);
+            icdex_orderBook = (List.size(icdex_orderBook.ask), List.size(icdex_orderBook.bid));
+            icdex_latestfilled = List.size(icdex_latestfilled.0) + List.size(icdex_latestfilled.1);
+            icdex_vols = Trie.size(icdex_vols);
+            icdex_nonces = Trie.size(icdex_nonces);
+            icdex_pendingOrders = Trie.size(icdex_pendingOrders);
+            icdex_lastVisits = List.size(icdex_lastVisits.0) + List.size(icdex_lastVisits.1);
+            icdex_keepingBalances = Trie.size(icdex_keepingBalances);
+            icdex_stOrderRecords = Trie.size(icdex_stOrderRecords);
+            icdex_userProOrderList = Trie.size(icdex_userProOrderList);
+            icdex_activeProOrderList = List.size(icdex_activeProOrderList);
+            icdex_userStopLossOrderList = Trie.size(icdex_userStopLossOrderList);
+            icdex_activeStopLossOrderList = (List.size(icdex_activeStopLossOrderList.buy), List.size(icdex_activeStopLossOrderList.sell));
+            icdex_stOrderTxids = Trie.size(icdex_stOrderTxids);
+            clearingTxids = List.size(clearingTxids);
+            timeSortedTxids = List.size(timeSortedTxids.0) + List.size(timeSortedTxids.1);
+            fallbacking_txids = List.size(fallbacking_txids);
+            accountWithdrawToids = List.size(accountWithdrawToids);
+            accountHealth = Trie.size(accountHealth);
+        }
+    };
+
+    /// Clear failed order records.
+    public shared(msg) func clearFailedOrders() : async (){
+        assert(_onlyOwner(msg.caller));
+        icdex_failedOrders := Trie.empty();
+    };
+
+    /// Clear account health records.
+    public shared(msg) func clearAccountHealth() : async (){
+        assert(_onlyOwner(msg.caller));
+        accountHealth := Trie.empty();
+    };
+
+    /* ===========================
+      Upgrade section
+    ============================== */
+    private stable var __sagaDataNew: ?SagaTM.Data = null;
+    private stable var __drc205DataNew: ?DRC205.DataTempV2 = null;
+    private var __upgradeMode : {#Base; #All} = #All;
+
+    /// When the data is too large to be backed up, you can set the UpgradeMode to #Base
+    public shared(msg) func setUpgradeMode(_mode: {#Base; #All}) : async (){
+        assert(_onlyOwner(msg.caller));
+        __upgradeMode := _mode;
+    };
+
+    system func preupgrade() {
+        if (__upgradeMode == #All){
+            __sagaDataNew := ?_getSaga().getData();
+        }else{
+            __sagaDataNew := ?_getSaga().getDataBase();
+        };
+        // assert(List.size(__sagaData[0].actuator.tasks.0) == 0 and List.size(__sagaData[0].actuator.tasks.1) == 0);
+        if (__upgradeMode == #All){
+            __drc205DataNew := ?drc205.getData();
+        }else{
+            __drc205DataNew := ?drc205.getDataBase();
+        };
+        Timer.cancelTimer(timerId);
+    };
+
+    system func postupgrade() {
+        switch(__sagaDataNew){
+            case(?(data)){
+                _getSaga().setData(data);
+                __sagaDataNew := null;
+            };
+            case(_){};
+        };
+        switch(__drc205DataNew){
+            case(?(data)){
+                drc205.setData(data);
+                __drc205DataNew := null;
+            };
+            case(_){};
+        };
+        timerId := Timer.recurringTimer(#seconds(900), timerLoop);
     };
 
 };

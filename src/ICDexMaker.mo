@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.11";
+    private let version_: Text = "0.5.12";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1610,7 +1610,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         let _account = Tools.principalToAccountBlob(msg.caller, _sa);
         let _icrc1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa)};
         let res = await* _fallback(_icrc1Account);
-        ignore _putEvent(#fallback({account = _icrc1Account; token0 = res.0; token1 = res.1; toids=res.2}), ?_account);
+        if (res.0 > 0 or res.1 > 0){
+            ignore _putEvent(#fallback({account = _icrc1Account; token0 = res.0; token1 = res.1; toids=res.2}), ?_account);
+        };
         return (res.0, res.1);
     };
 
@@ -1779,7 +1781,9 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             // fallback
             try{
                 let r = await* _fallback(_icrc1Account);
-                ignore _putEvent(#fallback({account = _icrc1Account; token0 = r.0; token1 = r.1; toids=r.2}), ?_account);
+                if (r.0 > 0 or r.1 > 0){
+                    ignore _putEvent(#fallback({account = _icrc1Account; token0 = r.0; token1 = r.1; toids=r.2}), ?_account);
+                };
             }catch(e){
                 // throw Error.reject(Error.message(e)); // debug
             };
