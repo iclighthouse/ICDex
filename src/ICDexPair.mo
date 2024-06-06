@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.65";
+    private let version_: Text = "0.12.66";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -6380,6 +6380,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /* ===========================
       Timer section
     ============================== */
+    private var lastTimerTrigger: Timestamp = 0;
     private func timerLoop() : async (){
         _clear();
         _expire();
@@ -6391,6 +6392,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             Timer.cancelTimer(timerId);
         };
         _autoDeleteSTO();
+        if (_now() > lastTimerTrigger + 12 * 3600){
+            lastTimerTrigger := _now();
+            timeSortedTxids := (
+                List.filter(timeSortedTxids.0, func (t: (Txid,Int)): Bool{ Option.isSome(Trie.get(icdex_orders, keyb(t.0), Blob.equal)) }), 
+                List.filter(timeSortedTxids.1, func (t: (Txid,Int)): Bool{ Option.isSome(Trie.get(icdex_orders, keyb(t.0), Blob.equal)) })
+            );
+        };
     };
     private var timerId: Nat = 0;
 
