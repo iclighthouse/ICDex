@@ -441,7 +441,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.63";
+    private let version_: Text = "0.12.65";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -1648,7 +1648,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                     if (item.1 >= time){
                         return Deque.pushFront(deque, item);
                     }else{
-                        temp := List.push((txid, time), temp);
+                        if (Option.isSome(Trie.get(icdex_orders, keyb(txid), Blob.equal))){
+                            temp := List.push((txid, time), temp);
+                        };
                         return push(item, q);
                     };
                 };
@@ -6933,6 +6935,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     public shared(msg) func clearAccountHealth() : async (){
         assert(_onlyOwner(msg.caller));
         accountHealth := Trie.empty();
+    };
+
+    /// Filter TimeSortedTxids.
+    public shared(msg) func clearTimeSortedTxids() : async (){
+        assert(_onlyOwner(msg.caller));
+        timeSortedTxids := (
+            List.filter(timeSortedTxids.0, func (t: (Txid,Int)): Bool{ Option.isSome(Trie.get(icdex_orders, keyb(t.0), Blob.equal)) }), 
+            List.filter(timeSortedTxids.1, func (t: (Txid,Int)): Bool{ Option.isSome(Trie.get(icdex_orders, keyb(t.0), Blob.equal)) })
+        );
     };
 
     /* ===========================
