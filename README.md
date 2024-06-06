@@ -78,8 +78,8 @@ dfx build --network ic ICDexPair
 cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm.gz wasms/
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: 04139afbca4f00948725f6b9842635593c57a31590f91928ddf1a6e64158a4fe
-- Version: 0.12.63
+- Module hash: 10782c17902a1c520994a5b09b4be726fb010c0718a40cd00aa0921cfe73883f
+- Version: 0.12.65
 - Build: {
     "args": "--incremental-gc",
     "gzip": true

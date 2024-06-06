@@ -1169,13 +1169,6 @@ Removes vip-maker qualification
 func setOrderFail(_txid : Text, _unlock0 : Amount, _unlock1 : Amount) : async Bool
 ```
 
-
-## Function `setTodoOrdersFail`
-``` motoko no-repl
-func setTodoOrdersFail() : async Nat
-```
-
-
 ## Function `mergePair`
 ``` motoko no-repl
 func mergePair(_pair : Principal) : async Bool
