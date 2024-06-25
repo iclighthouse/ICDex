@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.12";
+    private let version_: Text = "0.5.13";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -1381,7 +1381,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     };
 
     // Calculate annualized rate of return (APY)
-    private func _apy(_period: Timestamp, _nowToken0: Int, _nowToken1: Int, _nowPrice: Price) : {token0: Float; token1: Float}{
+    private func _apy(_period: Timestamp, _nowToken0: Int, _nowToken1: Int, _nowPrice: Price) : {token0: Float; token1: Float; apy: ?Float}{
         let year = 365 * 24 * 3600; //seconds
         let now = _now();
         let start = Nat.sub(now, _period);
@@ -1416,15 +1416,17 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
             };
         };
         if (startToken0 == 0 or startToken1 == 0){
-            return {token0 = 0.0; token1 = 0.0};
+            return {token0 = 0.0; token1 = 0.0; apy = ?0.0};
         }else{
             let nowValue0 = _nowToken0 + pairUnitSize * _nowToken1 / _nowPrice;
             let nowValue1 = _nowToken0 * _nowPrice / pairUnitSize + _nowToken1;
             let startValue0 = startToken0 + pairUnitSize * startToken1 / startPrice;
             let startValue1 = startToken0 * startPrice / pairUnitSize + startToken1;
+            let difValue: Int = (_nowToken0 - startToken0) * _nowPrice / pairUnitSize + (_nowToken1 - startToken1);
             return {
                 token0 = Float.fromInt(nowValue0 - startValue0) / Float.fromInt(startValue0) * Float.fromInt(year) / Float.fromInt(_period);
                 token1 = Float.fromInt(nowValue1 - startValue1) / Float.fromInt(startValue1) * Float.fromInt(year) / Float.fromInt(_period);
+                apy = ?(Float.fromInt(difValue) / Float.fromInt(startValue1) * Float.fromInt(year) / Float.fromInt(_period));
             };
         };
     };

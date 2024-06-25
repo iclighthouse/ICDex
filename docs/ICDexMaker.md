@@ -302,7 +302,7 @@ Returns the latest status data for ICDexMaker. (Data may be delayed).
 
 ## Function `stats2`
 ``` motoko no-repl
-func stats2() : async { holders : Nat; poolBalance : PoolBalance; poolLocalBalance : PoolBalance; poolShares : Shares; poolShareWeighted : ShareWeighted; latestUnitNetValue : UnitNetValue; apy24h : { token0 : Float; token1 : Float }; apy7d : { token0 : Float; token1 : Float } }
+func stats2() : async { holders : Nat; poolBalance : PoolBalance; poolLocalBalance : PoolBalance; poolShares : Shares; poolShareWeighted : ShareWeighted; latestUnitNetValue : UnitNetValue; apy24h : { token0 : Float; token1 : Float; apy : ?Float }; apy7d : { token0 : Float; token1 : Float; apy : ?Float } }
 ```
 
 Returns the latest status data for ICDexMaker.  
