@@ -92,8 +92,8 @@ dfx build --network ic ICDexMaker
 cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm.gz wasms/
 ```
 - Code: "src/ICDexMaker.mo"
-- Module hash: b6ecfa063405c1109bdf38374630e0c78436d9a6a78bb0b1aac91a5b9e9c60f4
-- Version: 0.5.12
+- Module hash: 0fc5eca2fc801ff5fcc425f88d53fbbf1cc46d02474fd18198ab83c8e5c762e0
+- Version: 0.5.14
 - Build: {
     "args": "--compacting-gc",
     "gzip": true
