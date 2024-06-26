@@ -263,7 +263,7 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
     type ShareWeighted = T.ShareWeighted; // { shareTimeWeighted: Nat; updateTime: Timestamp; };
     type TrieList<K, V> = T.TrieList<K, V>; // {data: [(K, V)]; total: Nat; totalPage: Nat; };
 
-    private let version_: Text = "0.5.13";
+    private let version_: Text = "0.5.14";
     private let ns_: Nat = 1_000_000_000;
     private let sa_zero : [Nat8] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     private var name_: Text = initArgs.name; // ICDexMaker name
@@ -2041,8 +2041,8 @@ shared(installMsg) actor class ICDexMaker(initArgs: T.InitArgs) = this {
         poolShares: Shares;
         poolShareWeighted: ShareWeighted;
         latestUnitNetValue: UnitNetValue;
-        apy24h: {token0: Float; token1: Float};
-        apy7d: {token0: Float; token1: Float};
+        apy24h: {token0: Float; token1: Float; apy: ?Float};
+        apy7d: {token0: Float; token1: Float; apy: ?Float};
     }{
         if (sysTransactionLock){
             throw Error.reject("401: The system transaction is locked, please try again later."); 
