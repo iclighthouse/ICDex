@@ -23,7 +23,6 @@ import TATypes "TATypes";
 // import TaskHash "TaskHash";
 import Nat64 "mo:base/Nat64";
 import Binary "mo:icl/Binary";
-import ICRC1 "mo:icl/ICRC1";
 import Error "mo:base/Error";
 // import Call "mo:base/ExperimentalInternetComputer";
 
@@ -106,7 +105,7 @@ module {
     };
     
     /// limitNum: The actuator runs `limitNum` tasks at once.
-    public class TA(limitNum: Nat, autoClearTimeout: Int, this: Principal, localCall: LocalCall, /*localCallAsync: LocalCallAsync,*/ agentCallback: ?AgentCallback, taskCallback: ?Callback) {
+    public class TA(limitNum: Nat, autoClearTimeout: Int, _this: Principal, localCall: LocalCall, /*localCallAsync: LocalCallAsync,*/ agentCallback: ?AgentCallback, taskCallback: ?Callback) {
         var tasks = Deque.empty<(Ttid, Task)>(); /*fix*/
         var index : Nat = 1;
         var firstIndex : Nat = 1;
