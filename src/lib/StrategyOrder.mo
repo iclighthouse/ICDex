@@ -1110,10 +1110,6 @@ module {
         var data = _data;
         let price = _price; // icdex_lastPrice.price;
         var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
-        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
-        let balances = _balances; // _getAccountBalance(account);
-        let balance0 = balances.token0.available;
-        let balance1 = balances.token1.available;
         switch(sto.strategy){
             case(#StopLossOrder(slo)){
                 var status : STO.STStatus = sto.status;
@@ -1168,10 +1164,7 @@ module {
         let price = _price; // icdex_lastPrice.price;
         var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
         var ordersToBeCancel: [(Txid, ?OrderSide)] = [];
-        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
         let balances = _balances; // _getAccountBalance(account);
-        let balance0 = balances.token0.available;
-        let balance1 = balances.token1.available;
         switch(sto.strategy){
             case(#GridOrder(grid)){
                 var level1Filled = { buy1 = 0; sell1 = 0 };
@@ -1303,10 +1296,7 @@ module {
         var data = _data;
         let price = _price; // icdex_lastPrice.price;
         var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
-        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
         let balances = _balances; // _getAccountBalance(account);
-        let balance0 = balances.token0.available;
-        let balance1 = balances.token1.available;
         switch(sto.strategy){
             case(#IcebergOrder(io)){
                 var status : STO.STStatus = sto.status;
@@ -1374,10 +1364,7 @@ module {
         var data = _data;
         let price = _price; // icdex_lastPrice.price;
         var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
-        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
         let balances = _balances; // _getAccountBalance(account);
-        let balance0 = balances.token0.available;
-        let balance1 = balances.token1.available;
         switch(sto.strategy){
             case(#VWAP(vwap)){
                 var status : STO.STStatus = sto.status;
@@ -1460,10 +1447,7 @@ module {
         var data = _data;
         let price = _price;
         var res: [(STO.Soid, STO.ICRC1Account, OrderPrice)] = [];
-        let account = Tools.principalToAccountBlob(sto.icrc1Account.owner, _toSaNat8(sto.icrc1Account.subaccount));
         let balances = _balances; // _getAccountBalance(account);
-        let balance0 = balances.token0.available;
-        let balance1 = balances.token1.available;
         switch(sto.strategy){
             case(#TWAP(twap)){
                 var status : STO.STStatus = sto.status;

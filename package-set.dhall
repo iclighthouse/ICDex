@@ -1,10 +1,10 @@
--- let upstream = https://github.com/dfinity/vessel-package-set/releases/download/mo-0.10.0-20230911/package-set.dhall sha256:7bce6afe8b96a8808f66b5b6f7015257d44fc1f3e95add7ced3ccb7ce36e5603
--- mo-0.9.7-20230718
+-- let upstream = https://github.com/dfinity/vessel-package-set/releases/download/mo-0.11.1-20240411/package-set.dhall
+-- mo-0.11.1-20240411
 let upstream = 
 [ { dependencies = [] : List Text
   , name = "base"
   , repo = "https://github.com/dfinity/motoko-base.git"
-  , version = "7f9ea59fafbd0a2f12709cdc8b6771a9dea87cbd" -- updated to mo-0.10.3
+  , version = "6f49e5f877742b79e97ef1b6f226a7f905ba795c"
   }
 , { dependencies = [ "base" ]
   , name = "crud"
@@ -44,7 +44,7 @@ let upstream =
 , { dependencies = [ "base" ]
   , name = "sha224"
   , repo = "https://github.com/flyq/motoko-sha224.git"
-  , version = "95e271a0997c9219afd8e5a418ed487d2db84d3f" -- updated to Dec 23, 2023
+  , version = "82e0aa1a77a8c0a2f98332b59ffc242d820e62cb"
   }
 , { dependencies = [ "base" ]
   , name = "splay"
@@ -59,7 +59,7 @@ let upstream =
 , { dependencies = [ "base" ]
   , name = "base32"
   , repo = "https://github.com/flyq/motoko-base32.git"
-  , version = "0d6011a074ad4da7ac6bb95f0dd6f63d08070c89" -- updated to Dec 23, 2023
+  , version = "067ac54e288f4cd7302be1f400bcddcce70f7d77"
   }
 , { dependencies = [ "base" ]
   , name = "adapton"
@@ -132,7 +132,7 @@ let
     , { dependencies = [ "base", "sha224" ]
       , name = "icl"
       , repo = "https://github.com/iclighthouse/icl-vessel"
-      , version = "9fc51825f8aacd8b32d9f8f1cab88a7ac8f5778b"
+      , version = "84a76139068fb9ab81a9cacc713d8d80ed666c58"
       }
     ] : List Package
 

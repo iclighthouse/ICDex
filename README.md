@@ -16,8 +16,8 @@ ICDex Infrastructure:
 
 ### dfx
 - https://github.com/dfinity/sdk/
-- version: 0.15.3 (https://github.com/dfinity/sdk/releases/tag/0.15.3)
-- moc version: 0.10.3
+- version: 0.21.0 (https://github.com/dfinity/sdk/releases/tag/0.21.0)
+- moc version: 0.11.1
 
 ### vessel
 - https://github.com/dfinity/vessel
@@ -64,8 +64,8 @@ dfx build --network ic ICDexRouter
 cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm.gz wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 74ba022f19362e35eb681f84720bef7a1ea06a55bed852a48849683b064f3fd8
-- Version: 0.12.35
+- Module hash: 36049e42b5bc674a780d056e776ef8e970bf15c60f870e7fff9ef555d2481ff4
+- Version: 0.12.37
 - Build: {
     "args": "--compacting-gc",
     "gzip": true
@@ -78,8 +78,8 @@ dfx build --network ic ICDexPair
 cp -f .dfx/ic/canisters/ICDexPair/ICDexPair.wasm.gz wasms/
 ```
 - Code: "src/ICDexPair.mo"
-- Module hash: 872f0881d176b9f1650a1fc2346c8f7df5947350dd7f23abfd5fe8f1a8ff8493
-- Version: 0.12.66
+- Module hash: ea736e503a580116acccecba7f84557dfb6123f08a45c14efc266ebce8b92e02
+- Version: 0.12.68
 - Build: {
     "args": "--incremental-gc",
     "gzip": true
@@ -92,8 +92,8 @@ dfx build --network ic ICDexMaker
 cp -f .dfx/ic/canisters/ICDexMaker/ICDexMaker.wasm.gz wasms/
 ```
 - Code: "src/ICDexMaker.mo"
-- Module hash: 0fc5eca2fc801ff5fcc425f88d53fbbf1cc46d02474fd18198ab83c8e5c762e0
-- Version: 0.5.14
+- Module hash: 76933ea4ec09ad0e2c7863003b75ba5de863fbe62dbcbd5db3f6d694f59b85cd
+- Version: 0.5.16
 - Build: {
     "args": "--compacting-gc",
     "gzip": true

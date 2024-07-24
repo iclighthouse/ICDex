@@ -8,22 +8,12 @@
  */
 
 import Blob "mo:base/Blob";
-import CF "mo:icl/CF";
 import Cycles "mo:base/ExperimentalCycles";
-import CyclesWallet "mo:icl/CyclesWallet";
 import DRC20 "mo:icl/DRC20";
-import DIP20 "mo:icl/DIP20";
 import ICRC1 "./lib/ICRC1_old"; //*
 import ICRC1New "mo:icl/ICRC1"; //*
-import ICRC2 "./lib/ICRC1_old"; //*
-import ICRC2New "mo:icl/ICRC1"; //*
-import ICTokens "mo:icl/ICTokens";
-import ICSwap "mo:icl/ICSwap";
 import ICDex "mo:icl/ICDexTypes";
 import Error "mo:base/Error";
-import IC "mo:icl/IC";
-import Ledger "mo:icl/Ledger";
-import Option "mo:base/Option";
 import Principal "mo:base/Principal";
 import STO "mo:icl/STOTypes";
 
@@ -266,7 +256,7 @@ module {
                     case(#__block){ return (#Error, ?#__block, ?{code=#future(9904); message="Blocked by code."; }); };
                     case(#DRC20(method)){
                         let token: DRC20.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
+                        if (cycles > 0){ Cycles.add<system>(cycles); };
                         switch(method){
                             case(#balanceOf(user)){
                                 var result: Nat = 0; // Receipt
@@ -401,7 +391,7 @@ module {
                             case(#dropAccount(_sa)){
                                 try{
                                     // do
-                                    let f = token.drc20_dropAccount(_sa);
+                                    let _f = token.drc20_dropAccount(_sa);
                                     // check & return
                                     return (#Done, ?#DRC20(#dropAccount), null);
                                 } catch (e){
@@ -413,7 +403,7 @@ module {
                     };
                     case(#ICRC1(method)){ // For forward compatibility
                         let token: ICRC1New.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
+                        if (cycles > 0){ Cycles.add<system>(cycles); };
                         switch(method){
                             case(#icrc1_balance_of(user)){
                                 var result: Nat = 0; // Receipt
@@ -445,7 +435,7 @@ module {
                     };
                     case(#ICRC1New(method)){ 
                         let token: ICRC1New.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
+                        if (cycles > 0){ Cycles.add<system>(cycles); };
                         switch(method){
                             case(#icrc1_balance_of(user)){
                                 var result: Nat = 0; // Receipt
@@ -477,7 +467,7 @@ module {
                     };
                     // case(#ICRC2New(method)){
                     //     let token: ICRC2New.Self = actor(calleeId);
-                    //     if (cycles > 0){ Cycles.add(cycles); };
+                    //     if (cycles > 0){ Cycles.add<system>(cycles); };
                     //     switch(method){
                     //         case(#icrc2_approve(args)){
                     //             var result: { #Ok: Nat; #Err: ICRC2New.ApproveError; } = #Err(#TemporarilyUnavailable); // Receipt
@@ -511,7 +501,7 @@ module {
                     // };
                     case(#ICDex(method)){
                         let dex: ICDex.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
+                        if (cycles > 0){ Cycles.add<system>(cycles); };
                         switch(method){
                             case(#deposit(_token, _value, _sa)){
                                 try{
@@ -549,7 +539,7 @@ module {
                     };
                     case(#StratOrder(method)){
                         let sto: STO.Self = actor(calleeId);
-                        if (cycles > 0){ Cycles.add(cycles); };
+                        if (cycles > 0){ Cycles.add<system>(cycles); };
                         switch(method){
                             case(#sto_cancelPendingOrders(_soid, _sa)){
                                 try{

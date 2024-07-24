@@ -372,12 +372,9 @@ import DRC207 "mo:icl/DRC207";
 import Deque "mo:base/Deque";
 import Error "mo:base/Error";
 import Float "mo:base/Float";
-import Hash "mo:base/Hash";
 import Hex "mo:icl/Hex";
 import ICRC1 "mo:icl/ICRC1";
-import ICRC2 "mo:icl/ICRC1";
 import Int "mo:base/Int";
-import Int64 "mo:base/Int64";
 import List "mo:base/List";
 import Nat "mo:base/Nat";
 import Nat32 "mo:base/Nat32";
@@ -385,7 +382,6 @@ import Nat64 "mo:base/Nat64";
 import Option "mo:base/Option";
 import OrderBook "mo:icl/OrderBook";
 import Principal "mo:base/Principal";
-import Result "mo:base/Result";
 import SagaTM "./ICTC/SagaTM";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
@@ -441,7 +437,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     // Variables
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.66";
+    private let version_: Text = "0.12.68";
     private let ns_: Nat = 1_000_000_000;
     private let icdexRouter: Principal = installMsg.caller; // icdex_router
     private let minCyclesBalance: Nat = if (icdex_debug){ 100_000_000_000 }else{ 500_000_000_000 }; // 0.1/0.5 T
@@ -600,7 +596,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
     // Checks whether the execution of the transactions related to the orders of the specified trader in ICTC is complete.
     private func _accountIctcDone(_a: AccountId): Bool{
-        var toids: [Toid] = [];
         for ((a, toid, time) in List.toArray(List.filter(accountWithdrawToids, func (item: (AccountId, Toid, Time.Time)): Bool{ item.0 == _a })).vals()){
             if (not(_ictcDone([toid]))){
                 return false;
@@ -1112,7 +1107,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             if (_toid == 0){
                 try{
                     countAsyncMessage += 1;
-                    let sagaRes = await* saga.getActuator().run();
+                    let _sagaRes = await* saga.getActuator().run();
                     countAsyncMessage -= Nat.min(1, countAsyncMessage);
                 }catch(e){
                     countAsyncMessage -= Nat.min(1, countAsyncMessage);
@@ -1122,9 +1117,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 try{
                     countAsyncMessage += 2;
                     if (_sync){
-                        let sagaRes = await saga.runSync(_toid);
+                        let _sagaRes = await saga.runSync(_toid);
                     }else{
-                        let sagaRes = await saga.run(_toid);
+                        let _sagaRes = await saga.run(_toid);
                     };
                     countAsyncMessage -= Nat.min(2, countAsyncMessage);
                 }catch(e){
@@ -1345,7 +1340,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         }else{
             var i : Nat = 0;
             for (_to in toIcrc1Accounts.vals()){
-                let accountPrincipal = toIcrc1Accounts[i].owner;
                 let account = Tools.principalToAccountBlob(toIcrc1Accounts[i].owner, _toSaNat8(toIcrc1Accounts[i].subaccount));
                 let icrc1Account = toIcrc1Accounts[i];
                 if (values[i] > fee){
@@ -1496,7 +1490,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         _clear();
         let account = Tools.principalToAccountBlob(_icrc1Account.owner, _toSaNat8(_icrc1Account.subaccount));
         let txid = _txid;
-        let txAccount = _getPairAccount(txid);
         var icrc1Account = _icrc1Account;
         var side: Int = 0;
         switch(_side){
@@ -1609,8 +1602,8 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         }else if (Trie.size(icdex_failedOrders) > 1000){
             duration := ExpirationDuration / 4;
         };
-        icdex_failedOrders := Trie.filter(icdex_failedOrders, func (k: Txid, v: TradingOrder):Bool{ 
-            Time.now() < v.time + duration
+        icdex_failedOrders := Trie.filter(icdex_failedOrders, func (_k: Txid, _v: TradingOrder):Bool{ 
+            Time.now() < _v.time + duration
         });
     };
 
@@ -1984,13 +1977,13 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                 let currencyAmount = OrderBook.amount(order.remaining);
                 if (side == #Sell and (order.status == #Closed or order.status == #Cancelled) and tokenAmount <= _getFee0() and token0Std == #drc20){
                     let task = _buildTask(?_txid, _token0Canister(), #DRC20(#dropAccount(_toSaNat8(?_txid))), []);
-                    let ttid = saga.push(_toid, task, null, null);
+                    let _ttid = saga.push(_toid, task, null, null);
                     let remaining: OrderPrice = OrderBook.setQuantity(order.remaining, 0, null);
                     _update(_txid, ?remaining, ?_toid, null, null, null, null, null);
                 };
                 if (side == #Buy and (order.status == #Closed or order.status == #Cancelled) and currencyAmount <= _getFee1() and token1Std == #drc20){
                     let task = _buildTask(?_txid, _token1Canister(), #DRC20(#dropAccount(_toSaNat8(?_txid))), []);
-                    let ttid = saga.push(_toid, task, null, null);
+                    let _ttid = saga.push(_toid, task, null, null);
                     let remaining: OrderPrice = OrderBook.setQuantity(order.remaining, 0, ?0); 
                     _update(_txid, ?remaining, ?_toid, null, null, null, null, null);
                 };
@@ -2088,7 +2081,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             } catch(e){
                 try {
                     let token0: ICRC1.Self = actor(Principal.toText(_token0Canister()));
-                    let stds = await token0.icrc1_supported_standards();
+                    let _stds = await token0.icrc1_supported_standards();
                     token0Symbol := await token0.icrc1_symbol();
                     token0Std := #icrc1;
                 } catch(e){
@@ -2110,7 +2103,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             } catch(e){
                 try {
                     let token1: ICRC1.Self = actor(Principal.toText(_token1Canister()));
-                    let stds = await token1.icrc1_supported_standards();
+                    let _stds = await token1.icrc1_supported_standards();
                     token1Std := #icrc1;
                     token1Symbol := await token1.icrc1_symbol();
                 } catch(e){
@@ -2345,22 +2338,28 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             switch(filled.token0Value){ //token
                 case(#DebitRecord(value)){ // Sell  (send to maker)
                     tokenAmount += value;
+                    var fee = Nat.min(value, _getFee0());
                     if (value > _getFee0()){
                         let ttids = _sendToken0(true, toid, txid, [], [makerIcrc1Account], [value], ?txid, null);
                         preTtids := Tools.arrayAppend(preTtids, ttids);
-                        var fee = _getFee0();
+                        fee := _getFee0();
                         if (taker_mode == #PoolMode and maker_isKeptFunds){
                             fee := 0;
                         };
-                        _update(filled.counterparty, null, null, null, ?{gas0=fee; gas1=0}, null, null, null);
-                        _hook_fill(filled.counterparty, #Buy, Nat.sub(value, fee), 0);
                     };
+                    _update(filled.counterparty, null, null, null, ?{gas0=fee; gas1=0}, null, null, null);
+                    _hook_fill(filled.counterparty, #Buy, Nat.sub(value, fee), 0);
                     _hook_fill(txid, #Sell, value, 0);
                 };
                 case(#CreditRecord(value)){ // Buy   (send to taker) 
                     tokenAmount += value;
+                    var amount = value;
+                    var fee = Nat.min(value, _getFee0());
+                    var makerFee: Nat = 0;
                     if (value > _getFee0()){
-                        let (amount, makerFee, icdexFee, brokerFee) = _chargeFee(makerAccount, value, false, _brokerage);
+                        let (amount_, makerFee_, icdexFee, brokerFee) = _chargeFee(makerAccount, value, false, _brokerage);
+                        amount := amount_;
+                        makerFee := makerFee_;
                         var transferBatch_to : [ICRC1.Account] = [icrc1Account];
                         var transferBatch_value : [Nat] = [amount];
                         if (makerFee > _getFee0()){ // makerTxAccount -> makerAccount
@@ -2387,37 +2386,43 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         };
                         let ttids = _sendToken0(true, toid, filled.counterparty, [], transferBatch_to, transferBatch_value, ?filled.counterparty, null);
                         preTtids := Tools.arrayAppend(preTtids, ttids);
-                        var fee = _getFee0();
+                        fee := _getFee0();
                         if (maker_mode == #PoolMode and taker_isKeptFunds){
                             fee := 0;
                         };
-                        _update(txid, null, ?toid, null, ?{gas0=fee; gas1=0}, ?{fee0=Nat.sub(value, amount); fee1=0}, null, null);
-                        _update(filled.counterparty, null, null, null, null, ?{fee0 = -makerFee; fee1=0}, null, null);
-                        _hook_fill(txid, #Buy, Nat.sub(value, fee), 0);
-                        _hook_fill(filled.counterparty, #Sell, value, 0);
                     };
+                    _update(txid, null, ?toid, null, ?{gas0=fee; gas1=0}, ?{fee0=Nat.sub(value, amount); fee1=0}, null, null);
+                    _update(filled.counterparty, null, null, null, null, ?{fee0 = -makerFee; fee1=0}, null, null);
+                    _hook_fill(txid, #Buy, Nat.sub(value, fee), 0);
+                    _hook_fill(filled.counterparty, #Sell, value, 0);
                 };
                 case(_){};
             };
             switch(filled.token1Value){ //currency
                 case(#DebitRecord(value)){ // Buy  
                     currencyAmount += value;
+                    var fee = Nat.min(value, _getFee1());
                     if (value > _getFee1()){
                         let ttids = _sendToken1(true, toid, txid, [], [makerIcrc1Account], [value], ?txid, null);
                         preTtids := Tools.arrayAppend(preTtids, ttids);
-                        var fee = _getFee1();
+                        fee := _getFee1();
                         if (taker_mode == #PoolMode and maker_isKeptFunds){
                             fee := 0;
                         };
-                        _update(filled.counterparty, null, null, null, ?{gas0=0; gas1=fee}, null, null, null);
-                        _hook_fill(filled.counterparty, #Sell, 0, Nat.sub(value, fee));
                     };
+                    _update(filled.counterparty, null, null, null, ?{gas0=0; gas1=fee}, null, null, null);
+                    _hook_fill(filled.counterparty, #Sell, 0, Nat.sub(value, fee));
                     _hook_fill(txid, #Buy, 0, value);
                 };
                 case(#CreditRecord(value)){ //Sell  (send to taker) 
                     currencyAmount += value;
+                    var amount = value;
+                    var fee = Nat.min(value, _getFee1());
+                    var makerFee: Nat = 0;
                     if (value > _getFee1()){
-                        let (amount, makerFee, icdexFee, brokerFee) = _chargeFee(makerAccount, value, true, _brokerage);
+                        let (amount_, makerFee_, icdexFee, brokerFee) = _chargeFee(makerAccount, value, true, _brokerage);
+                        amount := amount_;
+                        makerFee := makerFee_;
                         var transferBatch_to : [ICRC1.Account] = [icrc1Account];
                         var transferBatch_value : [Nat] = [amount];
                         if (makerFee > _getFee1()){
@@ -2444,15 +2449,15 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         };
                         let ttids = _sendToken1(true, toid, filled.counterparty, [], transferBatch_to, transferBatch_value, ?filled.counterparty, null);
                         preTtids := Tools.arrayAppend(preTtids, ttids);
-                        var fee = _getFee1();
+                        fee := _getFee1();
                         if (maker_mode == #PoolMode and taker_isKeptFunds){
                             fee := 0;
                         };
-                        _update(txid, null, ?toid, null, ?{gas0=0; gas1=fee}, ?{fee0=0; fee1=Nat.sub(value,amount)}, null, null);
-                        _update(filled.counterparty, null, null, null, null, ?{fee0=0; fee1 = -makerFee}, null, null);
-                        _hook_fill(txid, #Sell, 0, Nat.sub(value, fee));
-                        _hook_fill(filled.counterparty, #Buy, 0, value);
                     };
+                    _update(txid, null, ?toid, null, ?{gas0=0; gas1=fee}, ?{fee0=0; fee1=Nat.sub(value,amount)}, null, null);
+                    _update(filled.counterparty, null, null, null, null, ?{fee0=0; fee1 = -makerFee}, null, null);
+                    _hook_fill(txid, #Sell, 0, Nat.sub(value, fee));
+                    _hook_fill(filled.counterparty, #Buy, 0, value);
                 };
                 case(_){};
             };
@@ -2501,11 +2506,9 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         let icrc1Account = { owner = _caller; subaccount = _toSaBlob(_sa);};
         let account = Tools.principalToAccountBlob(_caller, _sa);
-        let accountPrincipal = _caller; // _orderPrincipal(txid)
         var nonce: Nat = Option.get(_nonce, _getNonce(account));
         let index = icdex_index;
         let txid = drc205.generateTxid(Principal.fromActor(this), account, nonce);
-        let txAccount = _getPairAccount(txid);
         let data = Option.get(_data, Blob.fromArray([]));
         let expirationDuration =  Option.get(_expiration, ExpirationDuration);
         // 1. prepare
@@ -2569,7 +2572,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             _moveToFailedOrder(txid, lockedAmount0, lockedAmount1);
             try{
                 if (logToids.size() > 0) await* _ictcSagaRun(0, false);
-                let r = await* _fallback(icrc1Account, txid, null);
+                let _r = await* _fallback(icrc1Account, txid, null);
             }catch(e){};
             return #err({code=#InsufficientBalance; message=Error.message(e);});
         };
@@ -2582,7 +2585,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             _moveToFailedOrder(txid, lockedAmount0, lockedAmount1);
             try{
                 if (logToids.size() > 0) await* _ictcSagaRun(0, false);
-                let r = await* _fallback(icrc1Account, txid, null);
+                let _r = await* _fallback(icrc1Account, txid, null);
             }catch(e){};
             return #err({code=#UndefinedError; message="403: The order failed because the price did not meet the limit price you specified.";});
         }else if (_orderType == #MKT and (
@@ -2591,7 +2594,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             _moveToFailedOrder(txid, lockedAmount0, lockedAmount1);
             try{
                 if (logToids.size() > 0) await* _ictcSagaRun(0, false);
-                let r = await* _fallback(icrc1Account, txid, null);
+                let _r = await* _fallback(icrc1Account, txid, null);
             }catch(e){};
             return #err({code=#UndefinedError; message="409: Insufficient liquidity and the order was canceled.";});
         }else{
@@ -2665,16 +2668,16 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         switch(_brokerage){
             case(?(b)){
-                let b_toid = _autoWithdraw({owner = b.broker; subaccount = null}, null);
+                ignore _autoWithdraw({owner = b.broker; subaccount = null}, null);
             };
             case(_){};
         };
-        let p_toid = _autoWithdraw({owner = icdexRouter; subaccount = null}, null);
+        ignore _autoWithdraw({owner = icdexRouter; subaccount = null}, null);
         if (not(_isProOrder) and countFilled > 0 and enableStrategyOrders){
             if (icdex_debug){
                 await _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell })); 
             }else{
-                let f = _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell }));
+                let _f = _hook_stoWorktop(null, ?(if (icdex_lastPrice.price >= prePrice){ #Buy }else{ #Sell }));
             };
         };
         if (not(_quickly) and not(_isProOrder)){
@@ -2683,7 +2686,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             if (icdex_debug){
                 ignore await saga.run(toid);
             }else{
-                let f = saga.run(toid); // fast mode
+                let _f = saga.run(toid); // fast mode
             };
         };
         lastExecutionDuration := Time.now() - __start;
@@ -2747,7 +2750,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         switch(_side){
             case(?(side)){
-                orders := Trie.filter(orders, func (k: Txid, v: TradingOrder): Bool{ OrderBook.side(v.orderPrice) == side });
+                orders := Trie.filter(orders, func (_k: Txid, _v: TradingOrder): Bool{ OrderBook.side(_v.orderPrice) == side });
             };
             case(_){};
         };
@@ -3437,7 +3440,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
 
     /// Returns whether there are transactions in process for an account.
     public query func isAccountIctcDone(_a: AccountId): async (Bool, [Toid]){
-        var toids: [Toid] = [];
         for ((a, toid, time) in List.toArray(List.filter(accountWithdrawToids, func (item: (AccountId, Toid, Time.Time)): Bool{ item.0 == _a })).vals()){
             if (not(_ictcDone([toid]))){
                 return (false, [toid]);
@@ -3822,7 +3824,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     };
     private func _withdraw(_owner: Principal, _value0: ?Amount, _value1: ?Amount, _sa: ?Sa) : (toid: Nat, value0: Amount, value1: Amount){
         let account = Tools.principalToAccountBlob(_owner, _sa);
-        let sa_account = account; 
         let sa_pool = Blob.fromArray(sa_zero);
         let icrc1Account = {owner = _owner; subaccount = _toSaBlob(_sa)};
         let balances = _getAccountBalance(account);
@@ -3862,7 +3863,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let account = Tools.principalToAccountBlob(_icrc1Account.owner, _toSaNat8(_icrc1Account.subaccount));
         let balances = _getAccountBalance(account);
         if (balances.token0.available >= token0_threshold or balances.token1.available >= token1_threshold){
-            let (toid, value0, value1) = _withdraw(_icrc1Account.owner, null, null, _toSaNat8(_icrc1Account.subaccount));
+            let (toid, _value0, _value1) = _withdraw(_icrc1Account.owner, null, null, _toSaNat8(_icrc1Account.subaccount));
             return toid;
         };
         return 0;
@@ -4056,7 +4057,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
     };
     private func _chargeSTOrderFee1(_account: ICRC1.Account, _stType: STO.STType, _act: {#Create; #Update}) : async* (){
-        let icdex_account = Tools.principalToAccountBlob(icdexRouter, null);
         var value : Nat = 0;
         switch(_stType, _act){
             case(#StopLossOrder, #Create){
@@ -4416,7 +4416,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         if (buy1Txid.size() > 0){
                             switch(Trie.get(icdex_orders, keyb(buy1Txid), Blob.equal)){
                                 case(?(order)){
-                                    let (v0, v1) = _sumFilledAmount(order.filled);
+                                    let (v0, _v1) = _sumFilledAmount(order.filled);
                                     buy1 := Nat.max(buy1, v0);
                                 };
                                 case(_){};
@@ -4435,7 +4435,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
                         if (sell1Txid.size() > 0){
                             switch(Trie.get(icdex_orders, keyb(sell1Txid), Blob.equal)){
                                 case(?(order)){
-                                    let (v0, v1) = _sumFilledAmount(order.filled);
+                                    let (v0, _v1) = _sumFilledAmount(order.filled);
                                     sell1 := Nat.max(sell1, v0);
                                 };
                                 case(_){};
@@ -5008,7 +5008,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         };
         let icrc1Account: STO.ICRC1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa) };
         let account = Tools.principalToAccountBlob(msg.caller, _sa);
-        let isVipMaker = _getMakerRebateRate(account) > 0;
         let balance = _getAccountBalance(account);
         if (_exchangeMode(account, null) != #PoolMode or not(_isKeepingBalanceInPair(account))){
             throw Error.reject("450: Pro-trader SHOULD turn on the `PoolMode` mode and turn on `Keepping Tokens in Pair`."); 
@@ -5045,7 +5044,6 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let icrc1Account: STO.ICRC1Account = {owner = msg.caller; subaccount = _toSaBlob(_sa) };
         let account = Tools.principalToAccountBlob(msg.caller, _sa);
         assert(_onlyStratOrderOwner(account, _soid));
-        let isVipMaker = _getMakerRebateRate(account) > 0;
         if (_exchangeMode(account, null) != #PoolMode or not(_isKeepingBalanceInPair(account))){
             throw Error.reject("450: Pro-trader SHOULD turn on the `PoolMode` mode and turn on `Keeping balance in PairAccount`."); 
         };
@@ -6125,6 +6123,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     public shared(msg) func ictc_doneTO(_toid: SagaTM.Toid, _status: SagaTM.OrderStatus, _toCallback: Bool) : async Bool{
         assert(_onlyOwner(msg.caller) or _onlyIctcAdmin(msg.caller));
         let saga = _getSaga();
+        saga.close(_toid);
         try{
             let res = await* saga.done(_toid, _status, _toCallback);
             return res;
@@ -6246,7 +6245,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             if (_sync){
                 await drc205.store(); 
             }else{
-                let f = drc205.store(); 
+                let _f = drc205.store(); 
             };
         };
     };
@@ -6357,7 +6356,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     /// Receive cycles
     public func wallet_receive(): async (){
         let amout = Cycles.available();
-        let accepted = Cycles.accept(amout);
+        let _accepted = Cycles.accept<system>(amout);
     };
 
     /// Withdraw cycles
@@ -6367,7 +6366,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
         let wallet : Wallet = actor(Principal.toText(icdexRouter));
         let amount = Cycles.balance();
         assert(_amount + 20_000_000_000 < amount);
-        Cycles.add(_amount);
+        Cycles.add<system>(_amount);
         await wallet.wallet_receive();
     };
 
@@ -6406,7 +6405,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
     public shared(msg) func timerStart(_intervalSeconds: Nat): async (){
         assert(_onlyOwner(msg.caller));
         Timer.cancelTimer(timerId);
-        timerId := Timer.recurringTimer(#seconds(_intervalSeconds), timerLoop);
+        timerId := Timer.recurringTimer<system>(#seconds(_intervalSeconds), timerLoop);
     };
 
     /// Stop the Timer
@@ -6997,7 +6996,7 @@ shared(installMsg) actor class ICDexPair(initArgs: Types.InitArgs, isDebug: Bool
             };
             case(_){};
         };
-        timerId := Timer.recurringTimer(#seconds(900), timerLoop);
+        timerId := Timer.recurringTimer<system>(#seconds(900), timerLoop);
     };
 
 };
