@@ -190,7 +190,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.36";
+    private let version_: Text = "0.12.38";
     private let ic: IC.Self = actor("aaaaa-aa");
     // Blackhole
     // Blackhole canister-id acts as a controller for a canister and is used to monitor its canister_status, can be reconfigured.
@@ -2394,7 +2394,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let wasmInfo = _getICDexMakerVersion(null);
         let maker_wasm = wasmInfo.0;
         assert(maker_wasm.size() > 0 and wasmInfo.2 == true);
-        if(not(_onlyOwner(msg.caller)) and _countMaker(accountId, #All) > 3){
+        if(not(_onlyOwner(msg.caller)) and _countMaker(accountId, #All) > 5){
             throw Error.reject("You can create up to 3 Maker Canisters per account.");
         }; 
         var creatingFee: Nat = creatingMakerFee * 10;
@@ -2498,11 +2498,11 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
             ignore _putEvent(#createMaker({ version = wasmInfo.1; arg = _arg; makerCanisterId = makerCanister }), ?Tools.principalToAccountBlob(msg.caller, null));
             return makerCanister;
         }catch(e){
-            if (not(_onlyOwner(msg.caller)) and creatingMakerFee > sysTokenFee){
+            if (not(_onlyOwner(msg.caller)) and creatingFee > sysTokenFee){
                 let arg: ICRC1.TransferArgs = {
                     from_subaccount = null;
                     to = {owner = msg.caller; subaccount = null};
-                    amount = Nat.sub(creatingMakerFee, sysTokenFee);
+                    amount = Nat.sub(creatingFee, sysTokenFee);
                     fee = null;
                     memo = null;
                     created_at_time = null;
