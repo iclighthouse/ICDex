@@ -190,7 +190,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.38";
+    private let version_: Text = "0.12.39";
     private let ic: IC.Self = actor("aaaaa-aa");
     // Blackhole
     // Blackhole canister-id acts as a controller for a canister and is used to monitor its canister_status, can be reconfigured.
@@ -235,7 +235,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     private stable var cyclesMonitor: CyclesMonitor.MonitoredCanisters = Trie.empty(); // (For upgrade) List of canisters with monitored status
     private stable var lastMonitorTime: Nat = 0;
     private stable var hotPairs : List.List<Principal> = List.nil(); // The more popular pairs, they may take up more memory and need to be cleaned up.
-    private let canisterCyclesInit : Nat = if (icdex_debug) {200_000_000_000} else {2_000_000_000_000}; // Initialized Cycles amount when creating a trading pair.
+    private let canisterCyclesInit : Nat = if (icdex_debug) {1_000_000_000_000} else {3_000_000_000_000}; // Initialized Cycles amount when creating a trading pair.
     private let monitor = CyclesMonitor.CyclesMonitor(canisterCyclesInit, canisterCyclesInit * 50, 1_000_000_000); // CyclesMonitor object
     // private let pairMaxMemory: Nat = 2*1000*1000*1000; // When the trading pair memory exceeds this value it signals risk.
 
@@ -2395,7 +2395,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
         let maker_wasm = wasmInfo.0;
         assert(maker_wasm.size() > 0 and wasmInfo.2 == true);
         if(not(_onlyOwner(msg.caller)) and _countMaker(accountId, #All) > 5){
-            throw Error.reject("You can create up to 3 Maker Canisters per account.");
+            throw Error.reject("You can create up to 5 Maker Canisters per account.");
         }; 
         var creatingFee: Nat = creatingMakerFee * 10;
         if (_onlyOwner(msg.caller)){
