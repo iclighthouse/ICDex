@@ -64,8 +64,8 @@ dfx build --network ic ICDexRouter
 cp -f .dfx/ic/canisters/ICDexRouter/ICDexRouter.wasm.gz wasms/
 ```
 - Code: "src/ICDexRouter.mo"
-- Module hash: 30e5586acf987b2bda46f9e509e91893a83162a32e001890482a648edf1d5e2e
-- Version: 0.12.38
+- Module hash: 62ef51af54c0eba89e5a4e2af412128896be9e56d0db997f5a5229ce92fbfcd7
+- Version: 0.12.39
 - Build: {
     "args": "--compacting-gc",
     "gzip": true
