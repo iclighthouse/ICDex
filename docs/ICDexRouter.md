@@ -892,6 +892,20 @@ func monitor_canisters() : async [(Principal, Nat)]
 
 Returns the list of canister-ids in Cycles Monitor.
 
+## Function `monitor_icp_to_cycles`
+``` motoko no-repl
+func monitor_icp_to_cycles(_icp_e8s : Nat) : async ()
+```
+
+Converts ICP to Cycles. (This is done manually, Monitor also has an automatic conversion feature based on the configuration.)
+
+## Function `monitor_send_cycles`
+``` motoko no-repl
+func monitor_send_cycles(_canister_id : Principal, _cycles : Nat) : async ()
+```
+
+Sends Cycles to a specific canister.
+
 ## Function `debug_canister_status`
 ``` motoko no-repl
 func debug_canister_status(_canisterId : Principal) : async CyclesMonitor.canister_status
