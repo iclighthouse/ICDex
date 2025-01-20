@@ -190,7 +190,7 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     type Event = EventTypes.Event; // Event data structure of the ICEvents module.
 
     private var icdex_debug : Bool = isDebug; /*config*/
-    private let version_: Text = "0.12.39";
+    private let version_: Text = "0.12.40";
     private let ic: IC.Self = actor("aaaaa-aa");
     // Blackhole
     // Blackhole canister-id acts as a controller for a canister and is used to monitor its canister_status, can be reconfigured.
@@ -2843,6 +2843,21 @@ shared(installMsg) actor class ICDexRouter(initDAO: Principal, isDebug: Bool) = 
     /// Returns the list of canister-ids in Cycles Monitor.
     public query func monitor_canisters(): async [(Principal, Nat)]{
         return Iter.toArray(Trie.iter(monitor.getCanisters()));
+    };
+
+    /// Converts ICP to Cycles. (This is done manually, Monitor also has an automatic conversion feature based on the configuration.)
+    public shared(msg) func monitor_icp_to_cycles(_icp_e8s: Nat): async (){
+        assert(_onlyOwner(msg.caller));
+        ignore await* CyclesMonitor.icpToCycles(Principal.fromActor(this), null, _icp_e8s);
+    };
+
+    /// Sends Cycles to a specific canister.
+    public shared(msg) func monitor_send_cycles(_canister_id: Principal, _cycles: Nat): async (){
+        assert(_onlyOwner(msg.caller));
+        if (_cycles > 0){
+            Cycles.add<system>(_cycles);
+            await ic.deposit_cycles({canister_id = _canister_id });
+        };
     };
 
     /// Returns a canister's caniter_status information.
